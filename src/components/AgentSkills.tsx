@@ -12,6 +12,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -452,8 +453,8 @@ function CreateSkillDialog({
 
           <div className="space-y-1.5">
             <Label className="text-xs">Instructions (prompt content)</Label>
-            <textarea
-              className="w-full min-h-[200px] rounded-md border bg-background px-3 py-2 text-sm font-mono leading-relaxed resize-y"
+            <Textarea
+              className="min-h-[200px] font-mono text-sm leading-relaxed resize-y"
               value={promptContent}
               onChange={(e) => setPromptContent(e.target.value)}
               placeholder={"### Skill Name\n\nInstructions for the agent..."}
@@ -546,8 +547,8 @@ function ImportSkillDialog({
           ) : (
             <div className="space-y-1.5">
               <Label className="text-xs">SKILL.md Content</Label>
-              <textarea
-                className="w-full min-h-[200px] rounded-md border bg-background px-3 py-2 text-sm font-mono leading-relaxed resize-y"
+              <Textarea
+                className="min-h-[200px] font-mono text-sm leading-relaxed resize-y"
                 value={rawContent}
                 onChange={(e) => setRawContent(e.target.value)}
                 placeholder={"---\nname: my-skill\ndescription: What it does\n---\n\n# Instructions..."}

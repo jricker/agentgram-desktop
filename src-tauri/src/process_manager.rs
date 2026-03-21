@@ -2,10 +2,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tauri::State;
-
 
 const MAX_LOG_LINES: usize = 1000;
 
@@ -50,8 +49,8 @@ struct RunningAgent {
     child: Child,
     started_at: Instant,
     agent_name: String,
-    logs: Vec<String>,
-    log_reader_started: bool,
+    /// Shared log buffer — written by background reader thread, read by get_agent_logs
+    logs: Arc<Mutex<Vec<String>>>,
     crash_reason: Option<String>,
 }
 
@@ -61,15 +60,12 @@ pub struct ProcessManager {
 
 impl ProcessManager {
     pub fn new() -> Self {
-        // Kill any orphaned bridge processes from a previous session
         kill_orphan_bridges();
-
         Self {
             agents: HashMap::new(),
         }
     }
 
-    /// Kill all managed bridge processes. Called on app exit.
     pub fn kill_all(&mut self) {
         let ids: Vec<String> = self.agents.keys().cloned().collect();
         for id in ids {
@@ -85,8 +81,8 @@ impl ProcessManager {
                 Ok(Some(status)) => {
                     let code = status.code();
                     if !status.success() && agent.crash_reason.is_none() {
-                        // Process crashed — drain stderr to capture the reason
-                        agent.crash_reason = drain_crash_reason(agent);
+                        // Try to extract crash reason from collected logs
+                        agent.crash_reason = extract_crash_reason(&agent.logs);
                     }
                     if status.success() {
                         (AgentStatus::Stopped, code)
@@ -103,39 +99,21 @@ impl ProcessManager {
     }
 }
 
-/// Read remaining stderr from a crashed process and extract the crash reason.
-/// Looks for AUTH_FAILED markers or falls back to the last meaningful line.
-fn drain_crash_reason(agent: &mut RunningAgent) -> Option<String> {
-    let stderr = agent.child.stderr.take()?;
-    let reader = BufReader::new(stderr);
-    let mut lines: Vec<String> = Vec::new();
-
-    for line in reader.lines() {
-        match line {
-            Ok(l) => lines.push(l),
-            Err(_) => break,
-        }
-    }
-
-    // Store all lines as logs too
-    agent.logs.extend(lines.clone());
-    agent.log_reader_started = true;
-
+/// Extract crash reason from collected log lines.
+fn extract_crash_reason(logs: &Arc<Mutex<Vec<String>>>) -> Option<String> {
+    let lines = logs.lock().ok()?;
     if lines.is_empty() {
         return None;
     }
 
-    // Look for known error markers (most specific first)
-    for line in &lines {
+    for line in lines.iter() {
         if line.contains("AUTH_FAILED") {
             return Some("Authentication failed — check the agent's API key".to_string());
         }
     }
 
-    // Look for Python exception lines
     for line in lines.iter().rev() {
         if line.contains("AuthError") || line.contains("ConnectionError") || line.contains("Error:") {
-            // Clean up the line — remove timestamp prefix if present
             let cleaned = if let Some(pos) = line.find("] ") {
                 line[pos + 2..].to_string()
             } else {
@@ -145,8 +123,29 @@ fn drain_crash_reason(agent: &mut RunningAgent) -> Option<String> {
         }
     }
 
-    // Fall back to last non-empty line
     lines.iter().rev().find(|l| !l.trim().is_empty()).cloned()
+}
+
+/// Spawn a background thread that reads stderr lines and appends to the shared log buffer.
+fn spawn_log_reader(stderr: std::process::ChildStderr, logs: Arc<Mutex<Vec<String>>>) {
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(l) => {
+                    if let Ok(mut buf) = logs.lock() {
+                        buf.push(l);
+                        // Trim if over max
+                        if buf.len() > MAX_LOG_LINES {
+                            let drain_count = buf.len() - MAX_LOG_LINES;
+                            buf.drain(0..drain_count);
+                        }
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
 }
 
 #[tauri::command]
@@ -161,13 +160,11 @@ pub fn start_agent(
         graceful_kill(&mut existing.child);
     }
 
-    // Find the bridge script — look relative to the binary or use the repo path
     let bridge_path = find_bridge_script()?;
 
     let mut cmd = Command::new("python3");
     cmd.arg(&bridge_path);
 
-    // Set environment variables
     cmd.env("AGENT_ID", &args.agent_id);
     cmd.env("AGENT_API_KEY", &args.api_key);
 
@@ -178,7 +175,6 @@ pub fn start_agent(
         cmd.env("MODEL_BACKEND", backend);
     }
 
-    // Build CLI args for the bridge
     if let Some(ref backend) = args.backend {
         cmd.args(["--backend", backend]);
     }
@@ -207,14 +203,20 @@ pub fn start_agent(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
-    let child = cmd.spawn().map_err(|e| format!("Failed to start bridge: {}", e))?;
+    let mut child = cmd.spawn().map_err(|e| format!("Failed to start bridge: {}", e))?;
+
+    let logs = Arc::new(Mutex::new(Vec::new()));
+
+    // Take stderr and spawn a background reader thread (non-blocking for the main Mutex)
+    if let Some(stderr) = child.stderr.take() {
+        spawn_log_reader(stderr, Arc::clone(&logs));
+    }
 
     let running = RunningAgent {
         child,
         started_at: Instant::now(),
         agent_name: args.agent_name.clone(),
-        logs: Vec::new(),
-        log_reader_started: false,
+        logs,
         crash_reason: None,
     };
 
@@ -328,58 +330,34 @@ pub fn get_agent_logs(
     agent_id: String,
     tail: Option<usize>,
 ) -> Result<Vec<String>, String> {
-    let mut manager = state.lock().map_err(|e| e.to_string())?;
+    let manager = state.lock().map_err(|e| e.to_string())?;
 
-    if let Some(agent) = manager.agents.get_mut(&agent_id) {
-        // Read any new output from stderr (bridge logs to stderr)
-        if !agent.log_reader_started {
-            if let Some(stderr) = agent.child.stderr.take() {
-                let reader = BufReader::new(stderr);
-                let mut lines: Vec<String> = Vec::new();
-                // Non-blocking: read what's available
-                for line in reader.lines() {
-                    match line {
-                        Ok(l) => lines.push(l),
-                        Err(_) => break,
-                    }
-                }
-                agent.logs.extend(lines);
-                agent.log_reader_started = true;
-            }
-        }
+    if let Some(agent) = manager.agents.get(&agent_id) {
+        // Read from the shared log buffer (populated by background thread)
+        let logs = agent.logs.lock().map_err(|e| e.to_string())?;
 
-        // Trim if over max
-        if agent.logs.len() > MAX_LOG_LINES {
-            let drain_count = agent.logs.len() - MAX_LOG_LINES;
-            agent.logs.drain(0..drain_count);
-        }
-
-        let count = tail.unwrap_or(100).min(agent.logs.len());
-        let start = agent.logs.len().saturating_sub(count);
-        Ok(agent.logs[start..].to_vec())
+        let count = tail.unwrap_or(100).min(logs.len());
+        let start = logs.len().saturating_sub(count);
+        Ok(logs[start..].to_vec())
     } else {
         Ok(Vec::new())
     }
 }
 
-/// Gracefully kill a child process: SIGTERM first, wait briefly, then SIGKILL.
 fn graceful_kill(child: &mut Child) {
     let pid = child.id();
 
     #[cfg(unix)]
     {
-        // Send SIGTERM for graceful shutdown
         unsafe {
             libc::kill(pid as i32, libc::SIGTERM);
         }
-        // Wait up to 2 seconds for graceful exit
         for _ in 0..20 {
             match child.try_wait() {
-                Ok(Some(_)) => return, // exited
+                Ok(Some(_)) => return,
                 _ => std::thread::sleep(std::time::Duration::from_millis(100)),
             }
         }
-        // Still alive — force kill
         let _ = child.kill();
     }
 
@@ -391,8 +369,6 @@ fn graceful_kill(child: &mut Child) {
     let _ = child.wait();
 }
 
-/// Kill orphaned agent_bridge.py processes from a previous app session.
-/// Uses `pgrep` to find them and `kill` to terminate.
 fn kill_orphan_bridges() {
     #[cfg(unix)]
     {
@@ -417,7 +393,6 @@ fn kill_orphan_bridges() {
 }
 
 fn find_bridge_script() -> Result<String, String> {
-    // In development: look in the repo
     let dev_path = std::env::current_dir()
         .ok()
         .map(|d| d.join("../scripts/agent_bridge.py"))
@@ -429,7 +404,6 @@ fn find_bridge_script() -> Result<String, String> {
         }
     }
 
-    // Also check relative to the Agentgram project root
     let project_paths = [
         "/Users/jricker/Documents/GitHub/Agentgram/scripts/agent_bridge.py",
     ];
@@ -439,9 +413,6 @@ fn find_bridge_script() -> Result<String, String> {
             return Ok(path.to_string());
         }
     }
-
-    // In production: look in bundled resources
-    // TODO: resolve from app bundle path
 
     Err("Bridge script not found. Ensure agent_bridge.py is accessible.".to_string())
 }

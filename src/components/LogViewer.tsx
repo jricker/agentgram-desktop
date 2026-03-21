@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { cn } from "../lib/utils";
 import { Copy } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function LogViewer({ agentId }: { agentId: string }) {
   const [logs, setLogs] = useState<string[]>([]);
@@ -47,27 +48,29 @@ export function LogViewer({ agentId }: { agentId: string }) {
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-1 px-5 py-2.5 border-b border-border">
         {filters.map((f) => (
-          <button
+          <Button
             key={f}
+            variant={filter === f ? "secondary" : "ghost"}
+            size="sm"
             className={cn(
-              "px-2.5 py-1 text-xs rounded-md transition-colors",
-              filter === f
-                ? "bg-accent-light text-accent font-medium"
-                : "text-text-muted hover:text-text-secondary"
+              "text-xs h-7",
+              filter === f && "bg-accent-light text-accent font-medium"
             )}
             onClick={() => setFilter(f)}
           >
             {f.charAt(0).toUpperCase() + f.slice(1)}
-          </button>
+          </Button>
         ))}
         <div className="flex-1" />
-        <button
-          className="w-7 h-7 flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-surface-hover transition-colors"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="w-7 h-7"
           onClick={() => navigator.clipboard.writeText(filtered.join("\n"))}
           title="Copy logs"
         >
           <Copy className="w-3.5 h-3.5" />
-        </button>
+        </Button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 font-mono text-xs leading-relaxed" ref={scrollRef}>

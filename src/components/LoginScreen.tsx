@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useAuthStore } from "../stores/authStore";
 import { Bot } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Card } from "@/components/ui/card";
 
 export function LoginScreen() {
   const { login, signup, loading, error } = useAuthStore();
@@ -20,7 +24,7 @@ export function LoginScreen() {
 
   return (
     <div className="flex items-center justify-center h-screen w-screen bg-bg">
-      <div className="w-[400px] bg-surface border border-border rounded-lg p-10">
+      <Card className="w-[400px] p-10">
         <div className="flex items-center gap-3 mb-1">
           <div className="w-9 h-9 rounded-lg bg-accent flex items-center justify-center">
             <Bot className="w-5 h-5 text-white" />
@@ -33,45 +37,39 @@ export function LoginScreen() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {isSignup && (
-            <div>
-              <label className="block text-xs font-medium text-text-secondary mb-1.5">
-                Display Name
-              </label>
-              <input
+            <div className="space-y-1.5">
+              <Label htmlFor="displayName">Display Name</Label>
+              <Input
+                id="displayName"
                 type="text"
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 placeholder="Your name"
-                className="w-full px-3 py-2 bg-bg border border-border rounded-md text-sm text-text placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-colors"
               />
             </div>
           )}
 
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              Email
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
               required
-              className="w-full px-3 py-2 bg-bg border border-border rounded-md text-sm text-text placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-colors"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              Password
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="password">Password</Label>
+            <Input
+              id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Password"
               required
-              className="w-full px-3 py-2 bg-bg border border-border rounded-md text-sm text-text placeholder:text-text-muted focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent/20 transition-colors"
             />
           </div>
 
@@ -81,17 +79,14 @@ export function LoginScreen() {
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-2.5 bg-accent text-white text-sm font-medium rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
+          <Button type="submit" disabled={loading} className="w-full">
             {loading ? "..." : isSignup ? "Create Account" : "Sign In"}
-          </button>
+          </Button>
         </form>
 
-        <button
-          className="w-full text-center text-sm text-accent hover:text-accent-hover mt-4 transition-colors"
+        <Button
+          variant="ghost"
+          className="w-full mt-4 text-accent hover:text-accent-hover"
           onClick={() => {
             setIsSignup(!isSignup);
             useAuthStore.setState({ error: null });
@@ -100,8 +95,8 @@ export function LoginScreen() {
           {isSignup
             ? "Already have an account? Sign in"
             : "Create an account"}
-        </button>
-      </div>
+        </Button>
+      </Card>
     </div>
   );
 }

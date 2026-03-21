@@ -1,12 +1,67 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { formatModelLabel } from "../lib/models";
 import { formatUptime, cn } from "../lib/utils";
 import { Play, Square, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { TableCell, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+
+// Parse the last few log lines into a human-readable activity label
+function parseActivity(lines: string[]): { label: string; type: "idle" | "thinking" | "streaming" | "tool" | "sending" | "error" } | null {
+  if (lines.length === 0) return null;
+
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 8); i--) {
+    const line = lines[i].toLowerCase();
+
+    if (line.includes("error") || line.includes("traceback")) {
+      const clean = lines[i].replace(/^\[.*?\]\s*/, "").slice(0, 60);
+      return { label: clean, type: "error" };
+    }
+    if (line.includes("executing tool") || line.includes("tool_use") || line.includes("tool_call")) {
+      // Try to extract tool name
+      const match = lines[i].match(/(?:executing tool|tool_use|tool_call)[:\s]*(\w+)/i);
+      return { label: match ? `Tool: ${match[1]}` : "Executing tool...", type: "tool" };
+    }
+    if (line.includes("text_delta") || line.includes("content_block") || line.includes("streaming")) {
+      return { label: "Streaming response...", type: "streaming" };
+    }
+    if (line.includes("sending message") || line.includes("send_message")) {
+      return { label: "Sending message...", type: "sending" };
+    }
+    if (line.includes("claimed task")) {
+      const match = lines[i].match(/claimed task.*?[:\s]+(.*)/i);
+      return { label: match ? `Task: ${match[1].slice(0, 40)}` : "Processing task...", type: "thinking" };
+    }
+    if (line.includes("new message") || line.includes("processing message")) {
+      return { label: "Reading message...", type: "thinking" };
+    }
+    if (line.includes("thinking") || line.includes("processing")) {
+      return { label: "Thinking...", type: "thinking" };
+    }
+  }
+
+  return null;
+}
+
+const ACTIVITY_COLORS = {
+  idle: "",
+  thinking: "text-amber-500",
+  streaming: "text-emerald-500",
+  tool: "text-violet-500",
+  sending: "text-cyan-500",
+  error: "text-destructive",
+};
+
+const ACTIVITY_DOT_COLORS = {
+  idle: "",
+  thinking: "bg-amber-500",
+  streaming: "bg-emerald-500",
+  tool: "bg-violet-500",
+  sending: "bg-cyan-500",
+  error: "bg-destructive",
+};
 
 function StatusBadge({
   status,
@@ -55,6 +110,23 @@ function StatusBadge({
   );
 }
 
+function HealthBadge({ health }: { health: ManagedAgent["health"] }) {
+  if (!health) {
+    return <span className="text-xs text-muted-foreground">—</span>;
+  }
+  const colors: Record<string, string> = {
+    healthy: "text-success",
+    degraded: "text-warning",
+    stuck: "text-orange-500",
+    offline: "text-muted-foreground",
+  };
+  return (
+    <span className={cn("text-xs capitalize", colors[health.healthStatus] || "text-muted-foreground")}>
+      {health.healthStatus}
+    </span>
+  );
+}
+
 export function AgentRow({
   managed,
   selected,
@@ -65,14 +137,43 @@ export function AgentRow({
   onSelect: () => void;
 }) {
   const { startAgent, stopAgent } = useAgentStore();
-
   const [error, setError] = useState<string | null>(null);
+  const [activity, setActivity] = useState<ReturnType<typeof parseActivity>>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(null);
+
+  const isRunning = managed.processStatus === "running";
+
+  // Poll logs for live activity when running
+  useEffect(() => {
+    if (!isRunning) {
+      setActivity(null);
+      return;
+    }
+
+    const poll = async () => {
+      try {
+        const lines: string[] = await invoke("get_agent_logs", {
+          agentId: managed.agent.id,
+          tail: 8,
+        });
+        setActivity(parseActivity(lines));
+      } catch {
+        setActivity(null);
+      }
+    };
+
+    poll();
+    intervalRef.current = setInterval(poll, 1500);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [isRunning, managed.agent.id]);
 
   const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setError(null);
     try {
-      if (managed.processStatus === "running") {
+      if (isRunning) {
         await stopAgent(managed.agent.id);
       } else {
         await startAgent(managed.agent.id);
@@ -83,7 +184,6 @@ export function AgentRow({
     }
   };
 
-  const isRunning = managed.processStatus === "running";
   const canStart =
     managed.apiKey != null && managed.processStatus !== "starting";
   const modelLabel =
@@ -91,12 +191,17 @@ export function AgentRow({
     managed.config.model;
 
   return (
-    <TableRow
-      className={cn("cursor-pointer", selected && "bg-accent")}
+    <div
+      className={cn(
+        "cursor-pointer border-b border-border last:border-b-0 transition-colors",
+        selected ? "bg-primary/5" : "hover:bg-muted/50"
+      )}
       onClick={onSelect}
     >
-      <TableCell className="max-w-[200px]">
-        <div className="flex items-center gap-2.5">
+      {/* Main row */}
+      <div className="grid grid-cols-[1fr_140px_120px_80px_60px] gap-4 px-5 py-2.5 items-center">
+        {/* Agent */}
+        <div className="flex items-center gap-2.5 min-w-0">
           <Avatar className="h-8 w-8 rounded-lg shrink-0">
             {managed.agent.avatarUrl && <AvatarImage src={managed.agent.avatarUrl} className="rounded-lg" />}
             <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
@@ -108,77 +213,81 @@ export function AgentRow({
               {managed.agent.displayName}
             </p>
             {managed.agent.description && (
-              <p className="text-xs text-muted-foreground truncate max-w-[140px]">
+              <p className="text-xs text-muted-foreground truncate">
                 {managed.agent.description}
               </p>
             )}
           </div>
         </div>
-      </TableCell>
 
-      <TableCell>
-        <span className="text-xs text-muted-foreground">{modelLabel}</span>
-      </TableCell>
+        {/* Model */}
+        <div className="truncate">
+          <span className="text-xs text-muted-foreground">{modelLabel}</span>
+        </div>
 
-      <TableCell>
-        {error ? (
-          <span className="text-xs text-destructive truncate max-w-[160px] block" title={error}>
-            {error}
-          </span>
-        ) : (
-          <div className="flex flex-col gap-0.5">
-            <StatusBadge
-              status={managed.processStatus}
-              uptimeSecs={managed.uptimeSecs}
-            />
-            {managed.processStatus === "crashed" && (managed.crashReason || error) && (
-              <span
-                className="text-[10px] text-destructive/80 truncate max-w-[160px] block"
-                title={managed.crashReason || error || ""}
-              >
-                {managed.crashReason || error}
-              </span>
-            )}
-          </div>
-        )}
-      </TableCell>
+        {/* Status */}
+        <div>
+          {error ? (
+            <span className="text-xs text-destructive truncate block" title={error}>
+              {error.slice(0, 25)}...
+            </span>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              <StatusBadge
+                status={managed.processStatus}
+                uptimeSecs={managed.uptimeSecs}
+              />
+              {managed.processStatus === "crashed" && managed.crashReason && (
+                <span
+                  className="text-[10px] text-destructive/80 truncate block"
+                  title={managed.crashReason}
+                >
+                  {managed.crashReason.slice(0, 30)}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
-      <TableCell className="text-right">
-        <div onClick={(e) => e.stopPropagation()} className="inline-flex">
+        {/* Health */}
+        <div>
+          <HealthBadge health={managed.health} />
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
           {managed.processStatus === "crashed" ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-warning hover:text-warning"
-              onClick={handleToggle}
-              title="Restart"
-            >
+            <Button variant="ghost" size="icon-sm" className="text-warning hover:text-warning" onClick={handleToggle} title="Restart">
               <RotateCcw className="w-4 h-4" />
             </Button>
           ) : isRunning ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive hover:text-destructive"
-              onClick={handleToggle}
-              title="Stop"
-            >
+            <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={handleToggle} title="Stop">
               <Square className="w-3.5 h-3.5" />
             </Button>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-success hover:text-success"
-              onClick={handleToggle}
-              disabled={!canStart}
-              title={canStart ? "Start" : "Configure first"}
-            >
+            <Button variant="ghost" size="icon-sm" className="text-success hover:text-success" onClick={handleToggle} disabled={!canStart} title={canStart ? "Start" : "Configure first"}>
               <Play className="w-4 h-4" />
             </Button>
           )}
         </div>
-      </TableCell>
-    </TableRow>
+      </div>
+
+      {/* Live activity stream — shown when agent is actively working */}
+      {isRunning && activity && (
+        <div className="px-5 pb-2 pl-[52px]">
+          <div className={cn(
+            "flex items-center gap-2 text-[11px] font-medium animate-in fade-in slide-in-from-top-1 duration-300",
+            ACTIVITY_COLORS[activity.type]
+          )}>
+            <span className={cn(
+              "w-1.5 h-1.5 rounded-full shrink-0",
+              activity.type !== "idle" && "animate-pulse",
+              ACTIVITY_DOT_COLORS[activity.type]
+            )} />
+            <span className="truncate">{activity.label}</span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

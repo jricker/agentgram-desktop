@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { useAgentStore } from "../stores/agentStore";
-import { X, Bot, Workflow } from "lucide-react";
+import { Bot, Workflow } from "lucide-react";
 import { cn } from "../lib/utils";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const { createAgent, selectAgent } = useAgentStore();
@@ -48,51 +57,39 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" onClick={onClose}>
-      <div className="w-[440px] bg-surface border border-border rounded-xl p-6" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-base font-semibold text-text">Create New Agent</h2>
-          <button
-            onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-md text-text-muted hover:text-text hover:bg-surface-hover transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Create New Agent</DialogTitle>
+        </DialogHeader>
 
         <form onSubmit={handleCreate} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              Name
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-name">Name</Label>
+            <Input
+              id="agent-name"
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="Scout"
               required
               autoFocus
-              className="input"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-1.5">
-              Description
-            </label>
-            <input
+          <div className="space-y-1.5">
+            <Label htmlFor="agent-desc">Description</Label>
+            <Input
+              id="agent-desc"
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Research assistant"
-              className="input"
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-text-secondary mb-2">
-              Type
-            </label>
+          <div className="space-y-2">
+            <Label>Type</Label>
             <div className="grid grid-cols-2 gap-3">
               {types.map((t) => (
                 <button
@@ -135,23 +132,15 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
           )}
 
           <div className="flex justify-end gap-3 pt-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm text-text-secondary hover:text-text transition-colors"
-            >
+            <Button type="button" variant="ghost" onClick={onClose}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !name.trim()}
-              className="px-4 py-2 bg-accent text-white text-sm font-medium rounded-md hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
+            </Button>
+            <Button type="submit" disabled={loading || !name.trim()}>
               {loading ? "Creating..." : "Create Agent"}
-            </button>
+            </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
