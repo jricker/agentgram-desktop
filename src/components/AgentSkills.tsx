@@ -4,8 +4,11 @@ import {
   getAgentSkills,
   listSkills,
   assignSkill,
+  unassignSkill,
+  updateSkill,
   createSkill,
   importSkill,
+  installMarketplaceSkill,
 } from "../lib/api";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -35,6 +38,10 @@ import {
   User,
   Link2,
   Eye,
+  Copy,
+  Check,
+  Pencil,
+  Unlink,
 } from "lucide-react";
 
 interface AgentSkillsProps {
@@ -48,7 +55,10 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
   const [showAdd, setShowAdd] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showInstallShared, setShowInstallShared] = useState(false);
   const [viewSkill, setViewSkill] = useState<Skill | null>(null);
+  const [editingSkill, setEditingSkill] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const fetchSkills = useCallback(async () => {
     try {
@@ -87,6 +97,16 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
     }
   };
 
+  const handleUnassign = async (skill: Skill) => {
+    try {
+      await unassignSkill(skill.id, agentId);
+      setViewSkill(null);
+      await fetchSkills();
+    } catch (e) {
+      console.error("Failed to unassign skill:", e);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
@@ -110,6 +130,9 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
             </Button>
             <Button size="sm" variant="outline" onClick={() => setShowCreate(true)}>
               Create New
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowInstallShared(true)}>
+              <Link2 className="w-3.5 h-3.5 mr-1.5" /> Install Shared
             </Button>
           </div>
         </div>
@@ -152,31 +175,99 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
             <Button size="sm" variant="outline" onClick={() => setShowImport(true)}>
               <Download className="w-3.5 h-3.5 mr-1.5" /> Import
             </Button>
+            <Button size="sm" variant="outline" onClick={() => setShowInstallShared(true)}>
+              <Link2 className="w-3.5 h-3.5 mr-1.5" /> Install Shared
+            </Button>
           </div>
         </>
       )}
 
-      {/* View Skill Dialog */}
-      <Dialog open={!!viewSkill} onOpenChange={() => setViewSkill(null)}>
+      {/* View/Edit Skill Dialog */}
+      <Dialog open={!!viewSkill} onOpenChange={() => { setViewSkill(null); setEditingSkill(false); setCopied(false); }}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{viewSkill?.displayName}</DialogTitle>
           </DialogHeader>
-          {viewSkill && (
+          {viewSkill && !editingSkill && (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">{viewSkill.description}</p>
               <div className="flex gap-2 flex-wrap">
                 <Badge variant="secondary">{viewSkill.scope}</Badge>
                 {viewSkill.category && <Badge variant="outline">{viewSkill.category}</Badge>}
                 {viewSkill.alwaysInject && <Badge>always loaded</Badge>}
+                {viewSkill.visibility === "public" && (
+                  <Badge variant="default" className="bg-green-600">public</Badge>
+                )}
+                {viewSkill.visibility === "unlisted" && (
+                  <Badge variant="secondary">unlisted</Badge>
+                )}
                 {viewSkill.tags?.map((t) => (
                   <Badge key={t} variant="outline" className="text-xs">{t}</Badge>
                 ))}
               </div>
+              {(viewSkill.ratingAvg || viewSkill.installCount) && (
+                <div className="flex gap-4 text-xs text-muted-foreground">
+                  {viewSkill.ratingAvg != null && (
+                    <span>Rating: {viewSkill.ratingAvg.toFixed(1)}/5 ({viewSkill.ratingCount} reviews)</span>
+                  )}
+                  {viewSkill.installCount != null && viewSkill.installCount > 0 && (
+                    <span>{viewSkill.installCount} installs</span>
+                  )}
+                </div>
+              )}
+
+              {/* Action buttons */}
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" className="flex-1" onClick={() => setEditingSkill(true)}>
+                  <Pencil className="w-3.5 h-3.5 mr-1.5" /> Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 text-destructive hover:text-destructive"
+                  onClick={() => handleUnassign(viewSkill)}
+                >
+                  <Unlink className="w-3.5 h-3.5 mr-1.5" /> Remove from Agent
+                </Button>
+              </div>
+
+              {/* Share button */}
+              {(viewSkill.visibility === "public" || viewSkill.visibility === "unlisted") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    navigator.clipboard.writeText(viewSkill.id);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                >
+                  {copied ? (
+                    <><Check className="w-3.5 h-3.5 mr-1.5 text-green-500" /> Copied!</>
+                  ) : (
+                    <><Copy className="w-3.5 h-3.5 mr-1.5" /> Copy Skill ID to Share</>
+                  )}
+                </Button>
+              )}
+
               <div className="bg-muted rounded-lg p-4 text-sm whitespace-pre-wrap font-mono text-xs leading-relaxed">
                 {viewSkill.promptContent}
               </div>
             </div>
+          )}
+
+          {/* Edit mode */}
+          {viewSkill && editingSkill && (
+            <EditSkillForm
+              skill={viewSkill}
+              onSave={async (updated) => {
+                setViewSkill(updated);
+                setEditingSkill(false);
+                await fetchSkills();
+              }}
+              onCancel={() => setEditingSkill(false)}
+            />
           )}
         </DialogContent>
       </Dialog>
@@ -206,6 +297,16 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
           setShowImport(false);
           fetchSkills();
         }}
+      />
+
+      {/* Install Shared Skill Dialog */}
+      <InstallSharedDialog
+        open={showInstallShared}
+        onClose={() => {
+          setShowInstallShared(false);
+          fetchSkills();
+        }}
+        agentId={agentId}
       />
     </div>
   );
@@ -344,6 +445,7 @@ function CreateSkillDialog({
   const [scope, setScope] = useState("owner");
   const [promptContent, setPromptContent] = useState("");
   const [alwaysInject, setAlwaysInject] = useState(false);
+  const [visibility, setVisibility] = useState("private");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -359,6 +461,7 @@ function CreateSkillDialog({
         scope,
         category,
         alwaysInject,
+        visibility: visibility as "private" | "public" | "unlisted",
       });
       // Auto-assign to this agent if agent-scoped
       if (scope === "agent" || scope === "owner") {
@@ -446,9 +549,22 @@ function CreateSkillDialog({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Switch checked={alwaysInject} onCheckedChange={setAlwaysInject} />
-            <Label className="text-xs">Always inject (include full content in every prompt)</Label>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-2">
+              <Switch checked={alwaysInject} onCheckedChange={setAlwaysInject} />
+              <Label className="text-xs">Always inject</Label>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Visibility</Label>
+              <Select value={visibility} onValueChange={(v) => setVisibility(v ?? "private")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="private">Private</SelectItem>
+                  <SelectItem value="public">Public (Marketplace)</SelectItem>
+                  <SelectItem value="unlisted">Unlisted</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-1.5">
@@ -564,6 +680,188 @@ function ImportSkillDialog({
             className="w-full"
           >
             {importing ? "Importing..." : "Import Skill"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// --- Edit Skill Form ---
+
+function EditSkillForm({
+  skill,
+  onSave,
+  onCancel,
+}: {
+  skill: Skill;
+  onSave: (updated: Skill) => void;
+  onCancel: () => void;
+}) {
+  const [displayName, setDisplayName] = useState(skill.displayName);
+  const [description, setDescription] = useState(skill.description);
+  const [promptContent, setPromptContent] = useState(skill.promptContent);
+  const [category, setCategory] = useState(skill.category || "integration");
+  const [visibility, setVisibility] = useState(skill.visibility || "private");
+  const [alwaysInject, setAlwaysInject] = useState(skill.alwaysInject);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const { skill: updated } = await updateSkill(skill.id, {
+        displayName,
+        description,
+        promptContent,
+        category,
+        visibility,
+        alwaysInject,
+      });
+      onSave(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <Label className="text-xs">Display Name</Label>
+        <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Description</Label>
+        <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Category</Label>
+          <Select value={category} onValueChange={(v) => setCategory(v ?? "integration")}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="integration">Integration</SelectItem>
+              <SelectItem value="formatting">Formatting</SelectItem>
+              <SelectItem value="workflow">Workflow</SelectItem>
+              <SelectItem value="api">API</SelectItem>
+              <SelectItem value="development">Development</SelectItem>
+              <SelectItem value="testing">Testing</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs">Visibility</Label>
+          <Select value={visibility} onValueChange={(v) => setVisibility(v ?? "private")}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="private">Private</SelectItem>
+              <SelectItem value="public">Public (Marketplace)</SelectItem>
+              <SelectItem value="unlisted">Unlisted (Shareable)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <Switch checked={alwaysInject} onCheckedChange={setAlwaysInject} />
+        <Label className="text-xs">Always inject into prompt</Label>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Instructions (prompt content)</Label>
+        <Textarea
+          className="min-h-[200px] font-mono text-sm leading-relaxed resize-y"
+          value={promptContent}
+          onChange={(e) => setPromptContent(e.target.value)}
+        />
+      </div>
+
+      {error && <p className="text-xs text-destructive">{error}</p>}
+
+      <div className="flex gap-2">
+        <Button onClick={handleSave} disabled={saving || !description || !promptContent} className="flex-1">
+          {saving ? "Saving..." : "Save Changes"}
+        </Button>
+        <Button variant="outline" onClick={onCancel} className="flex-1">
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// --- Install Shared Skill Dialog ---
+
+function InstallSharedDialog({
+  open,
+  onClose,
+  agentId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  agentId: string;
+}) {
+  const [skillId, setSkillId] = useState("");
+  const [installing, setInstalling] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const handleInstall = async () => {
+    setInstalling(true);
+    setError(null);
+    setSuccess(null);
+    try {
+      const { skill } = await installMarketplaceSkill(skillId.trim());
+      // Auto-assign to this agent
+      try {
+        await assignSkill(skill.id, agentId);
+      } catch {
+        // Assignment may fail if activation rules don't match
+      }
+      setSuccess(`Installed "${skill.displayName}"`);
+      setSkillId("");
+      setTimeout(onClose, 1000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to install skill");
+    } finally {
+      setInstalling(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Install Shared Skill</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Paste a skill ID shared by another user to install it.
+          </p>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Skill ID</Label>
+            <Input
+              value={skillId}
+              onChange={(e) => setSkillId(e.target.value)}
+              placeholder="paste-skill-uuid-here"
+              className="font-mono text-xs"
+            />
+          </div>
+
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          {success && <p className="text-xs text-green-600">{success}</p>}
+
+          <Button
+            onClick={handleInstall}
+            disabled={installing || !skillId.trim()}
+            className="w-full"
+          >
+            {installing ? "Installing..." : "Install Skill"}
           </Button>
         </div>
       </DialogContent>

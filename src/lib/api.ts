@@ -175,6 +175,8 @@ export async function createSkill(data: {
   alwaysInject?: boolean;
   priority?: number;
   activationRules?: Record<string, unknown>;
+  visibility?: "private" | "public" | "unlisted";
+  authorName?: string;
 }): Promise<{ skill: Skill }> {
   return request("/api/skills", {
     method: "POST",
@@ -236,6 +238,78 @@ export async function importSkill(data: {
   });
 }
 
+// Skill Marketplace
+export async function browseMarketplace(params?: {
+  search?: string;
+  category?: string;
+  tags?: string;
+  sort?: "rating" | "installs" | "recent";
+  limit?: number;
+}): Promise<{ skills: Skill[] }> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.category) query.set("category", params.category);
+  if (params?.tags) query.set("tags", params.tags);
+  if (params?.sort) query.set("sort", params.sort);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request(`/api/skills/marketplace${qs ? `?${qs}` : ""}`);
+}
+
+export async function getMarketplaceSkill(
+  id: string
+): Promise<{ skill: Skill; ratings: SkillRating[] }> {
+  return request(`/api/skills/marketplace/${id}`);
+}
+
+export async function installMarketplaceSkill(
+  id: string
+): Promise<{ skill: Skill }> {
+  return request(`/api/skills/marketplace/${id}/install`, { method: "POST" });
+}
+
+export async function rateMarketplaceSkill(
+  id: string,
+  score: number,
+  review?: string
+): Promise<{ rating: SkillRating }> {
+  return request(`/api/skills/marketplace/${id}/rate`, {
+    method: "POST",
+    body: JSON.stringify({ score, review }),
+  });
+}
+
+// Annotations
+export async function listAnnotations(params?: {
+  topic?: string;
+  limit?: number;
+}): Promise<{ annotations: Annotation[] }> {
+  const query = new URLSearchParams();
+  if (params?.topic) query.set("topic", params.topic);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return request(`/api/annotations${qs ? `?${qs}` : ""}`);
+}
+
+export async function listAnnotationTopics(): Promise<{ topics: string[] }> {
+  return request("/api/annotations/topics");
+}
+
+export async function createAnnotation(data: {
+  topic: string;
+  content: string;
+  source?: string;
+}): Promise<{ annotation: Annotation }> {
+  return request("/api/annotations", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteAnnotation(id: string): Promise<void> {
+  await request(`/api/annotations/${id}`, { method: "DELETE" });
+}
+
 // Response Templates
 export async function listResponseTemplates(): Promise<{ templates: ResponseTemplate[] }> {
   return request("/api/response-templates");
@@ -262,6 +336,37 @@ export interface Skill {
   importedAt?: string;
   version: number;
   enabled: boolean;
+  // Marketplace fields
+  visibility?: "private" | "public" | "unlisted";
+  installCount?: number;
+  ratingAvg?: number;
+  ratingCount?: number;
+  authorName?: string;
+  insertedAt: string;
+  updatedAt: string;
+}
+
+export interface SkillRating {
+  id: string;
+  skillId: string;
+  raterId: string;
+  raterName?: string;
+  score: number;
+  review?: string;
+  insertedAt: string;
+  updatedAt: string;
+}
+
+export interface Annotation {
+  id: string;
+  agentId: string;
+  ownerId: string;
+  agentName?: string;
+  topic: string;
+  content: string;
+  source: string;
+  sourceTaskId?: string;
+  metadata?: Record<string, unknown>;
   insertedAt: string;
   updatedAt: string;
 }
