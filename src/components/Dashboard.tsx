@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useAuthStore } from "../stores/authStore";
-import { useAgentStore } from "../stores/agentStore";
+import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { AgentRow } from "./AgentRow";
 import { AgentConfig } from "./AgentConfig";
 import { CreateAgentModal } from "./CreateAgentModal";
+import { cn } from "../lib/utils";
 import {
   Bot,
   Plus,
@@ -53,6 +54,21 @@ export function Dashboard() {
     .sort((a, b) => a.agent.displayName.localeCompare(b.agent.displayName));
 
   const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null;
+
+  // Keep last selected agent in ref so content stays visible during close animation
+  const lastAgentRef = useRef<ManagedAgent | null>(null);
+  if (selectedAgent) lastAgentRef.current = selectedAgent;
+  const displayAgent = selectedAgent || lastAgentRef.current;
+  const drawerOpen = !!selectedAgent;
+
+  // Close drawer on Escape key
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && drawerOpen) selectAgent(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [drawerOpen, selectAgent]);
 
   const runningCount = Object.values(agents).filter(
     (m) => m.processStatus === "running"
@@ -181,14 +197,26 @@ export function Dashboard() {
             )}
           </div>
 
-          {/* Detail Panel */}
-          {selectedAgent && (
-            <div className="w-[400px] border-l border-border bg-card overflow-y-auto">
-              <AgentConfig managed={selectedAgent} />
-            </div>
-          )}
         </div>
       </main>
+
+      {/* Agent detail drawer — overlay from the right */}
+      <div
+        className={cn(
+          "fixed inset-0 bg-black/20 z-40 transition-opacity duration-200",
+          drawerOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={() => selectAgent(null)}
+      />
+      <div
+        className={cn(
+          "fixed top-0 right-0 h-full w-[640px] max-w-[85vw] bg-card border-l border-border shadow-2xl z-50",
+          "transition-transform duration-300 ease-out",
+          drawerOpen ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        {displayAgent && <AgentConfig managed={displayAgent} />}
+      </div>
 
       {showCreate && (
         <CreateAgentModal onClose={() => setShowCreate(false)} />
