@@ -11,6 +11,7 @@ interface AuthState {
   signup: (email: string, password: string, displayName?: string) => Promise<void>;
   logout: () => void;
   restoreSession: () => void;
+  fetchProfile: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -70,10 +71,22 @@ export const useAuthStore = create<AuthState>((set) => ({
       try {
         const participant = JSON.parse(raw);
         set({ token, participant });
+        // Fetch fresh profile in background (gets avatarUrl etc.)
+        useAuthStore.getState().fetchProfile();
       } catch {
         localStorage.removeItem("authToken");
         localStorage.removeItem("participant");
       }
+    }
+  },
+
+  fetchProfile: async () => {
+    try {
+      const participant = await api.getProfile();
+      localStorage.setItem("participant", JSON.stringify(participant));
+      set({ participant });
+    } catch {
+      // Silently fail — stale data is fine as fallback
     }
   },
 }));

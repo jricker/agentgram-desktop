@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import {
   Dialog,
   DialogContent,
@@ -291,9 +292,14 @@ export function Profile({ onClose }: { onClose: () => void }) {
       {/* Header */}
       <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-            <User className="w-4 h-4 text-primary" />
-          </div>
+          <Avatar>
+            {participant?.avatarUrl ? (
+              <AvatarImage src={participant.avatarUrl} alt={participant.displayName} />
+            ) : null}
+            <AvatarFallback>
+              <User className="w-4 h-4" />
+            </AvatarFallback>
+          </Avatar>
           <div>
             <h2 className="text-sm font-semibold">Profile & Settings</h2>
             <p className="text-[11px] text-muted-foreground">

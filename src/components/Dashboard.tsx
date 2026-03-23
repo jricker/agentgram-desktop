@@ -17,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 export function Dashboard() {
   const { participant } = useAuthStore();
@@ -196,7 +197,14 @@ export function Dashboard() {
                 className="text-muted-foreground hover:text-foreground gap-1.5"
                 title="Profile & Settings"
               >
-                <User className="w-3.5 h-3.5" />
+                <Avatar size="sm">
+                  {participant?.avatarUrl ? (
+                    <AvatarImage src={participant.avatarUrl} alt={participant.displayName} />
+                  ) : null}
+                  <AvatarFallback>
+                    <User className="w-3 h-3" />
+                  </AvatarFallback>
+                </Avatar>
                 <span className="text-xs truncate max-w-[100px]">
                   {participant?.displayName}
                 </span>

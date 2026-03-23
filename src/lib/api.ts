@@ -73,6 +73,10 @@ export async function signup(
 }
 
 // Profile
+export async function getProfile(): Promise<Participant> {
+  return request("/api/me");
+}
+
 export async function updateProfile(data: {
   displayName?: string;
 }): Promise<{ participant: Participant }> {
