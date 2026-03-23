@@ -287,6 +287,92 @@ export async function rateMarketplaceSkill(
   });
 }
 
+// Routines
+export async function listRoutines(agentId?: string): Promise<{ routines: Routine[] }> {
+  const params = agentId ? `?agent_id=${agentId}` : "";
+  return request(`/api/routines${params}`);
+}
+
+export async function createRoutine(data: {
+  agent_id: string;
+  name: string;
+  instructions: string;
+  schedule_type: string;
+  schedule_config: Record<string, unknown>;
+  description?: string;
+  report_to?: string;
+  max_runs?: number;
+}): Promise<{ routine: Routine }> {
+  return request("/api/routines", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updateRoutine(id: string, data: Record<string, unknown>): Promise<{ routine: Routine }> {
+  return request(`/api/routines/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteRoutine(id: string): Promise<void> {
+  await request(`/api/routines/${id}`, { method: "DELETE" });
+}
+
+export async function pauseRoutine(id: string): Promise<{ routine: Routine }> {
+  return request(`/api/routines/${id}/pause`, { method: "POST" });
+}
+
+export async function resumeRoutine(id: string): Promise<{ routine: Routine }> {
+  return request(`/api/routines/${id}/resume`, { method: "POST" });
+}
+
+// Connected Accounts / Integrations
+export interface UserCredential {
+  id: string;
+  provider: string;
+  credentialType: "oauth2" | "api_token";
+  status: "active" | "expired" | "revoked" | "refresh_failed";
+  scopes: string[];
+  providerUid?: string;
+  lastUsedAt?: string;
+  tokenExpiresAt?: string;
+  insertedAt: string;
+  updatedAt: string;
+}
+
+export interface ProviderInfo {
+  name: string;
+  type: "oauth2" | "api_token";
+  displayName: string;
+  description?: string;
+  scopes?: string[];
+}
+
+export async function listCredentials(): Promise<{ credentials: UserCredential[] }> {
+  return request("/api/integrations");
+}
+
+export async function listProviders(): Promise<{ providers: ProviderInfo[] }> {
+  return request("/api/integrations/providers");
+}
+
+export async function authorizeProvider(provider: string): Promise<{ authorizeUrl: string }> {
+  return request(`/api/integrations/${provider}/authorize`);
+}
+
+export async function storeProviderToken(provider: string, token: string): Promise<{ credential: UserCredential }> {
+  return request(`/api/integrations/${provider}/token`, {
+    method: "POST",
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function disconnectProvider(provider: string): Promise<void> {
+  await request(`/api/integrations/${provider}`, { method: "DELETE" });
+}
+
 // Annotations
 export async function listAnnotations(params?: {
   topic?: string;
@@ -492,4 +578,27 @@ export interface InviteInfo {
   description?: string;
   capabilities?: string[];
   creator?: { displayName: string };
+}
+
+export interface Routine {
+  id: string;
+  participantId: string;
+  ownerId: string;
+  name: string;
+  description?: string;
+  instructions: string;
+  status: "active" | "paused" | "disabled" | "expired";
+  scheduleType: "interval" | "cron";
+  scheduleConfig: Record<string, unknown>;
+  reportTo?: string;
+  state: Record<string, unknown>;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  runCount: number;
+  maxRuns?: number;
+  expiresAt?: string;
+  consecutiveFailures: number;
+  responseTemplate?: string;
+  insertedAt: string;
+  updatedAt: string;
 }

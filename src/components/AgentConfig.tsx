@@ -50,10 +50,12 @@ import {
   ChevronRight,
   LayoutTemplate,
   Palette,
+  Timer,
 } from "lucide-react";
 import { AgentSkills } from "./AgentSkills";
 import { AgentTemplates } from "./AgentTemplates";
 import { AgentCanvas } from "./AgentCanvas";
+import { AgentRoutines } from "./AgentRoutines";
 
 export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   const { updateConfig, regenerateKey, selectAgent } = useAgentStore();
@@ -144,6 +146,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
             { value: "soul", label: "Soul", icon: FileText },
             { value: "skills", label: "Skills", icon: Sparkles },
             { value: "templates", label: "Templates", icon: LayoutTemplate },
+            { value: "routines", label: "Routines", icon: Timer },
             { value: "canvas", label: "Canvas", icon: Palette },
             { value: "health", label: "Health", icon: Activity },
           ] as const).map((tab) => (
@@ -531,6 +534,10 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
 
         <TabsContent value="templates" className="flex-1 overflow-y-auto mt-0">
           <AgentTemplates managed={managed} />
+        </TabsContent>
+
+        <TabsContent value="routines" className="flex-1 overflow-y-auto mt-0">
+          <AgentRoutines agentId={agent.id} />
         </TabsContent>
 
         <TabsContent value="canvas" className="flex-1 overflow-y-auto mt-0">
