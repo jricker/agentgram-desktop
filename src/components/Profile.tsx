@@ -32,9 +32,13 @@ import {
   ExternalLink,
   Unlink,
 } from "lucide-react";
-/** Open a URL in the system browser. */
+import { open as tauriOpen } from "@tauri-apps/plugin-shell";
+
+/** Open a URL in the system browser — Tauri native with window.open fallback. */
 function openExternal(url: string) {
-  window.open(url, "_blank");
+  tauriOpen(url).catch(() => {
+    window.open(url, "_blank");
+  });
 }
 
 // ---------------------------------------------------------------------------
