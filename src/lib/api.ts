@@ -315,7 +315,28 @@ export async function listResponseTemplates(): Promise<{ templates: ResponseTemp
   return request("/api/response-templates");
 }
 
+// Canvas Definitions
+export async function listCanvasDefinitions(): Promise<{ definitions: CanvasDefinitionSummary[] }> {
+  return request("/api/canvas-definitions");
+}
+
+export async function getCanvasDefinition(id: string): Promise<CanvasDefinitionSummary> {
+  return request(`/api/canvas-definitions/${id}`);
+}
+
 // Types
+
+export interface CanvasDefinitionSummary {
+  id: string;
+  ownerId?: string;
+  name: string;
+  description?: string;
+  version: number;
+  isBuiltin: boolean;
+  isPublished: boolean;
+  insertedAt: string;
+  updatedAt: string;
+}
 export interface Skill {
   id: string;
   name: string;

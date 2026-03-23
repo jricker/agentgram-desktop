@@ -49,9 +49,11 @@ import {
   HelpCircle,
   ChevronRight,
   LayoutTemplate,
+  Palette,
 } from "lucide-react";
 import { AgentSkills } from "./AgentSkills";
 import { AgentTemplates } from "./AgentTemplates";
+import { AgentCanvas } from "./AgentCanvas";
 
 export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   const { updateConfig, regenerateKey, selectAgent } = useAgentStore();
@@ -142,6 +144,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
             { value: "soul", label: "Soul", icon: FileText },
             { value: "skills", label: "Skills", icon: Sparkles },
             { value: "templates", label: "Templates", icon: LayoutTemplate },
+            { value: "canvas", label: "Canvas", icon: Palette },
             { value: "health", label: "Health", icon: Activity },
           ] as const).map((tab) => (
             <TabsTrigger
@@ -528,6 +531,10 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
 
         <TabsContent value="templates" className="flex-1 overflow-y-auto mt-0">
           <AgentTemplates managed={managed} />
+        </TabsContent>
+
+        <TabsContent value="canvas" className="flex-1 overflow-y-auto mt-0">
+          <AgentCanvas managed={managed} />
         </TabsContent>
 
         <TabsContent value="health" className="flex-1 overflow-y-auto mt-0">

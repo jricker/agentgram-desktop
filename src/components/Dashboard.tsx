@@ -10,6 +10,8 @@ import {
   Plus,
   LogOut,
   Search,
+  Play,
+  Square,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -26,9 +28,13 @@ export function Dashboard() {
     fetchHealth,
     refreshProcessStatuses,
     selectAgent,
+    startAgent,
+    stopAgent,
   } = useAgentStore();
   const [showCreate, setShowCreate] = useState(false);
   const [search, setSearch] = useState("");
+  const [startingAll, setStartingAll] = useState(false);
+  const [stoppingAll, setStoppingAll] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval>>(null);
 
   useEffect(() => {
@@ -74,6 +80,36 @@ export function Dashboard() {
     (m) => m.processStatus === "running"
   ).length;
   const totalCount = Object.keys(agents).length;
+  const stoppedWithKeys = Object.values(agents).filter(
+    (m) => m.processStatus === "stopped" && m.apiKey
+  );
+  const runningAgents = Object.values(agents).filter(
+    (m) => m.processStatus === "running"
+  );
+
+  const handleStartAll = async () => {
+    setStartingAll(true);
+    for (const m of stoppedWithKeys) {
+      try {
+        await startAgent(m.agent.id);
+      } catch {
+        // continue starting others
+      }
+    }
+    setStartingAll(false);
+  };
+
+  const handleStopAll = async () => {
+    setStoppingAll(true);
+    for (const m of runningAgents) {
+      try {
+        await stopAgent(m.agent.id);
+      } catch {
+        // continue stopping others
+      }
+    }
+    setStoppingAll(false);
+  };
 
   return (
     <div className="flex h-screen w-screen bg-background">
@@ -118,6 +154,30 @@ export function Dashboard() {
                 className="pl-9 w-[200px]"
               />
             </div>
+            {runningCount < totalCount && stoppedWithKeys.length > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleStartAll}
+                disabled={startingAll}
+                title={`Start ${stoppedWithKeys.length} stopped agent(s)`}
+              >
+                <Play className="w-3.5 h-3.5" />
+                {startingAll ? "Starting..." : "Start All"}
+              </Button>
+            )}
+            {runningCount > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleStopAll}
+                disabled={stoppingAll}
+                title={`Stop ${runningCount} running agent(s)`}
+              >
+                <Square className="w-3.5 h-3.5" />
+                {stoppingAll ? "Stopping..." : "Stop All"}
+              </Button>
+            )}
             <Button size="sm" onClick={() => setShowCreate(true)}>
               <Plus className="w-3.5 h-3.5" />
               New Agent
