@@ -72,6 +72,16 @@ export async function signup(
   });
 }
 
+// Profile
+export async function updateProfile(data: {
+  displayName?: string;
+}): Promise<{ participant: Participant }> {
+  return request("/api/me", {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
 // Agents
 export async function listAgents(): Promise<{ agents: Agent[] }> {
   return request("/api/agents");

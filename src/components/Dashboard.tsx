@@ -4,21 +4,22 @@ import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { AgentRow } from "./AgentRow";
 import { AgentConfig } from "./AgentConfig";
 import { CreateAgentModal } from "./CreateAgentModal";
+import { Profile } from "./Profile";
 import { cn } from "../lib/utils";
 import {
   Bot,
   Plus,
-  LogOut,
   Search,
   Play,
   Square,
+  User,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
 export function Dashboard() {
-  const { participant, logout } = useAuthStore();
+  const { participant } = useAuthStore();
   const {
     agents,
     selectedAgentId,
@@ -32,6 +33,7 @@ export function Dashboard() {
     stopAgent,
   } = useAgentStore();
   const [showCreate, setShowCreate] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
   const [search, setSearch] = useState("");
   const [startingAll, setStartingAll] = useState(false);
   const [stoppingAll, setStoppingAll] = useState(false);
@@ -67,14 +69,17 @@ export function Dashboard() {
   const displayAgent = selectedAgent || lastAgentRef.current;
   const drawerOpen = !!selectedAgent;
 
-  // Close drawer on Escape key
+  // Close drawers on Escape key
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && drawerOpen) selectAgent(null);
+      if (e.key === "Escape") {
+        if (showProfile) setShowProfile(false);
+        else if (drawerOpen) selectAgent(null);
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen, selectAgent]);
+  }, [drawerOpen, showProfile, selectAgent]);
 
   const runningCount = Object.values(agents).filter(
     (m) => m.processStatus === "running"
@@ -184,17 +189,17 @@ export function Dashboard() {
             </Button>
 
             <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-border">
-              <span className="text-xs text-muted-foreground truncate max-w-[100px]">
-                {participant?.displayName}
-              </span>
               <Button
                 variant="ghost"
-                size="icon-xs"
-                onClick={logout}
-                className="text-muted-foreground hover:text-destructive"
-                title="Sign Out"
+                size="sm"
+                onClick={() => setShowProfile(true)}
+                className="text-muted-foreground hover:text-foreground gap-1.5"
+                title="Profile & Settings"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <User className="w-3.5 h-3.5" />
+                <span className="text-xs truncate max-w-[100px]">
+                  {participant?.displayName}
+                </span>
               </Button>
             </div>
           </div>
@@ -276,6 +281,24 @@ export function Dashboard() {
         )}
       >
         {displayAgent && <AgentConfig managed={displayAgent} />}
+      </div>
+
+      {/* Profile drawer — overlay from the right */}
+      <div
+        className={cn(
+          "fixed inset-0 bg-black/20 z-40 transition-opacity duration-200",
+          showProfile ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+        onClick={() => setShowProfile(false)}
+      />
+      <div
+        className={cn(
+          "fixed top-0 right-0 h-full w-[480px] max-w-[85vw] bg-card border-l border-border shadow-2xl z-50 overflow-y-auto",
+          "transition-transform duration-300 ease-out",
+          showProfile ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        {showProfile && <Profile onClose={() => setShowProfile(false)} />}
       </div>
 
       {showCreate && (
