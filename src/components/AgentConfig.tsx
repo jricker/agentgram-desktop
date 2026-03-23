@@ -16,7 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Select,
@@ -105,64 +105,93 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
     }
   }, [backend]);
 
+  const [activeSection, setActiveSection] = useState("config");
+
+  const sections = [
+    { value: "config", label: "Config", icon: Settings2 },
+    { value: "logs", label: "Logs", icon: ScrollText },
+    { value: "soul", label: "Soul", icon: FileText },
+    { value: "skills", label: "Skills", icon: Sparkles },
+    { value: "templates", label: "Templates", icon: LayoutTemplate },
+    { value: "routines", label: "Routines", icon: Timer },
+    { value: "canvas", label: "Canvas", icon: Palette },
+    { value: "health", label: "Health", icon: Activity },
+  ];
+
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-5 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
-          <Avatar className="h-10 w-10 rounded-lg">
-            {agent.avatarUrl && <AvatarImage src={agent.avatarUrl} className="rounded-lg" />}
-            <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-sm font-semibold">
-              {agent.displayName.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="text-sm font-semibold truncate">
-              {agent.displayName}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {agent.agentType || "worker"}
-              {agent.description && ` · ${agent.description}`}
-            </p>
+    <div className="flex h-full">
+      {/* Vertical icon sidebar */}
+      <TooltipProvider delay={300}>
+        <div className="w-12 border-r border-border bg-muted/30 flex flex-col items-center py-3 gap-1 flex-shrink-0">
+          {/* Agent avatar at top */}
+          <div className="mb-2">
+            <Avatar className="h-8 w-8 rounded-lg">
+              {agent.avatarUrl && <AvatarImage src={agent.avatarUrl} className="rounded-lg" />}
+              <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
+                {agent.displayName.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          </div>
+
+          <Separator className="w-6 mb-1" />
+
+          {sections.map((section) => (
+            <Tooltip key={section.value}>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={() => setActiveSection(section.value)}
+                    className={cn(
+                      "w-8 h-8 rounded-md flex items-center justify-center transition-colors",
+                      activeSection === section.value
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    )}
+                  >
+                    <section.icon className="w-4 h-4" />
+                  </button>
+                }
+              />
+              <TooltipContent side="right" className="text-xs">
+                {section.label}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+
+          {/* Close button at bottom */}
+          <div className="mt-auto">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={() => selectAgent(null)}
+                    className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                }
+              />
+              <TooltipContent side="right" className="text-xs">
+                Close
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7"
-          onClick={() => selectAgent(null)}
-        >
-          <X className="w-4 h-4" />
-        </Button>
-      </div>
+      </TooltipProvider>
 
-      <Separator />
+      {/* Content panel */}
+      <div className="flex-1 flex flex-col min-h-0">
+        {/* Header */}
+        <div className="px-4 py-3 border-b border-border flex items-center gap-2 flex-shrink-0">
+          <p className="text-sm font-semibold truncate">{agent.displayName}</p>
+          <span className="text-xs text-muted-foreground">·</span>
+          <p className="text-xs text-muted-foreground truncate">
+            {sections.find((s) => s.value === activeSection)?.label}
+          </p>
+        </div>
 
-      <Tabs defaultValue="config" className="flex-1 flex flex-col">
-        <TabsList className="w-full justify-start rounded-none border-b bg-transparent px-3 h-auto py-0">
-          {([
-            { value: "config", label: "Config", icon: Settings2 },
-            { value: "logs", label: "Logs", icon: ScrollText },
-            { value: "soul", label: "Soul", icon: FileText },
-            { value: "skills", label: "Skills", icon: Sparkles },
-            { value: "templates", label: "Templates", icon: LayoutTemplate },
-            { value: "routines", label: "Routines", icon: Timer },
-            { value: "canvas", label: "Canvas", icon: Palette },
-            { value: "health", label: "Health", icon: Activity },
-          ] as const).map((tab) => (
-            <TabsTrigger
-              key={tab.value}
-              value={tab.value}
-              className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:shadow-none px-2.5 py-2 text-xs"
-            >
-              <tab.icon className="w-3 h-3 mr-1" />
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        <TabsContent value="config" className="flex-1 overflow-y-auto mt-0">
-          <div className="p-5 space-y-6">
+        {activeSection === "config" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
             {/* LLM Provider — Primary section */}
             <Section title="LLM Provider">
               <div className="space-y-3">
@@ -518,34 +547,46 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
               </CollapsibleContent>
             </Collapsible>
           </div>
-        </TabsContent>
+        )}
 
-        <TabsContent value="logs" className="flex-1 overflow-hidden mt-0">
-          <LogViewer agentId={agent.id} />
-        </TabsContent>
+        {activeSection === "logs" && (
+          <div className="flex-1 overflow-hidden">
+            <LogViewer agentId={agent.id} />
+          </div>
+        )}
 
-        <TabsContent value="soul" className="flex-1 overflow-hidden mt-0">
-          <SoulEditor agentId={agent.id} />
-        </TabsContent>
+        {activeSection === "soul" && (
+          <div className="flex-1 overflow-hidden">
+            <SoulEditor agentId={agent.id} />
+          </div>
+        )}
 
-        <TabsContent value="skills" className="flex-1 overflow-y-auto mt-0">
-          <AgentSkills agentId={agent.id} />
-        </TabsContent>
+        {activeSection === "skills" && (
+          <div className="flex-1 overflow-y-auto">
+            <AgentSkills agentId={agent.id} />
+          </div>
+        )}
 
-        <TabsContent value="templates" className="flex-1 overflow-y-auto mt-0">
-          <AgentTemplates managed={managed} />
-        </TabsContent>
+        {activeSection === "templates" && (
+          <div className="flex-1 overflow-y-auto">
+            <AgentTemplates managed={managed} />
+          </div>
+        )}
 
-        <TabsContent value="routines" className="flex-1 overflow-y-auto mt-0">
-          <AgentRoutines agentId={agent.id} />
-        </TabsContent>
+        {activeSection === "routines" && (
+          <div className="flex-1 overflow-y-auto">
+            <AgentRoutines agentId={agent.id} />
+          </div>
+        )}
 
-        <TabsContent value="canvas" className="flex-1 overflow-y-auto mt-0">
-          <AgentCanvas managed={managed} />
-        </TabsContent>
+        {activeSection === "canvas" && (
+          <div className="flex-1 overflow-y-auto">
+            <AgentCanvas managed={managed} />
+          </div>
+        )}
 
-        <TabsContent value="health" className="flex-1 overflow-y-auto mt-0">
-          <div className="p-5">
+        {activeSection === "health" && (
+          <div className="flex-1 overflow-y-auto p-5">
             {managed.health ? (
               <Section title="Agent Health">
                 <FieldRow
@@ -571,18 +612,9 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   label="Executors"
                   value={`${managed.health.onlineExecutorCount} / ${managed.health.executorCount} online`}
                 />
-                <FieldRow
-                  label="Queued Tasks"
-                  value={String(managed.health.queuedTasks)}
-                />
-                <FieldRow
-                  label="Queued Messages"
-                  value={String(managed.health.queuedMessages)}
-                />
-                <FieldRow
-                  label="Stuck"
-                  value={String(managed.health.stuckCount)}
-                />
+                <FieldRow label="Queued Tasks" value={String(managed.health.queuedTasks)} />
+                <FieldRow label="Queued Messages" value={String(managed.health.queuedMessages)} />
+                <FieldRow label="Stuck" value={String(managed.health.stuckCount)} />
               </Section>
             ) : (
               <div className="text-center text-muted-foreground py-10 text-sm">
@@ -590,8 +622,8 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
               </div>
             )}
           </div>
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 }
