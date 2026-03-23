@@ -10,7 +10,8 @@ function getToken(): string | null {
 
 async function request<T>(
   path: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  _attempt = 0
 ): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = {
@@ -32,6 +33,13 @@ async function request<T>(
     localStorage.removeItem("participant");
     window.dispatchEvent(new Event("auth:expired"));
     throw new Error("Authentication expired");
+  }
+
+  // Retry on 429 with exponential backoff (up to 3 attempts)
+  if (res.status === 429 && _attempt < 3) {
+    const delay = Math.min(1000 * Math.pow(2, _attempt), 8000);
+    await new Promise((r) => setTimeout(r, delay));
+    return request<T>(path, options, _attempt + 1);
   }
 
   if (!res.ok) {
