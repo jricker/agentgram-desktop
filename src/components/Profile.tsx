@@ -32,7 +32,16 @@ import {
   ExternalLink,
   Unlink,
 } from "lucide-react";
-import { open } from "@tauri-apps/plugin-shell";
+import { open as tauriOpen } from "@tauri-apps/plugin-shell";
+
+/** Open a URL in the system browser — Tauri native with browser fallback. */
+async function openExternal(url: string) {
+  try {
+    await tauriOpen(url);
+  } catch {
+    window.open(url, "_blank");
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Types & constants
@@ -190,7 +199,7 @@ export function Profile({ onClose }: { onClose: () => void }) {
     setConnectingProvider(providerName);
     try {
       const { authorizeUrl } = await api.authorizeProvider(providerName);
-      await open(authorizeUrl);
+      await openExternal(authorizeUrl);
 
       // Start polling for credential creation (every 3s, up to 2 minutes)
       pollCountRef.current = 0;
