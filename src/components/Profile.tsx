@@ -31,8 +31,11 @@ import {
   AlertCircle,
   ExternalLink,
   Unlink,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
+import { PROVIDERS } from "../lib/models";
 
 /** Open a URL in the system browser — Tauri native with window.open fallback. */
 function openExternal(url: string) {
@@ -399,6 +402,13 @@ export function Profile({ onClose }: { onClose: () => void }) {
           <Separator />
 
           {/* ============================================================= */}
+          {/* LLM API KEYS SECTION                                          */}
+          {/* ============================================================= */}
+          <LlmApiKeysSection />
+
+          <Separator />
+
+          {/* ============================================================= */}
           {/* CONNECTED ACCOUNTS SECTION                                    */}
           {/* ============================================================= */}
           <section>
@@ -574,6 +584,115 @@ export function Profile({ onClose }: { onClose: () => void }) {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LLM API Keys — global defaults per provider
+// ---------------------------------------------------------------------------
+
+type LlmDefaults = Record<string, { apiKey: string; defaultModel: string }>;
+
+function loadLlmDefaults(): LlmDefaults {
+  const raw = localStorage.getItem("llmDefaults");
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function saveLlmDefaults(defaults: LlmDefaults) {
+  localStorage.setItem("llmDefaults", JSON.stringify(defaults));
+}
+
+function LlmApiKeysSection() {
+  const [defaults, setDefaults] = useState<LlmDefaults>(loadLlmDefaults);
+  const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const [saved, setSaved] = useState<string | null>(null);
+
+  const providersWithKeys = PROVIDERS.filter((p) => p.requiresLlmKey);
+
+  const handleChange = (providerId: string, value: string) => {
+    const updated = { ...defaults };
+    if (value) {
+      updated[providerId] = {
+        apiKey: value,
+        defaultModel: defaults[providerId]?.defaultModel || "",
+      };
+    } else {
+      delete updated[providerId];
+    }
+    setDefaults(updated);
+    saveLlmDefaults(updated);
+    setSaved(providerId);
+    setTimeout(() => setSaved(null), 1500);
+  };
+
+  const toggleVisibility = (providerId: string) => {
+    setVisibility((v) => ({ ...v, [providerId]: !v[providerId] }));
+  };
+
+  return (
+    <section>
+      <SectionHeader
+        title="LLM API Keys"
+        subtitle="Global keys used by all agents unless overridden per-agent"
+      />
+      <div className="space-y-3">
+        {providersWithKeys.map((provider) => {
+          const current = defaults[provider.id]?.apiKey || "";
+          const visible = visibility[provider.id] || false;
+
+          return (
+            <div key={provider.id} className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs">{provider.label}</Label>
+                {saved === provider.id && (
+                  <Badge variant="secondary" className="text-[10px] py-0">
+                    <Check className="w-3 h-3 mr-0.5" />
+                    Saved
+                  </Badge>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  type={visible ? "text" : "password"}
+                  value={current}
+                  onChange={(e) => handleChange(provider.id, e.target.value)}
+                  placeholder={
+                    provider.id === "anthropic"
+                      ? "sk-ant-..."
+                      : provider.id === "openai"
+                        ? "sk-..."
+                        : "API key"
+                  }
+                  className="flex-1 font-mono text-xs"
+                />
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => toggleVisibility(provider.id)}
+                >
+                  {visible ? (
+                    <EyeOff className="w-4 h-4" />
+                  ) : (
+                    <Eye className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+        <p className="text-xs text-muted-foreground">
+          Set a key here once and every agent using that provider will use it
+          automatically. To use a different key for a specific agent, set it in
+          that agent's config — it will override the global key.
+        </p>
+      </div>
+    </section>
   );
 }
 

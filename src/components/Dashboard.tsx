@@ -60,7 +60,20 @@ export function Dashboard() {
         ? m.agent.displayName.toLowerCase().includes(search.toLowerCase())
         : true
     )
-    .sort((a, b) => a.agent.displayName.localeCompare(b.agent.displayName));
+    .sort((a, b) => {
+      // Running agents first
+      const aRunning = a.processStatus === "running" ? 0 : 1;
+      const bRunning = b.processStatus === "running" ? 0 : 1;
+      if (aRunning !== bRunning) return aRunning - bRunning;
+
+      // Orchestrators before other types
+      const aOrch = a.agent.agentType === "orchestrator" ? 0 : 1;
+      const bOrch = b.agent.agentType === "orchestrator" ? 0 : 1;
+      if (aOrch !== bOrch) return aOrch - bOrch;
+
+      // Alphabetical
+      return a.agent.displayName.localeCompare(b.agent.displayName);
+    });
 
   const selectedAgent = selectedAgentId ? agents[selectedAgentId] : null;
 

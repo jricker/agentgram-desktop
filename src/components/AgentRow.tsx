@@ -209,9 +209,24 @@ export function AgentRow({
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <p className="text-sm font-medium truncate">
-              {managed.agent.displayName}
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-sm font-medium truncate">
+                {managed.agent.displayName}
+              </p>
+              {managed.agent.agentType && managed.agent.agentType !== "worker" && (
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    "text-[10px] px-1.5 py-0 flex-shrink-0",
+                    managed.agent.agentType === "orchestrator" && "bg-violet-500/10 text-violet-500 border-violet-500/20",
+                    managed.agent.agentType === "reviewer" && "bg-amber-500/10 text-amber-500 border-amber-500/20",
+                    managed.agent.agentType === "observer" && "bg-cyan-500/10 text-cyan-500 border-cyan-500/20"
+                  )}
+                >
+                  {managed.agent.agentType}
+                </Badge>
+              )}
+            </div>
             {managed.agent.description && (
               <p className="text-xs text-muted-foreground truncate">
                 {managed.agent.description}
