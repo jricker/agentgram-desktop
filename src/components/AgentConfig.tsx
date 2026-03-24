@@ -751,11 +751,11 @@ function AgentHeader({
 
   return (
     <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-shrink-0">
-      {/* Clickable avatar */}
+      {/* Clickable avatar with always-visible camera badge */}
       <button
         onClick={handleAvatarClick}
         disabled={uploadingAvatar}
-        className="relative group flex-shrink-0"
+        className="relative flex-shrink-0"
         title="Change avatar"
       >
         <Avatar className="h-9 w-9 rounded-lg">
@@ -764,8 +764,8 @@ function AgentHeader({
             {agent.displayName.charAt(0).toUpperCase()}
           </AvatarFallback>
         </Avatar>
-        <div className="absolute inset-0 rounded-lg bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <Camera className="w-3.5 h-3.5 text-white" />
+        <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center border-2 border-card">
+          <Camera className="w-2 h-2 text-primary-foreground" />
         </div>
       </button>
 
@@ -797,23 +797,17 @@ function AgentHeader({
             </Button>
           </div>
         ) : (
-          <div className="flex items-center gap-1.5 group/name">
-            <p
-              className="text-sm font-semibold truncate cursor-pointer"
-              onClick={() => {
-                setName(agent.displayName);
-                setEditingName(true);
-              }}
-            >
+          <div
+            className="flex items-center gap-1.5 cursor-pointer"
+            onClick={() => {
+              setName(agent.displayName);
+              setEditingName(true);
+            }}
+          >
+            <p className="text-sm font-semibold truncate">
               {agent.displayName}
             </p>
-            <Pencil
-              className="w-3 h-3 text-muted-foreground opacity-0 group-hover/name:opacity-100 transition-opacity cursor-pointer"
-              onClick={() => {
-                setName(agent.displayName);
-                setEditingName(true);
-              }}
-            />
+            <Pencil className="w-3 h-3 text-muted-foreground flex-shrink-0" />
           </div>
         )}
         <p className="text-[11px] text-muted-foreground truncate">
