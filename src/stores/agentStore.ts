@@ -13,6 +13,7 @@ interface AgentConfig {
   dangerouslySkipPermissions: boolean;
   autoRestart: boolean;
   autoStart: boolean;
+  addDirs: string[];
 }
 
 export interface ManagedAgent {
@@ -63,6 +64,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   dangerouslySkipPermissions: false,
   autoRestart: true,
   autoStart: false,
+  addDirs: [],
 };
 
 function loadLocalConfig(agentId: string): Partial<AgentConfig> {
@@ -301,6 +303,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           historyLimit: managed.config.historyLimit,
           executionMode: managed.config.executionMode,
           dangerouslySkipPermissions: managed.config.dangerouslySkipPermissions,
+          addDirs: managed.config.addDirs.length > 0 ? managed.config.addDirs : undefined,
         },
       });
 

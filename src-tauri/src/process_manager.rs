@@ -43,6 +43,7 @@ pub struct StartAgentArgs {
     pub execution_mode: Option<String>,
     pub dangerously_skip_permissions: Option<bool>,
     pub api_url: Option<String>,
+    pub add_dirs: Option<Vec<String>>,
 }
 
 struct RunningAgent {
@@ -198,6 +199,12 @@ pub fn start_agent(
     }
     if args.dangerously_skip_permissions.unwrap_or(false) {
         cmd.arg("--dangerously-skip-permissions");
+    }
+    if let Some(ref dirs) = args.add_dirs {
+        let valid: Vec<&String> = dirs.iter().filter(|d| !d.is_empty()).collect();
+        if !valid.is_empty() {
+            cmd.env("CLAUDE_CLI_ADD_DIRS", valid.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(","));
+        }
     }
 
     cmd.stdout(Stdio::piped());

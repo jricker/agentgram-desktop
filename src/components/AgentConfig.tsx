@@ -66,6 +66,7 @@ import {
   Camera,
   Pencil,
   Check,
+  FolderOpen,
 } from "lucide-react";
 import {
   Dialog,
@@ -561,6 +562,57 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                 </div>
               </CollapsibleContent>
             </Collapsible>
+
+            {/* Working Directories (Claude CLI only) */}
+            {config.backend === "claude_cli" && (
+              <Section title="Working Directories">
+                <p className="text-xs text-muted-foreground mb-2">
+                  Additional directories this agent can access via Claude Code.
+                </p>
+                <div className="space-y-1.5">
+                  {config.addDirs.map((dir, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <FolderOpen className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                      <span className="text-xs font-mono truncate flex-1">{dir}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 flex-shrink-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => {
+                          const updated = config.addDirs.filter((_, j) => j !== i);
+                          updateConfig(agent.id, { addDirs: updated });
+                        }}
+                      >
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={async () => {
+                      try {
+                        const { open } = await import("@tauri-apps/plugin-dialog");
+                        const selected = await open({ directory: true, multiple: false });
+                        if (selected && typeof selected === "string") {
+                          updateConfig(agent.id, { addDirs: [...config.addDirs, selected] });
+                        }
+                      } catch {
+                        // Fallback: prompt for path manually
+                        const path = window.prompt("Enter directory path:");
+                        if (path?.trim()) {
+                          updateConfig(agent.id, { addDirs: [...config.addDirs, path.trim()] });
+                        }
+                      }
+                    }}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 mr-1.5" />
+                    Add Directory
+                  </Button>
+                </div>
+              </Section>
+            )}
 
             {/* Danger Zone */}
             <DangerZone agent={agent} onDeleted={() => selectAgent(null)} />
