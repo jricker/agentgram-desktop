@@ -63,7 +63,7 @@ export function AgentTemplates({ managed }: AgentTemplatesProps) {
     const dt = { ...(sc.detail_templates || {}), [template.name]: template.fields };
     try {
       await updateAgent(agent.id, {
-        structured_capabilities: { ...sc, detail_templates: dt },
+        structuredCapabilities: { ...sc, detail_templates: dt },
       });
       await fetchAgents();
       setShowAdd(false);
@@ -78,7 +78,7 @@ export function AgentTemplates({ managed }: AgentTemplatesProps) {
     delete dt[name];
     try {
       await updateAgent(agent.id, {
-        structured_capabilities: { ...sc, detail_templates: dt },
+        structuredCapabilities: { ...sc, detail_templates: dt },
       });
       await fetchAgents();
     } catch (e) {
