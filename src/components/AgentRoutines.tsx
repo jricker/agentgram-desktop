@@ -43,12 +43,7 @@ const HOURS = Array.from({ length: 24 }, (_, i) => ({
   label: i === 0 ? "12:00 AM" : i < 12 ? `${i}:00 AM` : i === 12 ? "12:00 PM" : `${i - 12}:00 PM`,
 }));
 
-const MINUTES = [
-  { value: "0", label: ":00" },
-  { value: "15", label: ":15" },
-  { value: "30", label: ":30" },
-  { value: "45", label: ":45" },
-];
+// Minutes are entered directly as a number input (0-59) for fine-grained control
 
 const DAYS_OF_WEEK = [
   { value: "*", label: "Every day" },
@@ -516,16 +511,17 @@ function CreateRoutineDialog({
           {frequency === "hourly" && (
             <div className="space-y-1.5">
               <Label className="text-xs">At minute</Label>
-              <Select value={cronMinute} onValueChange={(v) => setCronMinute(v ?? "0")}>
-                <SelectTrigger className="w-24">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MINUTES.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">:</span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={cronMinute}
+                  onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
+                  className="w-16 text-center"
+                />
+              </div>
             </div>
           )}
 

@@ -124,6 +124,36 @@ export async function deleteAgent(id: string): Promise<void> {
   await request(`/api/agents/${id}`, { method: "DELETE" });
 }
 
+export async function deleteAgentPermanently(
+  id: string,
+  confirmName: string
+): Promise<void> {
+  await request(`/api/agents/${id}/delete-permanent`, {
+    method: "POST",
+    body: JSON.stringify({ confirmName }),
+  });
+}
+
+// Connections
+export async function listConnections(): Promise<{ connections: Connection[] }> {
+  return request("/api/connections");
+}
+
+export async function revokeConnection(id: string): Promise<void> {
+  await request(`/api/connections/${id}`, { method: "DELETE" });
+}
+
+export interface Connection {
+  id: string;
+  requesterId: string;
+  agentId: string;
+  ownerId: string;
+  status: string;
+  requesterName?: string;
+  agentName?: string;
+  insertedAt: string;
+}
+
 export async function regenerateApiKey(
   id: string
 ): Promise<{ agent: Agent; apiKey: string }> {

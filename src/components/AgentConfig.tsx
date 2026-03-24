@@ -1,5 +1,12 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
+import {
+  deleteAgent,
+  deleteAgentPermanently,
+  listConnections,
+  revokeConnection,
+  type Connection,
+} from "../lib/api";
 import { LogViewer } from "./LogViewer";
 import { SoulEditor } from "./SoulEditor";
 import {
@@ -51,7 +58,16 @@ import {
   LayoutTemplate,
   Palette,
   Timer,
+  Trash2,
+  AlertTriangle,
+  Unlink,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AgentSkills } from "./AgentSkills";
 import { AgentTemplates } from "./AgentTemplates";
 import { AgentCanvas } from "./AgentCanvas";
@@ -546,6 +562,9 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                 </div>
               </CollapsibleContent>
             </Collapsible>
+
+            {/* Danger Zone */}
+            <DangerZone agent={agent} onDeleted={() => selectAgent(null)} />
           </div>
         )}
 
@@ -657,5 +676,208 @@ function FieldRow({
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-sm">{value}</span>
     </div>
+  );
+}
+
+// --- Danger Zone ---
+
+function DangerZone({
+  agent,
+  onDeleted,
+}: {
+  agent: { id: string; displayName: string; metadata?: Record<string, unknown> };
+  onDeleted: () => void;
+}) {
+  const { fetchAgents, stopAgent } = useAgentStore();
+  const [showDelete, setShowDelete] = useState(false);
+  const [showConnections, setShowConnections] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [deleting, setDeleting] = useState(false);
+  const [deactivating, setDeactivating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [loadingConns, setLoadingConns] = useState(false);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const handleDeactivate = async () => {
+    setDeactivating(true);
+    setError(null);
+    try {
+      await stopAgent(agent.id).catch(() => {});
+      await deleteAgent(agent.id);
+      await fetchAgents();
+      onDeleted();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to deactivate");
+    } finally {
+      setDeactivating(false);
+    }
+  };
+
+  const handleDeletePermanently = async () => {
+    if (confirmName !== agent.displayName) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      await stopAgent(agent.id).catch(() => {});
+      await deleteAgentPermanently(agent.id, confirmName);
+      await fetchAgents();
+      onDeleted();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const fetchConnections = useCallback(async () => {
+    setLoadingConns(true);
+    try {
+      const { connections: conns } = await listConnections();
+      // Filter to connections involving this agent
+      const relevant = conns.filter(
+        (c) => c.agentId === agent.id || c.requesterId === agent.id
+      );
+      setConnections(relevant);
+    } catch {
+      setConnections([]);
+    } finally {
+      setLoadingConns(false);
+    }
+  }, [agent.id]);
+
+  const handleRevoke = async (connId: string) => {
+    setRevokingId(connId);
+    try {
+      await revokeConnection(connId);
+      setConnections((prev) => prev.filter((c) => c.id !== connId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to revoke");
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  return (
+    <>
+      <Separator className="my-2" />
+      <Section title="Danger Zone">
+        <div className="space-y-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start text-muted-foreground"
+            onClick={() => {
+              setShowConnections(true);
+              fetchConnections();
+            }}
+          >
+            <Unlink className="w-3.5 h-3.5 mr-2" />
+            Manage Connections
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start text-warning hover:text-warning"
+            onClick={handleDeactivate}
+            disabled={deactivating}
+          >
+            <AlertTriangle className="w-3.5 h-3.5 mr-2" />
+            {deactivating ? "Deactivating..." : "Deactivate Agent"}
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start text-destructive hover:text-destructive"
+            onClick={() => setShowDelete(true)}
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-2" />
+            Delete Permanently
+          </Button>
+        </div>
+      </Section>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDelete} onOpenChange={setShowDelete}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Agent Permanently</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete <strong>{agent.displayName}</strong> and all
+              associated data. This action cannot be undone.
+            </p>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">
+                Type <strong>{agent.displayName}</strong> to confirm
+              </label>
+              <Input
+                value={confirmName}
+                onChange={(e) => setConfirmName(e.target.value)}
+                placeholder={agent.displayName}
+                className="font-mono text-sm"
+              />
+            </div>
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <Button
+              variant="destructive"
+              className="w-full"
+              disabled={confirmName !== agent.displayName || deleting}
+              onClick={handleDeletePermanently}
+            >
+              {deleting ? "Deleting..." : "Delete Permanently"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Connections Dialog */}
+      <Dialog open={showConnections} onOpenChange={setShowConnections}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Connections</DialogTitle>
+          </DialogHeader>
+          {loadingConns ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              Loading...
+            </p>
+          ) : connections.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">
+              No connections for this agent.
+            </p>
+          ) : (
+            <div className="space-y-1 max-h-60 overflow-y-auto">
+              {connections.map((conn) => (
+                <div
+                  key={conn.id}
+                  className="flex items-center justify-between p-2.5 rounded-lg border"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">
+                      {conn.agentName || conn.requesterName || "Unknown"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {conn.status}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    disabled={revokingId === conn.id}
+                    onClick={() => handleRevoke(conn.id)}
+                  >
+                    {revokingId === conn.id ? "..." : "Disconnect"}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
