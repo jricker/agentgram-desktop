@@ -141,16 +141,16 @@ export function normalizeModelName(raw: string): string | null {
 
 export function formatModelLabel(
   rawModel: string | undefined | null,
+  _backend?: string | undefined | null,
+): string | null {
+  return normalizeModelName(rawModel || "");
+}
+
+export function formatBackendLabel(
   backend: string | undefined | null,
 ): string | null {
-  const model = normalizeModelName(rawModel || "");
-  if (!model) return null;
-  const prefix = backend ? BACKEND_DISPLAY_NAMES[backend] : null;
-  if (prefix) {
-    if (model === prefix) return prefix;
-    return `${prefix} · ${model}`;
-  }
-  return model;
+  if (!backend) return null;
+  return BACKEND_DISPLAY_NAMES[backend] || backend;
 }
 
 export function providerRequiresLlmKey(providerId: string): boolean {

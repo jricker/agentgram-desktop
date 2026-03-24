@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
-import { formatModelLabel } from "../lib/models";
+import { formatModelLabel, formatBackendLabel } from "../lib/models";
 import { formatUptime, cn } from "../lib/utils";
 import { Play, Square, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -187,8 +187,9 @@ export function AgentRow({
   const canStart =
     managed.apiKey != null && managed.processStatus !== "starting";
   const modelLabel =
-    formatModelLabel(managed.config.model, managed.config.backend) ||
+    formatModelLabel(managed.config.model) ||
     managed.config.model;
+  const backendLabel = formatBackendLabel(managed.config.backend);
 
   return (
     <div
@@ -199,7 +200,7 @@ export function AgentRow({
       onClick={onSelect}
     >
       {/* Main row */}
-      <div className="grid grid-cols-[1fr_140px_120px_80px_60px] gap-4 px-5 py-2.5 items-center">
+      <div className="grid grid-cols-[1fr_100px_100px_120px_80px_60px] gap-3 px-5 py-2.5 items-center">
         {/* Agent */}
         <div className="flex items-center gap-2.5 min-w-0">
           <Avatar className="h-8 w-8 rounded-lg shrink-0">
@@ -233,6 +234,11 @@ export function AgentRow({
               </p>
             )}
           </div>
+        </div>
+
+        {/* Backend */}
+        <div className="truncate">
+          <span className="text-xs text-muted-foreground">{backendLabel || "—"}</span>
         </div>
 
         {/* Model */}

@@ -9,6 +9,7 @@ import {
   createSkill,
   importSkill,
   installMarketplaceSkill,
+  deleteSkill,
 } from "../lib/api";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -42,6 +43,7 @@ import {
   Check,
   Pencil,
   Unlink,
+  Trash2,
 } from "lucide-react";
 
 interface AgentSkillsProps {
@@ -59,6 +61,8 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
   const [viewSkill, setViewSkill] = useState<Skill | null>(null);
   const [editingSkill, setEditingSkill] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchSkills = useCallback(async () => {
     try {
@@ -104,6 +108,20 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
       await fetchSkills();
     } catch (e) {
       console.error("Failed to unassign skill:", e);
+    }
+  };
+
+  const handleDelete = async (skill: Skill) => {
+    setDeleting(true);
+    try {
+      await deleteSkill(skill.id);
+      setViewSkill(null);
+      setConfirmingDelete(false);
+      await fetchSkills();
+    } catch (e) {
+      console.error("Failed to delete skill:", e);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -183,7 +201,7 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
       )}
 
       {/* View/Edit Skill Dialog */}
-      <Dialog open={!!viewSkill} onOpenChange={() => { setViewSkill(null); setEditingSkill(false); setCopied(false); }}>
+      <Dialog open={!!viewSkill} onOpenChange={() => { setViewSkill(null); setEditingSkill(false); setCopied(false); setConfirmingDelete(false); }}>
         <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{viewSkill?.displayName}</DialogTitle>
@@ -224,12 +242,45 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="flex-1 text-destructive hover:text-destructive"
+                  className="flex-1 text-muted-foreground hover:text-foreground"
                   onClick={() => handleUnassign(viewSkill)}
                 >
-                  <Unlink className="w-3.5 h-3.5 mr-1.5" /> Remove from Agent
+                  <Unlink className="w-3.5 h-3.5 mr-1.5" /> Remove
                 </Button>
               </div>
+
+              {/* Delete skill (permanently) */}
+              {confirmingDelete ? (
+                <div className="flex items-center gap-2 p-2.5 rounded-lg border border-destructive/30 bg-destructive/5">
+                  <p className="text-xs text-destructive flex-1">
+                    Permanently delete this skill? This cannot be undone.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => handleDelete(viewSkill)}
+                    disabled={deleting}
+                  >
+                    {deleting ? "Deleting..." : "Delete"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setConfirmingDelete(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full text-destructive hover:text-destructive"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Skill
+                </Button>
+              )}
 
               {/* Share button */}
               {(viewSkill.visibility === "public" || viewSkill.visibility === "unlisted") && (
