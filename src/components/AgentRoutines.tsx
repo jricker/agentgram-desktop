@@ -540,16 +540,17 @@ function CreateRoutineDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <Select value={cronMinute} onValueChange={(v) => setCronMinute(v ?? "0")}>
-                    <SelectTrigger className="w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MINUTES.map((m) => (
-                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">:</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={cronMinute}
+                      onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
+                      className="w-16 text-center"
+                    />
+                  </div>
                 </div>
               </div>
               {frequency === "weekly" && (
@@ -797,10 +798,17 @@ function EditRoutineDialog({
           {frequency === "hourly" && (
             <div className="space-y-1.5">
               <Label className="text-xs">At minute</Label>
-              <Select value={cronMinute} onValueChange={(v) => setCronMinute(v ?? "0")}>
-                <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
-                <SelectContent>{MINUTES.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
-              </Select>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">:</span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={cronMinute}
+                  onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
+                  className="w-16 text-center"
+                />
+              </div>
             </div>
           )}
           {(frequency === "daily" || frequency === "weekly") && (
@@ -812,10 +820,17 @@ function EditRoutineDialog({
                     <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
                     <SelectContent>{HOURS.map((h) => <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>)}</SelectContent>
                   </Select>
-                  <Select value={cronMinute} onValueChange={(v) => setCronMinute(v ?? "0")}>
-                    <SelectTrigger className="w-20"><SelectValue /></SelectTrigger>
-                    <SelectContent>{MINUTES.map((m) => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}</SelectContent>
-                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">:</span>
+                    <Input
+                      type="number"
+                      min={0}
+                      max={59}
+                      value={cronMinute}
+                      onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
+                      className="w-16 text-center"
+                    />
+                  </div>
                 </div>
               </div>
               {frequency === "weekly" && (
