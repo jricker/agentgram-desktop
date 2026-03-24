@@ -5,6 +5,8 @@ import {
   deleteAgentPermanently,
   listConnections,
   revokeConnection,
+  presignAvatarUpload,
+  updateAgent,
   type Connection,
 } from "../lib/api";
 import { LogViewer } from "./LogViewer";
@@ -61,6 +63,9 @@ import {
   Trash2,
   AlertTriangle,
   Unlink,
+  Camera,
+  Pencil,
+  Check,
 } from "lucide-react";
 import {
   Dialog,
@@ -197,14 +202,8 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
 
       {/* Content panel */}
       <div className="flex-1 flex flex-col min-h-0">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-border flex items-center gap-2 flex-shrink-0">
-          <p className="text-sm font-semibold truncate">{agent.displayName}</p>
-          <span className="text-xs text-muted-foreground">·</span>
-          <p className="text-xs text-muted-foreground truncate">
-            {sections.find((s) => s.value === activeSection)?.label}
-          </p>
-        </div>
+        {/* Header — editable name + avatar */}
+        <AgentHeader agent={agent} sectionLabel={sections.find((s) => s.value === activeSection)?.label || ""} />
 
         {activeSection === "config" && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
@@ -679,6 +678,152 @@ function FieldRow({
   );
 }
 
+// --- Agent Header (editable name + avatar) ---
+
+function AgentHeader({
+  agent,
+  sectionLabel,
+}: {
+  agent: { id: string; displayName: string; avatarUrl?: string; description?: string; agentType?: string };
+  sectionLabel: string;
+}) {
+  const { fetchAgents } = useAgentStore();
+  const [editingName, setEditingName] = useState(false);
+  const [name, setName] = useState(agent.displayName);
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handleSaveName = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || trimmed === agent.displayName) {
+      setEditingName(false);
+      setName(agent.displayName);
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateAgent(agent.id, { displayName: trimmed });
+      await fetchAgents();
+      setEditingName(false);
+    } catch {
+      setName(agent.displayName);
+      setEditingName(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAvatarClick = async () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+
+      setUploadingAvatar(true);
+      try {
+        const filename = `avatars/${agent.id}.jpg`;
+        const contentType = "image/jpeg";
+
+        // Get presigned URL
+        const { url: uploadUrl, publicUrl } = await presignAvatarUpload(filename, contentType);
+
+        // Upload the file
+        await fetch(uploadUrl, {
+          method: "PUT",
+          body: file,
+          headers: { "Content-Type": contentType },
+        });
+
+        // Update agent with new avatar URL
+        const newUrl = `${publicUrl}?t=${Date.now()}`;
+        await updateAgent(agent.id, { avatarUrl: newUrl });
+        await fetchAgents();
+      } catch (e) {
+        console.error("Avatar upload failed:", e);
+      } finally {
+        setUploadingAvatar(false);
+      }
+    };
+    input.click();
+  };
+
+  return (
+    <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-shrink-0">
+      {/* Clickable avatar */}
+      <button
+        onClick={handleAvatarClick}
+        disabled={uploadingAvatar}
+        className="relative group flex-shrink-0"
+        title="Change avatar"
+      >
+        <Avatar className="h-9 w-9 rounded-lg">
+          {agent.avatarUrl && <AvatarImage src={agent.avatarUrl} className="rounded-lg" />}
+          <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
+            {agent.displayName.charAt(0).toUpperCase()}
+          </AvatarFallback>
+        </Avatar>
+        <div className="absolute inset-0 rounded-lg bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+          <Camera className="w-3.5 h-3.5 text-white" />
+        </div>
+      </button>
+
+      {/* Editable name */}
+      <div className="flex-1 min-w-0">
+        {editingName ? (
+          <div className="flex items-center gap-1.5">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="h-7 text-sm font-semibold"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveName();
+                if (e.key === "Escape") {
+                  setName(agent.displayName);
+                  setEditingName(false);
+                }
+              }}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 flex-shrink-0"
+              onClick={handleSaveName}
+              disabled={saving}
+            >
+              <Check className="w-3.5 h-3.5 text-primary" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 group/name">
+            <p
+              className="text-sm font-semibold truncate cursor-pointer"
+              onClick={() => {
+                setName(agent.displayName);
+                setEditingName(true);
+              }}
+            >
+              {agent.displayName}
+            </p>
+            <Pencil
+              className="w-3 h-3 text-muted-foreground opacity-0 group-hover/name:opacity-100 transition-opacity cursor-pointer"
+              onClick={() => {
+                setName(agent.displayName);
+                setEditingName(true);
+              }}
+            />
+          </div>
+        )}
+        <p className="text-[11px] text-muted-foreground truncate">
+          {sectionLabel}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // --- Danger Zone ---
 
 function DangerZone({
@@ -721,6 +866,7 @@ function DangerZone({
     try {
       await stopAgent(agent.id).catch(() => {});
       await deleteAgentPermanently(agent.id, confirmName);
+      setShowDelete(false);
       await fetchAgents();
       onDeleted();
     } catch (e) {

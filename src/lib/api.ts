@@ -154,6 +154,16 @@ export interface Connection {
   insertedAt: string;
 }
 
+export async function presignAvatarUpload(
+  filename: string,
+  contentType: string
+): Promise<{ url: string; publicUrl: string }> {
+  return request("/api/storage/presign", {
+    method: "POST",
+    body: JSON.stringify({ filename, contentType }),
+  });
+}
+
 export async function regenerateApiKey(
   id: string
 ): Promise<{ agent: Agent; apiKey: string }> {
