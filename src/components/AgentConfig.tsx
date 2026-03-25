@@ -204,7 +204,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
       {/* Content panel */}
       <div className="flex-1 flex flex-col min-h-0">
         {/* Header — editable name + avatar */}
-        <AgentHeader agent={agent} sectionLabel={sections.find((s) => s.value === activeSection)?.label || ""} />
+        <AgentHeader agent={agent} />
 
         {activeSection === "config" && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
@@ -734,14 +734,14 @@ function FieldRow({
 
 function AgentHeader({
   agent,
-  sectionLabel,
 }: {
   agent: { id: string; displayName: string; avatarUrl?: string; description?: string; agentType?: string };
-  sectionLabel: string;
 }) {
   const { fetchAgents } = useAgentStore();
   const [editingName, setEditingName] = useState(false);
   const [name, setName] = useState(agent.displayName);
+  const [editingDesc, setEditingDesc] = useState(false);
+  const [desc, setDesc] = useState(agent.description || "");
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
@@ -760,6 +760,26 @@ function AgentHeader({
     } catch {
       setName(agent.displayName);
       setEditingName(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSaveDesc = async () => {
+    const trimmed = desc.trim();
+    if (trimmed === (agent.description || "")) {
+      setEditingDesc(false);
+      setDesc(agent.description || "");
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateAgent(agent.id, { description: trimmed || null });
+      await fetchAgents();
+      setEditingDesc(false);
+    } catch {
+      setDesc(agent.description || "");
+      setEditingDesc(false);
     } finally {
       setSaving(false);
     }
@@ -862,9 +882,46 @@ function AgentHeader({
             <Pencil className="w-3 h-3 text-muted-foreground flex-shrink-0" />
           </div>
         )}
-        <p className="text-[11px] text-muted-foreground truncate">
-          {sectionLabel}
-        </p>
+        {editingDesc ? (
+          <div className="flex items-center gap-1.5 mt-0.5">
+            <Input
+              value={desc}
+              onChange={(e) => setDesc(e.target.value)}
+              className="h-6 text-[11px] text-muted-foreground"
+              placeholder="Add a description..."
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleSaveDesc();
+                if (e.key === "Escape") {
+                  setDesc(agent.description || "");
+                  setEditingDesc(false);
+                }
+              }}
+            />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 flex-shrink-0"
+              onClick={handleSaveDesc}
+              disabled={saving}
+            >
+              <Check className="w-3 h-3 text-primary" />
+            </Button>
+          </div>
+        ) : (
+          <div
+            className="flex items-center gap-1 cursor-pointer mt-0.5 group"
+            onClick={() => {
+              setDesc(agent.description || "");
+              setEditingDesc(true);
+            }}
+          >
+            <p className="text-[11px] text-muted-foreground truncate">
+              {agent.description || "Add description..."}
+            </p>
+            <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" />
+          </div>
+        )}
       </div>
     </div>
   );
