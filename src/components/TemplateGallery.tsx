@@ -2,13 +2,12 @@ import { useEffect, useState, useCallback } from "react";
 import { type ResponseTemplate, listResponseTemplates } from "../lib/api";
 import { TemplateCardPreview } from "./TemplateCardPreview";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
   LayoutTemplate,
-  Search,
   Lock,
   X,
+  ChevronRight,
 } from "lucide-react";
 
 interface Props {
@@ -18,13 +17,15 @@ interface Props {
 export function TemplateGallery({ onClose }: Props) {
   const [templates, setTemplates] = useState<ResponseTemplate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<ResponseTemplate | null>(null);
   const [filterType, setFilterType] = useState<string | null>(null);
 
-  const fetch = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     try {
       const { templates: list } = await listResponseTemplates();
-      setTemplates(list || []);
+      const sorted = (list || []).sort((a, b) => a.name.localeCompare(b.name));
+      setTemplates(sorted);
+      if (sorted.length > 0) setSelected(sorted[0]);
     } catch (e) {
       console.error("Failed to fetch templates:", e);
     } finally {
@@ -32,18 +33,13 @@ export function TemplateGallery({ onClose }: Props) {
     }
   }, []);
 
-  useEffect(() => { fetch(); }, [fetch]);
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
   const resultTypes = [...new Set(templates.map(t => t.resultType))].sort();
 
-  const filtered = templates.filter(t => {
-    if (filterType && t.resultType !== filterType) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return t.name.includes(q) || (t.description || "").toLowerCase().includes(q) || t.resultType.includes(q);
-    }
-    return true;
-  });
+  const filtered = filterType
+    ? templates.filter(t => t.resultType === filterType)
+    : templates;
 
   if (loading) {
     return (
@@ -56,89 +52,135 @@ export function TemplateGallery({ onClose }: Props) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 border-b bg-muted/30">
-        <div className="flex items-center gap-3">
-          <LayoutTemplate className="w-5 h-5 text-primary" />
-          <div>
-            <h2 className="text-sm font-semibold">Template Gallery</h2>
-            <p className="text-xs text-muted-foreground">
-              {templates.length} templates — preview with sample data
-            </p>
-          </div>
+      <div className="flex items-center justify-between px-4 py-2.5 border-b bg-muted/30">
+        <div className="flex items-center gap-2.5">
+          <LayoutTemplate className="w-4 h-4 text-primary" />
+          <h2 className="text-sm font-semibold">Template Gallery</h2>
+          <span className="text-xs text-muted-foreground">{templates.length} templates</span>
         </div>
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose}>
+        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
           <X className="w-4 h-4" />
         </Button>
       </div>
 
-      {/* Filters */}
-      <div className="flex items-center gap-2 px-5 py-3 border-b">
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
-          <Input
-            placeholder="Search templates..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="pl-8 h-8 text-xs"
-          />
-        </div>
-        <div className="flex gap-1">
-          <Badge
-            variant={filterType === null ? "default" : "outline"}
-            className="cursor-pointer text-[10px]"
-            onClick={() => setFilterType(null)}
-          >
-            All
-          </Badge>
-          {resultTypes.map(type => (
+      {/* Type filter tabs */}
+      <div className="flex items-center gap-1 px-4 py-2 border-b overflow-x-auto">
+        <Badge
+          variant={filterType === null ? "default" : "outline"}
+          className="cursor-pointer text-[10px] shrink-0"
+          onClick={() => setFilterType(null)}
+        >
+          All ({templates.length})
+        </Badge>
+        {resultTypes.map(type => {
+          const count = templates.filter(t => t.resultType === type).length;
+          return (
             <Badge
               key={type}
               variant={filterType === type ? "default" : "outline"}
-              className="cursor-pointer text-[10px]"
+              className="cursor-pointer text-[10px] shrink-0"
               onClick={() => setFilterType(filterType === type ? null : type)}
             >
-              {type}
+              {type} ({count})
             </Badge>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
-      {/* Gallery grid */}
-      <div className="flex-1 overflow-y-auto p-5">
-        {filtered.length === 0 ? (
-          <div className="text-center py-12 text-sm text-muted-foreground">
-            No templates match your search.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            {filtered.map(template => (
-              <div key={template.id} className="space-y-2">
-                {/* Template metadata */}
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold font-mono">{template.name}</span>
-                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{template.resultType}</Badge>
-                  {template.isBuiltin && <Lock className="w-3 h-3 text-muted-foreground" />}
-                </div>
-                {template.description && (
-                  <p className="text-[11px] text-muted-foreground">{template.description}</p>
+      {/* Two-panel layout: list + preview */}
+      <div className="flex flex-1 min-h-0">
+        {/* Template list */}
+        <div className="w-56 border-r overflow-y-auto shrink-0">
+          {filtered.map(template => (
+            <button
+              key={template.id}
+              onClick={() => setSelected(template)}
+              className={`w-full text-left px-3 py-2.5 border-b transition-colors ${
+                selected?.id === template.id
+                  ? "bg-primary/8 border-l-2 border-l-primary"
+                  : "hover:bg-accent/50 border-l-2 border-l-transparent"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold font-mono truncate">{template.name}</span>
+                <ChevronRight className={`w-3 h-3 shrink-0 ${
+                  selected?.id === template.id ? "text-primary" : "text-muted-foreground/50"
+                }`} />
+              </div>
+              <div className="flex items-center gap-1.5 mt-1">
+                <Badge variant="secondary" className="text-[9px] px-1 py-0">{template.resultType}</Badge>
+                {template.isBuiltin && <Lock className="w-2.5 h-2.5 text-muted-foreground" />}
+                <span className="text-[9px] text-muted-foreground">{template.fields.length} fields</span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Preview panel */}
+        <div className="flex-1 overflow-y-auto p-5">
+          {selected ? (
+            <div className="space-y-4">
+              {/* Template info */}
+              <div>
+                <h3 className="text-base font-semibold font-mono">{selected.name}</h3>
+                {selected.description && (
+                  <p className="text-xs text-muted-foreground mt-1">{selected.description}</p>
                 )}
+                <div className="flex items-center gap-2 mt-2">
+                  <Badge variant="secondary">{selected.resultType}</Badge>
+                  {selected.isBuiltin && <Badge variant="outline">built-in</Badge>}
+                </div>
+              </div>
 
-                {/* Card preview */}
-                <TemplateCardPreview template={template} />
+              {/* Card preview */}
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Card Preview
+                </p>
+                <TemplateCardPreview template={selected} />
+              </div>
 
-                {/* Field list */}
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {template.fields.map(f => (
-                    <Badge key={f.key} variant="outline" className="text-[9px] px-1.5 py-0 font-mono">
-                      {f.key}
-                      <span className="text-muted-foreground ml-1">({f.display})</span>
-                    </Badge>
+              {/* Field schema */}
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                  Fields ({selected.fields.length})
+                </p>
+                <div className="space-y-1">
+                  {selected.fields.map(f => (
+                    <div
+                      key={f.key}
+                      className="flex items-center justify-between px-3 py-1.5 rounded border text-xs"
+                    >
+                      <span className="font-mono font-medium">{f.key}</span>
+                      <div className="flex items-center gap-2">
+                        {f.label && <span className="text-muted-foreground">{f.label}</span>}
+                        {f.icon && <span className="text-muted-foreground text-[10px]">{f.icon}</span>}
+                        <Badge variant="outline" className="text-[10px]">{f.display}</Badge>
+                        {f.color && <Badge variant="outline" className="text-[10px]">{f.color}</Badge>}
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
-            ))}
-          </div>
-        )}
+
+              {/* Sample data */}
+              {selected.sampleData && (
+                <div>
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+                    Sample Data
+                  </p>
+                  <pre className="bg-muted rounded-lg p-3 text-[10px] font-mono overflow-x-auto leading-relaxed">
+                    {JSON.stringify(selected.sampleData, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+              Select a template to preview
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

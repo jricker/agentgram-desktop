@@ -646,9 +646,10 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
             <div className="px-5 pb-5">
               <button
                 onClick={() => setShowGallery(true)}
-                className="w-full py-2.5 rounded-lg border border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
+                className="w-full py-3 rounded-lg bg-primary/10 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors flex items-center justify-center gap-2"
               >
-                Open Template Preview Gallery
+                <LayoutTemplate className="w-4 h-4" />
+                Preview All Templates
               </button>
             </div>
           </div>
