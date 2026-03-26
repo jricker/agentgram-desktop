@@ -563,7 +563,7 @@ export interface Participant {
 export interface DetailField {
   key: string;
   label?: string;
-  display: "row" | "chip" | "highlight";
+  display: "row" | "chip" | "highlight" | "body" | "sparkline" | "change";
   icon?: string;
   color?: string;
   format?: string;

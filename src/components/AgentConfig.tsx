@@ -11,6 +11,7 @@ import {
 } from "../lib/api";
 import { LogViewer } from "./LogViewer";
 import { SoulEditor } from "./SoulEditor";
+import { TemplateGallery } from "./TemplateGallery";
 import {
   PROVIDERS,
   EXECUTION_MODES,
@@ -129,6 +130,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   }, [backend]);
 
   const [activeSection, setActiveSection] = useState("config");
+  const [showGallery, setShowGallery] = useState(false);
 
   const sections = [
     { value: "config", label: "Config", icon: Settings2 },
@@ -638,9 +640,23 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
           </div>
         )}
 
-        {activeSection === "templates" && (
+        {activeSection === "templates" && !showGallery && (
           <div className="flex-1 overflow-y-auto">
             <AgentTemplates managed={managed} />
+            <div className="px-5 pb-5">
+              <button
+                onClick={() => setShowGallery(true)}
+                className="w-full py-2.5 rounded-lg border border-dashed border-primary/30 text-xs font-medium text-primary hover:bg-primary/5 transition-colors"
+              >
+                Open Template Preview Gallery
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeSection === "templates" && showGallery && (
+          <div className="flex-1 overflow-hidden">
+            <TemplateGallery onClose={() => setShowGallery(false)} />
           </div>
         )}
 
