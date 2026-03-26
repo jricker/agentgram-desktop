@@ -17,6 +17,12 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import {
   X,
   LogOut,
   User,
@@ -33,6 +39,10 @@ import {
   Unlink,
   Eye,
   EyeOff,
+  Plus,
+  Pencil,
+  Trash2,
+  Globe,
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { PROVIDERS } from "../lib/models";
@@ -83,12 +93,47 @@ const STATUS_CONFIG: Record<
   },
 };
 
+// Sidebar sections
+const SECTIONS = [
+  { value: "profile", label: "Profile", icon: User },
+  { value: "llm-keys", label: "LLM Keys", icon: Key },
+  { value: "connections", label: "Connections", icon: Link2 },
+] as const;
+
+type SectionValue = (typeof SECTIONS)[number]["value"];
+
+// ---------------------------------------------------------------------------
+// Custom API persistence
+// ---------------------------------------------------------------------------
+
+export interface CustomApi {
+  id: string;
+  name: string;
+  apiKey: string;
+  endpoint: string;
+}
+
+function loadCustomApis(): CustomApi[] {
+  const raw = localStorage.getItem("customApis");
+  if (!raw) return [];
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomApis(apis: CustomApi[]) {
+  localStorage.setItem("customApis", JSON.stringify(apis));
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
 export function Profile({ onClose }: { onClose: () => void }) {
   const { participant, logout } = useAuthStore();
+  const [activeSection, setActiveSection] = useState<SectionValue>("profile");
 
   // ---- Profile editing state ----
   const [displayName, setDisplayName] = useState(
@@ -123,6 +168,22 @@ export function Profile({ onClose }: { onClose: () => void }) {
     null
   );
   const [disconnecting, setDisconnecting] = useState(false);
+
+  // ---- Custom API state ----
+  const [customApis, setCustomApis] = useState<CustomApi[]>(loadCustomApis);
+  const [customApiDialog, setCustomApiDialog] = useState<{
+    open: boolean;
+    editing?: CustomApi;
+  }>({ open: false });
+  const [customApiForm, setCustomApiForm] = useState({
+    name: "",
+    apiKey: "",
+    endpoint: "",
+  });
+  const [customApiError, setCustomApiError] = useState<string | null>(null);
+  const [deleteCustomApiId, setDeleteCustomApiId] = useState<string | null>(
+    null
+  );
 
   // ---- Fetch providers & credentials on mount ----
   const fetchIntegrations = useCallback(async () => {
@@ -172,7 +233,6 @@ export function Profile({ onClose }: { onClose: () => void }) {
     setNameSaved(false);
     try {
       const result = await api.updateProfile({ displayName: trimmed });
-      // Update participant in auth store local storage
       const stored = localStorage.getItem("participant");
       if (stored) {
         try {
@@ -183,7 +243,6 @@ export function Profile({ onClose }: { onClose: () => void }) {
           // ignore parse errors
         }
       }
-      // Update zustand store by re-reading from localStorage
       useAuthStore.getState().restoreSession();
       setNameSaved(true);
       setTimeout(() => setNameSaved(false), 2000);
@@ -202,12 +261,10 @@ export function Profile({ onClose }: { onClose: () => void }) {
       const { authorizeUrl } = await api.authorizeProvider(providerName);
       await openExternal(authorizeUrl);
 
-      // Start polling for credential creation (every 3s, up to 2 minutes)
       pollCountRef.current = 0;
       pollRef.current = setInterval(async () => {
         pollCountRef.current += 1;
         if (pollCountRef.current > 40) {
-          // 40 * 3s = 120s = 2 minutes
           if (pollRef.current) clearInterval(pollRef.current);
           setConnectingProvider(null);
           return;
@@ -283,6 +340,63 @@ export function Profile({ onClose }: { onClose: () => void }) {
     }
   };
 
+  // ---- Custom API handlers ----
+
+  const openAddCustomApi = () => {
+    setCustomApiForm({ name: "", apiKey: "", endpoint: "" });
+    setCustomApiError(null);
+    setCustomApiDialog({ open: true });
+  };
+
+  const openEditCustomApi = (apiEntry: CustomApi) => {
+    setCustomApiForm({
+      name: apiEntry.name,
+      apiKey: apiEntry.apiKey,
+      endpoint: apiEntry.endpoint,
+    });
+    setCustomApiError(null);
+    setCustomApiDialog({ open: true, editing: apiEntry });
+  };
+
+  const handleSaveCustomApi = () => {
+    const { name, apiKey, endpoint } = customApiForm;
+    if (!name.trim()) {
+      setCustomApiError("Name is required");
+      return;
+    }
+    if (!apiKey.trim()) {
+      setCustomApiError("API key is required");
+      return;
+    }
+    if (!endpoint.trim()) {
+      setCustomApiError("Service endpoint is required");
+      return;
+    }
+
+    const entry: CustomApi = {
+      id: customApiDialog.editing?.id || crypto.randomUUID(),
+      name: name.trim(),
+      apiKey: apiKey.trim(),
+      endpoint: endpoint.trim(),
+    };
+
+    const updated = customApiDialog.editing
+      ? customApis.map((a) => (a.id === entry.id ? entry : a))
+      : [...customApis, entry];
+
+    setCustomApis(updated);
+    saveCustomApis(updated);
+    setCustomApiDialog({ open: false });
+  };
+
+  const handleDeleteCustomApi = () => {
+    if (!deleteCustomApiId) return;
+    const updated = customApis.filter((a) => a.id !== deleteCustomApiId);
+    setCustomApis(updated);
+    saveCustomApis(updated);
+    setDeleteCustomApiId(null);
+  };
+
   // ---- Helpers ----
 
   function getCredentialForProvider(
@@ -295,170 +409,278 @@ export function Profile({ onClose }: { onClose: () => void }) {
     displayName.trim() !== "" &&
     displayName.trim() !== participant?.displayName;
 
+  // Filter out "custom" provider from the backend list (we manage it ourselves)
+  const standardProviders = providers.filter(
+    (p) => p.name !== "custom" && p.name !== "custom_api"
+  );
+
   // ---- Render ----
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-5 py-4 border-b border-border flex items-center justify-between flex-shrink-0">
-        <div className="flex items-center gap-2.5">
-          <Avatar>
-            {participant?.avatarUrl ? (
-              <AvatarImage src={participant.avatarUrl} alt={participant.displayName} />
-            ) : null}
-            <AvatarFallback>
-              <User className="w-4 h-4" />
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h2 className="text-sm font-semibold">Profile & Settings</h2>
-            <p className="text-[11px] text-muted-foreground">
+    <div className="flex h-full">
+      {/* Vertical icon sidebar — matches AgentConfig */}
+      <TooltipProvider delay={300}>
+        <div className="w-12 border-r border-border bg-muted/30 flex flex-col items-center py-3 gap-1 flex-shrink-0">
+          {/* User avatar at top */}
+          <div className="mb-2">
+            <Avatar className="h-8 w-8 rounded-lg">
+              {participant?.avatarUrl && (
+                <AvatarImage src={participant.avatarUrl} className="rounded-lg" />
+              )}
+              <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
+                <User className="w-3.5 h-3.5" />
+              </AvatarFallback>
+            </Avatar>
+          </div>
+
+          <Separator className="w-6 mb-1" />
+
+          {SECTIONS.map((section) => (
+            <Tooltip key={section.value}>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={() => setActiveSection(section.value)}
+                    className={cn(
+                      "w-8 h-8 rounded-md flex items-center justify-center transition-colors",
+                      activeSection === section.value
+                        ? "bg-primary/10 text-primary"
+                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                    )}
+                  >
+                    <section.icon className="w-4 h-4" />
+                  </button>
+                }
+              />
+              <TooltipContent side="right" className="text-xs">
+                {section.label}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+
+          {/* Close button at bottom */}
+          <div className="mt-auto">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    onClick={onClose}
+                    className="w-8 h-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                }
+              />
+              <TooltipContent side="right" className="text-xs">
+                Close
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        </div>
+      </TooltipProvider>
+
+      {/* Content panel */}
+      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        {/* Header */}
+        <div className="px-5 py-3 border-b border-border flex items-center gap-2.5 flex-shrink-0">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold truncate">
+              {SECTIONS.find((s) => s.value === activeSection)?.label}
+            </h2>
+            <p className="text-[11px] text-muted-foreground truncate">
               {participant?.email}
             </p>
           </div>
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={onClose}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <X className="w-4 h-4" />
-        </Button>
-      </div>
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto">
-        <div className="p-5 space-y-8">
-          {/* ============================================================= */}
-          {/* USER PROFILE SECTION                                          */}
-          {/* ============================================================= */}
-          <section>
-            <SectionHeader title="Profile" />
-
-            <div className="space-y-4">
-              {/* Display name */}
-              <div className="space-y-1.5">
-                <Label className="text-xs">Display Name</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={displayName}
-                    onChange={(e) => {
-                      setDisplayName(e.target.value);
-                      setNameError(null);
-                      setNameSaved(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && nameChanged) handleSaveName();
-                    }}
-                    placeholder="Your display name"
-                    className="flex-1"
-                  />
-                  <Button
-                    size="sm"
-                    onClick={handleSaveName}
-                    disabled={!nameChanged || savingName}
-                  >
-                    {savingName ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : nameSaved ? (
-                      <Check className="w-3.5 h-3.5" />
-                    ) : (
-                      "Save"
-                    )}
-                  </Button>
-                </div>
-                {nameError && (
-                  <p className="text-xs text-destructive">{nameError}</p>
-                )}
-                {nameSaved && (
-                  <p className="text-xs text-success">Name updated</p>
-                )}
-              </div>
-
-              {/* Email (read-only) */}
-              <div className="space-y-1.5">
-                <Label className="text-xs">Email</Label>
+        {/* Section content */}
+        {activeSection === "profile" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            {/* Display name */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Display Name</Label>
+              <div className="flex gap-2">
                 <Input
-                  value={participant?.email ?? ""}
-                  readOnly
-                  className="text-muted-foreground bg-muted/30"
+                  value={displayName}
+                  onChange={(e) => {
+                    setDisplayName(e.target.value);
+                    setNameError(null);
+                    setNameSaved(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && nameChanged) handleSaveName();
+                  }}
+                  placeholder="Your display name"
+                  className="flex-1"
                 />
+                <Button
+                  size="sm"
+                  onClick={handleSaveName}
+                  disabled={!nameChanged || savingName}
+                >
+                  {savingName ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : nameSaved ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
               </div>
+              {nameError && (
+                <p className="text-xs text-destructive">{nameError}</p>
+              )}
+              {nameSaved && (
+                <p className="text-xs text-success">Name updated</p>
+              )}
+            </div>
 
-              {/* Sign out */}
+            {/* Email (read-only) */}
+            <div className="space-y-1.5">
+              <Label className="text-xs">Email</Label>
+              <Input
+                value={participant?.email ?? ""}
+                readOnly
+                className="text-muted-foreground bg-muted/30"
+              />
+            </div>
+
+            {/* Sign out */}
+            <Separator />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={logout}
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              Sign Out
+            </Button>
+          </div>
+        )}
+
+        {activeSection === "llm-keys" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <LlmApiKeysSection />
+          </div>
+        )}
+
+        {activeSection === "connections" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            {/* Connected Accounts */}
+            <section>
+              <SectionHeader
+                title="Connected Accounts"
+                subtitle="Link external services to enable agent integrations"
+              />
+
+              {integrationError && (
+                <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2.5 rounded-md mb-4">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                  <p>{integrationError}</p>
+                </div>
+              )}
+
+              {loadingIntegrations ? (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : standardProviders.length === 0 && customApis.length === 0 ? (
+                <div className="rounded-md border border-dashed border-border p-6 text-center">
+                  <Link2 className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    No integration providers available
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {standardProviders.map((provider) => {
+                    const credential = getCredentialForProvider(provider.name);
+                    const isConnecting = connectingProvider === provider.name;
+                    const Icon = getProviderIcon(provider.name);
+
+                    return (
+                      <ProviderCard
+                        key={provider.name}
+                        provider={provider}
+                        credential={credential}
+                        icon={Icon}
+                        isConnecting={isConnecting}
+                        onConnectOAuth={() => handleConnectOAuth(provider.name)}
+                        onConnectToken={() => handleConnectToken(provider)}
+                        onDisconnect={() =>
+                          setDisconnectProvider(provider.name)
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+
+            <Separator />
+
+            {/* Custom APIs */}
+            <section>
+              <SectionHeader
+                title="Custom APIs"
+                subtitle="Connect custom service endpoints for agent use"
+              />
+
+              {customApis.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {customApis.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-lg border border-border bg-card p-3.5"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10">
+                          <Globe className="w-4.5 h-4.5 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium truncate">
+                            {entry.name}
+                          </p>
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {entry.endpoint}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            onClick={() => openEditCustomApi(entry)}
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => setDeleteCustomApiId(entry.id)}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <Button
                 variant="outline"
                 size="sm"
-                onClick={logout}
-                className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                className="w-full"
+                onClick={openAddCustomApi}
               >
-                <LogOut className="w-3.5 h-3.5" />
-                Sign Out
+                <Plus className="w-3.5 h-3.5" />
+                Add Custom API
               </Button>
-            </div>
-          </section>
-
-          <Separator />
-
-          {/* ============================================================= */}
-          {/* LLM API KEYS SECTION                                          */}
-          {/* ============================================================= */}
-          <LlmApiKeysSection />
-
-          <Separator />
-
-          {/* ============================================================= */}
-          {/* CONNECTED ACCOUNTS SECTION                                    */}
-          {/* ============================================================= */}
-          <section>
-            <SectionHeader
-              title="Connected Accounts"
-              subtitle="Link external services to enable agent integrations"
-            />
-
-            {integrationError && (
-              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2.5 rounded-md mb-4">
-                <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-                <p>{integrationError}</p>
-              </div>
-            )}
-
-            {loadingIntegrations ? (
-              <div className="flex items-center justify-center py-10">
-                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-              </div>
-            ) : providers.length === 0 ? (
-              <div className="rounded-md border border-dashed border-border p-6 text-center">
-                <Link2 className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">
-                  No integration providers available
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {providers.map((provider) => {
-                  const credential = getCredentialForProvider(provider.name);
-                  const isConnecting = connectingProvider === provider.name;
-                  const Icon = getProviderIcon(provider.name);
-
-                  return (
-                    <ProviderCard
-                      key={provider.name}
-                      provider={provider}
-                      credential={credential}
-                      icon={Icon}
-                      isConnecting={isConnecting}
-                      onConnectOAuth={() => handleConnectOAuth(provider.name)}
-                      onConnectToken={() => handleConnectToken(provider)}
-                      onDisconnect={() => setDisconnectProvider(provider.name)}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
+            </section>
+          </div>
+        )}
       </div>
 
       {/* ================================================================= */}
@@ -579,6 +801,120 @@ export function Profile({ onClose }: { onClose: () => void }) {
               ) : (
                 "Disconnect"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ================================================================= */}
+      {/* ADD / EDIT CUSTOM API DIALOG                                      */}
+      {/* ================================================================= */}
+      <Dialog
+        open={customApiDialog.open}
+        onOpenChange={(open) => {
+          if (!open) setCustomApiDialog({ open: false });
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {customApiDialog.editing ? "Edit Custom API" : "Add Custom API"}
+            </DialogTitle>
+            <DialogDescription>
+              Configure a custom service endpoint your agents can use.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Name</Label>
+              <Input
+                value={customApiForm.name}
+                onChange={(e) => {
+                  setCustomApiForm((f) => ({ ...f, name: e.target.value }));
+                  setCustomApiError(null);
+                }}
+                placeholder="e.g. My Weather API"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Service Endpoint</Label>
+              <Input
+                value={customApiForm.endpoint}
+                onChange={(e) => {
+                  setCustomApiForm((f) => ({ ...f, endpoint: e.target.value }));
+                  setCustomApiError(null);
+                }}
+                placeholder="https://api.example.com/v1"
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">API Key</Label>
+              <Input
+                type="password"
+                value={customApiForm.apiKey}
+                onChange={(e) => {
+                  setCustomApiForm((f) => ({ ...f, apiKey: e.target.value }));
+                  setCustomApiError(null);
+                }}
+                placeholder="Your API key"
+                className="font-mono text-xs"
+              />
+            </div>
+            {customApiError && (
+              <p className="text-xs text-destructive">{customApiError}</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setCustomApiDialog({ open: false })}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSaveCustomApi}>
+              {customApiDialog.editing ? "Save" : "Add"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ================================================================= */}
+      {/* DELETE CUSTOM API CONFIRMATION                                     */}
+      {/* ================================================================= */}
+      <Dialog
+        open={!!deleteCustomApiId}
+        onOpenChange={(open) => {
+          if (!open) setDeleteCustomApiId(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Custom API</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete{" "}
+              <span className="font-medium text-foreground">
+                {customApis.find((a) => a.id === deleteCustomApiId)?.name}
+              </span>
+              ? This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeleteCustomApiId(null)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDeleteCustomApi}
+            >
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>
