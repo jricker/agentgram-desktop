@@ -78,6 +78,7 @@ import { AgentSkills } from "./AgentSkills";
 import { AgentTemplates } from "./AgentTemplates";
 import { AgentCanvas } from "./AgentCanvas";
 import { AgentRoutines } from "./AgentRoutines";
+import { AvatarCropDialog } from "./AvatarCropDialog";
 
 export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   const { updateConfig, regenerateKey, selectAgent } = useAgentStore();
@@ -744,6 +745,7 @@ function AgentHeader({
   const [desc, setDesc] = useState(agent.description || "");
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [cropImage, setCropImage] = useState<string | null>(null);
 
   const handleSaveName = async () => {
     const trimmed = name.trim();
@@ -785,43 +787,46 @@ function AgentHeader({
     }
   };
 
-  const handleAvatarClick = async () => {
+  const handleAvatarClick = () => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/jpeg,image/png,image/webp";
-    input.onchange = async () => {
+    input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
-
-      setUploadingAvatar(true);
-      try {
-        const filename = `avatars/${agent.id}.jpg`;
-        const contentType = "image/jpeg";
-
-        // Get presigned URL
-        const { url: uploadUrl, publicUrl } = await presignAvatarUpload(filename, contentType);
-
-        // Upload the file
-        await fetch(uploadUrl, {
-          method: "PUT",
-          body: file,
-          headers: { "Content-Type": contentType },
-        });
-
-        // Update agent with new avatar URL
-        const newUrl = `${publicUrl}?t=${Date.now()}`;
-        await updateAgent(agent.id, { avatarUrl: newUrl });
-        await fetchAgents();
-      } catch (e) {
-        console.error("Avatar upload failed:", e);
-      } finally {
-        setUploadingAvatar(false);
-      }
+      const url = URL.createObjectURL(file);
+      setCropImage(url);
     };
     input.click();
   };
 
+  const handleCropConfirm = async (blob: Blob) => {
+    setCropImage(null);
+    setUploadingAvatar(true);
+    try {
+      const filename = `avatars/${agent.id}.jpg`;
+      const contentType = "image/jpeg";
+
+      const { url: uploadUrl, publicUrl } = await presignAvatarUpload(filename, contentType);
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: blob,
+        headers: { "Content-Type": contentType },
+      });
+
+      const newUrl = `${publicUrl}?t=${Date.now()}`;
+      await updateAgent(agent.id, { avatarUrl: newUrl });
+      await fetchAgents();
+    } catch (e) {
+      console.error("Avatar upload failed:", e);
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   return (
+    <>
     <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-shrink-0">
       {/* Clickable avatar with always-visible camera badge */}
       <button
@@ -924,6 +929,21 @@ function AgentHeader({
         )}
       </div>
     </div>
+    {cropImage && (
+      <AvatarCropDialog
+        open={!!cropImage}
+        imageSrc={cropImage}
+        onClose={() => {
+          URL.revokeObjectURL(cropImage);
+          setCropImage(null);
+        }}
+        onConfirm={(blob) => {
+          URL.revokeObjectURL(cropImage);
+          handleCropConfirm(blob);
+        }}
+      />
+    )}
+    </>
   );
 }
 
