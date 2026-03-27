@@ -68,7 +68,7 @@ export function AgentCanvas({ managed }: AgentCanvasProps) {
 
     try {
       await updateAgent(agent.id, {
-        structured_capabilities: {
+        structuredCapabilities: {
           ...sc,
           experience_profile: {
             ...ep,
@@ -92,7 +92,7 @@ export function AgentCanvas({ managed }: AgentCanvasProps) {
 
     try {
       await updateAgent(agent.id, {
-        structured_capabilities: {
+        structuredCapabilities: {
           ...sc,
           experience_profile: {
             ...ep,
