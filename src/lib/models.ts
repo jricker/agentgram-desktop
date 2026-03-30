@@ -71,6 +71,17 @@ export const PROVIDERS: ProviderConfig[] = [
     ],
   },
   {
+    id: "xai",
+    label: "xAI",
+    requiresLlmKey: true,
+    supportedModes: ["single_shot", "tool_use"],
+    models: [
+      { id: "grok-3", label: "Grok 3" },
+      { id: "grok-3-mini", label: "Grok 3 Mini" },
+      { id: "grok-2", label: "Grok 2" },
+    ],
+  },
+  {
     id: "claude_cli",
     label: "Claude Code",
     requiresLlmKey: false,
@@ -117,6 +128,10 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "o3": "o3",
   "o3-mini": "o3 Mini",
   "o4-mini": "o4 Mini",
+  // xAI
+  "grok-3": "Grok 3",
+  "grok-3-mini": "Grok 3 Mini",
+  "grok-2": "Grok 2",
   // Google
   "gemini-2.0-flash": "Gemini 2.0 Flash",
   "gemini-2.5-pro": "Gemini 2.5 Pro",
@@ -172,6 +187,29 @@ export function getProviderLabel(providerId: string): string {
   const provider = PROVIDERS.find((p) => p.id === providerId);
   return provider?.label || providerId;
 }
+
+export const EFFORT_LEVELS = [
+  {
+    id: "low",
+    label: "Low",
+    description: "Minimal reasoning — fastest responses, best for simple tasks.",
+  },
+  {
+    id: "medium",
+    label: "Medium",
+    description: "Balanced reasoning — good speed with decent thoroughness.",
+  },
+  {
+    id: "high",
+    label: "High",
+    description: "Full reasoning — default behavior, thorough and careful.",
+  },
+  {
+    id: "max",
+    label: "Max",
+    description: "Maximum reasoning — deepest thinking, slowest. Opus only.",
+  },
+];
 
 export const EXECUTION_MODES = [
   {

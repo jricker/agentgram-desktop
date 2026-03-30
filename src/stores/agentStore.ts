@@ -2,14 +2,18 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import * as api from "../lib/api";
 import { providerRequiresLlmKey } from "../lib/models";
+import { useLlmKeyStore } from "./llmKeyStore";
 
 interface AgentConfig {
   backend: string;
   model: string;
   llmApiKey: string | null;
+  /** Reference to a named key in llmKeyStore — takes precedence over provider default */
+  llmApiKeyId: string | null;
   maxTokens: number;
   historyLimit: number;
   executionMode: string;
+  effort: string | null;
   dangerouslySkipPermissions: boolean;
   autoRestart: boolean;
   autoStart: boolean;
@@ -58,9 +62,11 @@ const DEFAULT_CONFIG: AgentConfig = {
   backend: "anthropic",
   model: "claude-sonnet-4-5-20250929",
   llmApiKey: null,
+  llmApiKeyId: null,
   maxTokens: 4096,
   historyLimit: 20,
   executionMode: "tool_use",
+  effort: null,
   dangerouslySkipPermissions: false,
   autoRestart: true,
   autoStart: false,
@@ -279,8 +285,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
 
     const needsLlmKey = providerRequiresLlmKey(managed.config.backend);
-    const appDefaults = getAppLlmDefaults(managed.config.backend);
-    const llmApiKey = managed.config.llmApiKey || appDefaults?.apiKey;
+    const llmApiKey = resolveLlmApiKey(managed.config);
 
     if (needsLlmKey && !llmApiKey) {
       throw new Error(
@@ -303,6 +308,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           historyLimit: managed.config.historyLimit,
           executionMode: managed.config.executionMode,
           dangerouslySkipPermissions: managed.config.dangerouslySkipPermissions,
+          effort: managed.config.effort || undefined,
           addDirs: managed.config.addDirs.length > 0 ? managed.config.addDirs : undefined,
         },
       });
@@ -444,15 +450,23 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 }));
 
-function getAppLlmDefaults(
-  provider: string
-): { apiKey: string; defaultModel: string } | null {
-  const raw = localStorage.getItem("llmDefaults");
-  if (!raw) return null;
-  try {
-    const defaults = JSON.parse(raw);
-    return defaults[provider] || null;
-  } catch {
-    return null;
+/**
+ * Resolve the LLM API key for an agent config.
+ * Priority: direct llmApiKey → named llmApiKeyId → provider default.
+ */
+function resolveLlmApiKey(config: AgentConfig): string | null {
+  // 1. Direct key override
+  if (config.llmApiKey) return config.llmApiKey;
+
+  const keyStore = useLlmKeyStore.getState();
+
+  // 2. Named key reference
+  if (config.llmApiKeyId) {
+    const namedKey = keyStore.getKeyById(config.llmApiKeyId);
+    if (namedKey) return namedKey.apiKey;
   }
+
+  // 3. Provider default
+  const defaultKey = keyStore.getDefaultKey(config.backend);
+  return defaultKey?.apiKey || null;
 }

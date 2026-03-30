@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { PROVIDERS } from "../lib/models";
+import { useLlmKeyStore, type LlmApiKey as LlmApiKeyEntry } from "../stores/llmKeyStore";
 
 /** Open a URL in the system browser — Tauri native with window.open fallback. */
 function openExternal(url: string) {
@@ -924,112 +925,298 @@ export function Profile({ onClose }: { onClose: () => void }) {
 }
 
 // ---------------------------------------------------------------------------
-// LLM API Keys — global defaults per provider
+// LLM API Keys — multiple named keys per provider with defaults
 // ---------------------------------------------------------------------------
 
-type LlmDefaults = Record<string, { apiKey: string; defaultModel: string }>;
-
-function loadLlmDefaults(): LlmDefaults {
-  const raw = localStorage.getItem("llmDefaults");
-  if (!raw) return {};
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return {};
-  }
-}
-
-function saveLlmDefaults(defaults: LlmDefaults) {
-  localStorage.setItem("llmDefaults", JSON.stringify(defaults));
-}
-
 function LlmApiKeysSection() {
-  const [defaults, setDefaults] = useState<LlmDefaults>(loadLlmDefaults);
+  const { keys, defaults, addKey, updateKey, removeKey, setDefault } = useLlmKeyStore();
   const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const [adding, setAdding] = useState<string | null>(null); // provider id being added to
+  const [newLabel, setNewLabel] = useState("");
+  const [newApiKey, setNewApiKey] = useState("");
+  const [editing, setEditing] = useState<string | null>(null); // key id being edited
+  const [editLabel, setEditLabel] = useState("");
+  const [editApiKey, setEditApiKey] = useState("");
   const [saved, setSaved] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const providersWithKeys = PROVIDERS.filter((p) => p.requiresLlmKey);
 
-  const handleChange = (providerId: string, value: string) => {
-    const updated = { ...defaults };
-    if (value) {
-      updated[providerId] = {
-        apiKey: value,
-        defaultModel: defaults[providerId]?.defaultModel || "",
-      };
-    } else {
-      delete updated[providerId];
-    }
-    setDefaults(updated);
-    saveLlmDefaults(updated);
-    setSaved(providerId);
+  const toggleVisibility = (keyId: string) => {
+    setVisibility((v) => ({ ...v, [keyId]: !v[keyId] }));
+  };
+
+  const flashSaved = (id: string) => {
+    setSaved(id);
     setTimeout(() => setSaved(null), 1500);
   };
 
-  const toggleVisibility = (providerId: string) => {
-    setVisibility((v) => ({ ...v, [providerId]: !v[providerId] }));
+  const handleStartAdd = (providerId: string) => {
+    const count = keys.filter((k) => k.provider === providerId).length;
+    const providerLabel = providersWithKeys.find((p) => p.id === providerId)?.label || providerId;
+    setNewLabel(`${providerLabel} ${count + 1}`);
+    setNewApiKey("");
+    setAdding(providerId);
+  };
+
+  const handleConfirmAdd = () => {
+    if (!adding || !newApiKey.trim()) return;
+    const label = newLabel.trim() || `Key ${keys.filter((k) => k.provider === adding).length + 1}`;
+    const id = addKey(adding, label, newApiKey.trim());
+    flashSaved(id);
+    setAdding(null);
+    setNewLabel("");
+    setNewApiKey("");
+  };
+
+  const handleStartEdit = (key: LlmApiKeyEntry) => {
+    setEditing(key.id);
+    setEditLabel(key.label);
+    setEditApiKey(key.apiKey);
+  };
+
+  const handleConfirmEdit = () => {
+    if (!editing) return;
+    updateKey(editing, { label: editLabel.trim() || undefined, apiKey: editApiKey.trim() || undefined });
+    flashSaved(editing);
+    setEditing(null);
+  };
+
+  const handleDelete = (id: string) => {
+    removeKey(id);
+    setConfirmDelete(null);
+  };
+
+  const keyPlaceholder = (providerId: string) => {
+    switch (providerId) {
+      case "anthropic": return "sk-ant-...";
+      case "openai": return "sk-...";
+      case "xai": return "xai-...";
+      default: return "API key";
+    }
   };
 
   return (
     <section>
       <SectionHeader
         title="LLM API Keys"
-        subtitle="Global keys used by all agents unless overridden per-agent"
+        subtitle="Manage multiple keys per provider. The default key is used by all agents unless overridden."
       />
-      <div className="space-y-3">
+      <div className="space-y-5">
         {providersWithKeys.map((provider) => {
-          const current = defaults[provider.id]?.apiKey || "";
-          const visible = visibility[provider.id] || false;
+          const providerKeys = keys.filter((k) => k.provider === provider.id);
+          const defaultId = defaults[provider.id];
 
           return (
-            <div key={provider.id} className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <Label className="text-xs">{provider.label}</Label>
-                {saved === provider.id && (
+            <div key={provider.id} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Label className="text-sm font-medium">{provider.label}</Label>
                   <Badge variant="secondary" className="text-[10px] py-0">
-                    <Check className="w-3 h-3 mr-0.5" />
-                    Saved
+                    {providerKeys.length} key{providerKeys.length !== 1 ? "s" : ""}
                   </Badge>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Input
-                  type={visible ? "text" : "password"}
-                  value={current}
-                  onChange={(e) => handleChange(provider.id, e.target.value)}
-                  placeholder={
-                    provider.id === "anthropic"
-                      ? "sk-ant-..."
-                      : provider.id === "openai"
-                        ? "sk-..."
-                        : "API key"
-                  }
-                  className="flex-1 font-mono text-xs"
-                />
+                </div>
                 <Button
                   variant="outline"
-                  size="icon"
-                  className="shrink-0"
-                  onClick={() => toggleVisibility(provider.id)}
+                  size="sm"
+                  onClick={() => handleStartAdd(provider.id)}
+                  className="h-7 text-xs"
                 >
-                  {visible ? (
-                    <EyeOff className="w-4 h-4" />
-                  ) : (
-                    <Eye className="w-4 h-4" />
-                  )}
+                  <Plus className="w-3 h-3" />
+                  Add Key
                 </Button>
               </div>
+
+              {/* Add key form */}
+              {adding === provider.id && (
+                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Label</Label>
+                    <Input
+                      value={newLabel}
+                      onChange={(e) => setNewLabel(e.target.value)}
+                      placeholder="e.g. Work, Personal, Project X"
+                      className="text-xs"
+                      autoFocus
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">API Key</Label>
+                    <Input
+                      type="password"
+                      value={newApiKey}
+                      onChange={(e) => setNewApiKey(e.target.value)}
+                      placeholder={keyPlaceholder(provider.id)}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" onClick={handleConfirmAdd} disabled={!newApiKey.trim()} className="h-7 text-xs">
+                      <Check className="w-3 h-3" />
+                      Add
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setAdding(null)} className="h-7 text-xs">
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Key list */}
+              {providerKeys.length === 0 && adding !== provider.id && (
+                <p className="text-xs text-muted-foreground pl-1">No keys configured</p>
+              )}
+
+              {providerKeys.map((key) => {
+                const isDefault = defaultId === key.id;
+                const isVisible = visibility[key.id] || false;
+                const isEditing = editing === key.id;
+                const isSaved = saved === key.id;
+
+                if (isEditing) {
+                  return (
+                    <div key={key.id} className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Label</Label>
+                        <Input
+                          value={editLabel}
+                          onChange={(e) => setEditLabel(e.target.value)}
+                          className="text-xs"
+                          autoFocus
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">API Key</Label>
+                        <Input
+                          type="password"
+                          value={editApiKey}
+                          onChange={(e) => setEditApiKey(e.target.value)}
+                          placeholder={keyPlaceholder(provider.id)}
+                          className="font-mono text-xs"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" onClick={handleConfirmEdit} className="h-7 text-xs">
+                          <Check className="w-3 h-3" />
+                          Save
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(null)} className="h-7 text-xs">
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={key.id}
+                    className={cn(
+                      "rounded-lg border p-3 transition-colors",
+                      isDefault ? "border-primary/30 bg-primary/5" : "border-border bg-card"
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium truncate">{key.label}</span>
+                          {isDefault && (
+                            <Badge variant="secondary" className="text-[10px] py-0 bg-primary/10 text-primary">
+                              Default
+                            </Badge>
+                          )}
+                          {isSaved && (
+                            <Badge variant="secondary" className="text-[10px] py-0">
+                              <Check className="w-3 h-3 mr-0.5" />
+                              Saved
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <code className="text-[11px] text-muted-foreground font-mono">
+                            {isVisible ? key.apiKey : maskKey(key.apiKey)}
+                          </code>
+                          <button
+                            onClick={() => toggleVisibility(key.id)}
+                            className="text-muted-foreground hover:text-foreground"
+                          >
+                            {isVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {!isDefault && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setDefault(provider.id, key.id)}
+                            className="h-7 text-xs text-muted-foreground"
+                            title="Set as default"
+                          >
+                            Set Default
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                          onClick={() => handleStartEdit(key)}
+                          title="Edit"
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </Button>
+                        {confirmDelete === key.id ? (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs text-destructive hover:text-destructive"
+                              onClick={() => handleDelete(key.id)}
+                            >
+                              Confirm
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 text-xs"
+                              onClick={() => setConfirmDelete(null)}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            onClick={() => setConfirmDelete(key.id)}
+                            title="Delete"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           );
         })}
         <p className="text-xs text-muted-foreground">
-          Set a key here once and every agent using that provider will use it
-          automatically. To use a different key for a specific agent, set it in
-          that agent's config — it will override the global key.
+          The default key for each provider is used by all agents automatically.
+          You can override which key an agent uses in that agent's config, or
+          enter a custom key there.
         </p>
       </div>
     </section>
   );
+}
+
+function maskKey(key: string): string {
+  if (key.length <= 8) return "••••••••";
+  return key.slice(0, 6) + "••••" + key.slice(-4);
 }
 
 // ---------------------------------------------------------------------------

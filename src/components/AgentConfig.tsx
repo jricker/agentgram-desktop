@@ -15,10 +15,12 @@ import { TemplateGallery } from "./TemplateGallery";
 import {
   PROVIDERS,
   EXECUTION_MODES,
+  EFFORT_LEVELS,
   getModelsForProvider,
   getSupportedModes,
   normalizeModelName,
 } from "../lib/models";
+import { useLlmKeyStore } from "../stores/llmKeyStore";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -118,16 +120,10 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
     }
   };
 
-  const hasAppDefault = useMemo(() => {
-    const raw = localStorage.getItem("llmDefaults");
-    if (!raw) return false;
-    try {
-      const defaults = JSON.parse(raw);
-      return !!defaults[backend]?.apiKey;
-    } catch {
-      return false;
-    }
-  }, [backend]);
+  const { keys: llmKeys, defaults: llmDefaults, getKeysForProvider: getLlmKeysForProvider } = useLlmKeyStore();
+  const providerKeys = useMemo(() => getLlmKeysForProvider(backend), [getLlmKeysForProvider, backend, llmKeys]);
+  const hasAppDefault = useMemo(() => !!llmDefaults[backend], [llmDefaults, backend]);
+  const keyMode = config.llmApiKey ? "custom" : config.llmApiKeyId || (hasAppDefault ? "__default__" : "__default__");
 
   const [activeSection, setActiveSection] = useState("config");
   const [showGallery, setShowGallery] = useState(false);
@@ -278,41 +274,62 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs">API Key</Label>
-                    {!config.llmApiKey && hasAppDefault && (
-                      <Badge variant="secondary" className="text-[10px] py-0">
-                        App default
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <Input
-                      type={showLlmKey ? "text" : "password"}
-                      value={config.llmApiKey || ""}
-                      onChange={(e) =>
-                        updateConfig(agent.id, {
-                          llmApiKey: e.target.value || null,
-                        })
+                  <Label className="text-xs">API Key</Label>
+                  <Select
+                    value={keyMode}
+                    onValueChange={(val: string | null) => {
+                      if (!val) return;
+                      if (val === "__default__") {
+                        updateConfig(agent.id, { llmApiKeyId: null, llmApiKey: null });
+                      } else if (val === "__custom__") {
+                        updateConfig(agent.id, { llmApiKeyId: null, llmApiKey: "" });
+                      } else {
+                        updateConfig(agent.id, { llmApiKeyId: val, llmApiKey: null });
                       }
-                      placeholder={
-                        hasAppDefault ? "Using app default" : "sk-..."
-                      }
-                      className="flex-1"
-                    />
-                    <Button
-                      variant="outline"
-                      size="icon"
-                      className="shrink-0"
-                      onClick={() => setShowLlmKey(!showLlmKey)}
-                    >
-                      {showLlmKey ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </Button>
-                  </div>
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__default__">
+                        {hasAppDefault ? "Provider Default" : "None (set in Settings)"}
+                      </SelectItem>
+                      {providerKeys.map((k) => (
+                        <SelectItem key={k.id} value={k.id}>
+                          {k.label}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__custom__">Custom Key...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {keyMode === "custom" && (
+                    <div className="flex gap-2">
+                      <Input
+                        type={showLlmKey ? "text" : "password"}
+                        value={config.llmApiKey || ""}
+                        onChange={(e) =>
+                          updateConfig(agent.id, {
+                            llmApiKey: e.target.value || null,
+                          })
+                        }
+                        placeholder="sk-..."
+                        className="flex-1 font-mono text-xs"
+                      />
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => setShowLlmKey(!showLlmKey)}
+                      >
+                        {showLlmKey ? (
+                          <EyeOff className="w-4 h-4" />
+                        ) : (
+                          <Eye className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </Section>
@@ -378,6 +395,56 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                 )}
               </div>
             </Section>
+
+            {/* Effort Level (Claude CLI only) */}
+            {config.backend === "claude_cli" && (
+              <Section title="Effort Level">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <Label className="text-xs">Effort</Label>
+                    <Tooltip>
+                      <TooltipTrigger className="cursor-help">
+                        <HelpCircle className="w-3.5 h-3.5 text-muted-foreground" />
+                      </TooltipTrigger>
+                      <TooltipContent side="right" className="max-w-[280px]">
+                        <p className="font-medium mb-1">Reasoning depth</p>
+                        <p className="text-xs text-muted-foreground">
+                          Controls how much thinking the model does. Lower effort
+                          = faster responses, higher effort = more thorough.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                  <Select
+                    value={config.effort || "default"}
+                    onValueChange={(val: string | null) => {
+                      if (val === "default") {
+                        updateConfig(agent.id, { effort: null });
+                      } else if (val) {
+                        updateConfig(agent.id, { effort: val });
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">Default (high)</SelectItem>
+                      {EFFORT_LEVELS.map((level) => (
+                        <SelectItem key={level.id} value={level.id}>
+                          {level.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    {config.effort
+                      ? EFFORT_LEVELS.find((l) => l.id === config.effort)?.description
+                      : "Default reasoning depth — thorough and careful."}
+                  </p>
+                </div>
+              </Section>
+            )}
 
             {/* Behavior */}
             <Section title="Behavior">

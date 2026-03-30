@@ -42,6 +42,7 @@ pub struct StartAgentArgs {
     pub history_limit: Option<u32>,
     pub execution_mode: Option<String>,
     pub dangerously_skip_permissions: Option<bool>,
+    pub effort: Option<String>,
     pub api_url: Option<String>,
     pub add_dirs: Option<Vec<String>>,
 }
@@ -199,6 +200,9 @@ pub fn start_agent(
     }
     if args.dangerously_skip_permissions.unwrap_or(false) {
         cmd.arg("--dangerously-skip-permissions");
+    }
+    if let Some(ref effort) = args.effort {
+        cmd.args(["--effort", effort]);
     }
     if let Some(ref dirs) = args.add_dirs {
         let valid: Vec<&String> = dirs.iter().filter(|d| !d.is_empty()).collect();
