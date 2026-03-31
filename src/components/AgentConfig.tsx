@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import {
   deleteAgent,
@@ -7,7 +7,13 @@ import {
   revokeConnection,
   presignAvatarUpload,
   updateAgent,
+  getAgentHealthDetail,
+  forceResetAgent,
+  clearAgentMessages,
+  clearAgentTasks,
+  killExecutor,
   type Connection,
+  type AgentHealthDetail,
 } from "../lib/api";
 import { LogViewer } from "./LogViewer";
 import { SoulEditor } from "./SoulEditor";
@@ -70,6 +76,11 @@ import {
   Pencil,
   Check,
   FolderOpen,
+  Zap,
+  Inbox,
+  ListTodo,
+  Cpu,
+  Clock,
 } from "lucide-react";
 import {
   Dialog,
@@ -741,46 +752,231 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
         )}
 
         {activeSection === "health" && (
-          <div className="flex-1 overflow-y-auto p-5">
-            {managed.health ? (
-              <Section title="Agent Health">
-                <FieldRow
-                  label="Status"
-                  value={
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        managed.health.healthStatus === "healthy" &&
-                          "border-success/30 text-success bg-success/10",
-                        managed.health.healthStatus === "degraded" &&
-                          "border-warning/30 text-warning bg-warning/10",
-                        (managed.health.healthStatus === "stuck" ||
-                          managed.health.healthStatus === "offline") &&
-                          "border-destructive/30 text-destructive bg-destructive/10"
-                      )}
-                    >
-                      {managed.health.healthStatus}
-                    </Badge>
-                  }
-                />
-                <FieldRow
-                  label="Executors"
-                  value={`${managed.health.onlineExecutorCount} / ${managed.health.executorCount} online`}
-                />
-                <FieldRow label="Queued Tasks" value={String(managed.health.queuedTasks)} />
-                <FieldRow label="Queued Messages" value={String(managed.health.queuedMessages)} />
-                <FieldRow label="Stuck" value={String(managed.health.stuckCount)} />
-              </Section>
-            ) : (
-              <div className="text-center text-muted-foreground py-10 text-sm">
-                No health data available
-              </div>
-            )}
-          </div>
+          <HealthPanel managed={managed} />
         )}
       </div>
     </div>
   );
+}
+
+function HealthPanel({ managed }: { managed: ManagedAgent }) {
+  const [detail, setDetail] = useState<AgentHealthDetail | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const fetchDetail = useCallback(async () => {
+    try {
+      const data = await getAgentHealthDetail(managed.agent.id);
+      setDetail(data);
+    } catch {
+      // Fleet health is still available via managed.health
+    }
+  }, [managed.agent.id]);
+
+  useEffect(() => {
+    fetchDetail();
+    const interval = setInterval(fetchDetail, 5000);
+    return () => clearInterval(interval);
+  }, [fetchDetail]);
+
+  const health = managed.health;
+  if (!health) {
+    return (
+      <div className="text-center text-muted-foreground py-10 text-sm">
+        No health data available
+      </div>
+    );
+  }
+
+  const handleAction = async (key: string, action: () => Promise<unknown>) => {
+    setActionLoading(key);
+    try {
+      await action();
+      await fetchDetail();
+    } catch (e) {
+      console.error(`Health action ${key} failed:`, e);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const hasStuckItems = (detail?.stuckTasks.length ?? 0) > 0 || (detail?.unackedMessages.length ?? 0) > 0;
+  const hasQueue = health.queuedTasks > 0 || health.queuedMessages > 0;
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      {/* Status Overview */}
+      <Section title="Status">
+        <FieldRow
+          label="Health"
+          value={
+            <Badge
+              variant="outline"
+              className={cn(
+                health.healthStatus === "healthy" && "border-success/30 text-success bg-success/10",
+                health.healthStatus === "degraded" && "border-warning/30 text-warning bg-warning/10",
+                (health.healthStatus === "stuck" || health.healthStatus === "offline") &&
+                  "border-destructive/30 text-destructive bg-destructive/10"
+              )}
+            >
+              {health.healthStatus}
+            </Badge>
+          }
+        />
+        <FieldRow
+          label="Executors"
+          value={`${health.onlineExecutorCount} / ${health.executorCount} online`}
+        />
+        <FieldRow label="Queued Tasks" value={String(health.queuedTasks)} />
+        <FieldRow label="Queued Messages" value={String(health.queuedMessages)} />
+        {health.stuckCount > 0 && (
+          <FieldRow
+            label="Stuck Items"
+            value={
+              <span className="text-destructive font-medium">{health.stuckCount}</span>
+            }
+          />
+        )}
+      </Section>
+
+      {/* Quick Actions */}
+      {(hasStuckItems || hasQueue || health.healthStatus === "stuck" || health.healthStatus === "degraded") && (
+        <Section title="Actions">
+          <div className="flex flex-wrap gap-2 py-1">
+            {(health.queuedMessages > 0 || (detail?.unackedMessages.length ?? 0) > 0) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={actionLoading !== null}
+                onClick={() =>
+                  handleAction("clear-messages", () => clearAgentMessages(managed.agent.id))
+                }
+              >
+                <Inbox className="w-3.5 h-3.5 mr-1.5" />
+                {actionLoading === "clear-messages" ? "Clearing..." : "Clear Messages"}
+              </Button>
+            )}
+            {(health.queuedTasks > 0 || (detail?.stuckTasks.length ?? 0) > 0) && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={actionLoading !== null}
+                onClick={() =>
+                  handleAction("clear-tasks", () => clearAgentTasks(managed.agent.id))
+                }
+              >
+                <ListTodo className="w-3.5 h-3.5 mr-1.5" />
+                {actionLoading === "clear-tasks" ? "Clearing..." : "Clear Tasks"}
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={actionLoading !== null}
+              onClick={() =>
+                handleAction("reset", () => forceResetAgent(managed.agent.id))
+              }
+            >
+              <Zap className="w-3.5 h-3.5 mr-1.5" />
+              {actionLoading === "reset" ? "Resetting..." : "Force Reset"}
+            </Button>
+          </div>
+        </Section>
+      )}
+
+      {/* Executors */}
+      {detail && detail.executors.length > 0 && (
+        <Section title="Executors">
+          <div className="space-y-2">
+            {detail.executors.map((ex) => (
+              <div
+                key={ex.id}
+                className="flex items-center justify-between py-1.5 px-2 rounded-md bg-muted/30"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Cpu className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-sm truncate">{ex.displayName || ex.executorKey}</span>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-[10px] px-1.5 py-0",
+                      ex.status === "online" && "border-success/30 text-success",
+                      ex.status === "offline" && "border-destructive/30 text-destructive",
+                      ex.status === "disabled" && "border-muted-foreground/30 text-muted-foreground"
+                    )}
+                  >
+                    {ex.status}
+                  </Badge>
+                  {ex.activeTaskCount > 0 && (
+                    <span className="text-[10px] text-muted-foreground">{ex.activeTaskCount} active</span>
+                  )}
+                </div>
+                {ex.status !== "disabled" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+                    disabled={actionLoading !== null}
+                    onClick={() =>
+                      handleAction(`kill-${ex.id}`, () => killExecutor(managed.agent.id, ex.id))
+                    }
+                  >
+                    {actionLoading === `kill-${ex.id}` ? "..." : "Kill"}
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Stuck Tasks */}
+      {detail && detail.stuckTasks.length > 0 && (
+        <Section title={`Stuck Tasks (${detail.stuckTasks.length})`}>
+          <div className="space-y-1.5">
+            {detail.stuckTasks.map((task) => (
+              <div
+                key={task.id}
+                className="flex items-center justify-between py-1.5 px-2 rounded-md bg-destructive/5 border border-destructive/10"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm truncate">{task.title || "Untitled task"}</div>
+                  <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {task.status} for {formatDuration(task.elapsedSeconds)}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {/* Stuck Messages */}
+      {detail && detail.unackedMessages.length > 0 && (
+        <Section title={`Unacknowledged Messages (${detail.unackedMessages.length})`}>
+          <div className="space-y-1.5">
+            {detail.unackedMessages.map((msg) => (
+              <div
+                key={msg.id}
+                className="flex items-center justify-between py-1.5 px-2 rounded-md bg-warning/5 border border-warning/10"
+              >
+                <div className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Claimed for {formatDuration(msg.elapsedSeconds)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+    </div>
+  );
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
 function Section({

@@ -204,6 +204,31 @@ export async function getAgentHealthDetail(
   return request(`/api/agents/${id}/health`);
 }
 
+export async function forceResetAgent(
+  id: string
+): Promise<{ message: string; disabledExecutors: number; unclaimedTasks: number; unclaimedMessages: number }> {
+  return request(`/api/agents/${id}/health/reset`, { method: "POST" });
+}
+
+export async function clearAgentMessages(
+  id: string
+): Promise<{ message: string; expired: number; unclaimed: number }> {
+  return request(`/api/agents/${id}/health/clear-messages`, { method: "POST" });
+}
+
+export async function clearAgentTasks(
+  id: string
+): Promise<{ message: string; expired: number; unclaimed: number }> {
+  return request(`/api/agents/${id}/health/clear-tasks`, { method: "POST" });
+}
+
+export async function killExecutor(
+  agentId: string,
+  executorId: string
+): Promise<{ message: string }> {
+  return request(`/api/agents/${agentId}/executors/${executorId}/kill`, { method: "POST" });
+}
+
 // Invites
 export async function getInviteInfo(
   code: string
@@ -618,13 +643,30 @@ export interface AgentHealth {
 export interface AgentHealthDetail extends AgentHealth {
   executors: Array<{
     id: string;
+    displayName?: string;
     executorKey: string;
     status: string;
     lastPollAt?: string;
+    secondsSincePoll?: number;
     activeTaskCount: number;
+    processMetrics?: Record<string, unknown>;
+    pendingCommand?: string;
   }>;
-  stuckTasks: unknown[];
-  unackedMessages: unknown[];
+  stuckTasks: Array<{
+    id: string;
+    taskId: string;
+    title?: string;
+    claimedAt: string;
+    status: string;
+    elapsedSeconds: number;
+  }>;
+  unackedMessages: Array<{
+    id: string;
+    messageId: string;
+    conversationId: string;
+    claimedAt: string;
+    elapsedSeconds: number;
+  }>;
 }
 
 export interface InviteInfo {
