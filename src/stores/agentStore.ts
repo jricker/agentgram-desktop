@@ -17,7 +17,6 @@ interface AgentConfig {
   dangerouslySkipPermissions: boolean;
   autoRestart: boolean;
   autoStart: boolean;
-  addDirs: string[];
 }
 
 export interface ManagedAgent {
@@ -63,14 +62,13 @@ const DEFAULT_CONFIG: AgentConfig = {
   model: "claude-sonnet-4-5-20250929",
   llmApiKey: null,
   llmApiKeyId: null,
-  maxTokens: 4096,
+  maxTokens: 16384,
   historyLimit: 20,
   executionMode: "tool_use",
   effort: null,
   dangerouslySkipPermissions: false,
   autoRestart: true,
   autoStart: false,
-  addDirs: [],
 };
 
 function loadLocalConfig(agentId: string): Partial<AgentConfig> {
@@ -309,7 +307,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           executionMode: managed.config.executionMode,
           dangerouslySkipPermissions: managed.config.dangerouslySkipPermissions,
           effort: managed.config.effort || undefined,
-          addDirs: managed.config.addDirs.length > 0 ? managed.config.addDirs : undefined,
         },
       });
 
