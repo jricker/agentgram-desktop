@@ -214,10 +214,16 @@ export function TemplateCardPreview({ template, data: overrideData }: Props) {
         {bodies.map(field => {
           const val = details[field.key];
           if (val == null) return null;
+          const text = String(val);
+          const isHtml = /<[a-z][\s\S]*>/i.test(text);
           return (
-            <div key={field.key} className="text-xs text-muted-foreground leading-relaxed mt-1 border-t pt-2">
-              {String(val)}
-            </div>
+            <div
+              key={field.key}
+              className="text-xs text-muted-foreground leading-relaxed mt-1 border-t pt-2 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_a]:text-primary [&_a]:underline"
+              {...(isHtml
+                ? { dangerouslySetInnerHTML: { __html: text } }
+                : { children: text })}
+            />
           );
         })}
 

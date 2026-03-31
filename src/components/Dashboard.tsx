@@ -292,7 +292,7 @@ export function Dashboard() {
       />
       <div
         className={cn(
-          "fixed top-0 right-0 h-full w-[640px] max-w-[85vw] bg-card border-l border-border shadow-2xl z-50 overflow-hidden",
+          "fixed top-0 right-0 h-full w-[800px] max-w-[85vw] bg-card border-l border-border shadow-2xl z-50 overflow-hidden",
           "transition-transform duration-300 ease-out",
           drawerOpen ? "translate-x-0" : "translate-x-full"
         )}
