@@ -17,6 +17,8 @@ interface AgentConfig {
   dangerouslySkipPermissions: boolean;
   autoRestart: boolean;
   autoStart: boolean;
+  /** Directories for CLI tools access — also enables CLI tools (Bash, Read, etc.) */
+  addDirs: string[];
 }
 
 export interface ManagedAgent {
@@ -69,6 +71,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   dangerouslySkipPermissions: false,
   autoRestart: true,
   autoStart: false,
+  addDirs: [],
 };
 
 function loadLocalConfig(agentId: string): Partial<AgentConfig> {
@@ -307,6 +310,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           executionMode: managed.config.executionMode,
           dangerouslySkipPermissions: managed.config.dangerouslySkipPermissions,
           effort: managed.config.effort || undefined,
+          addDirs: managed.config.addDirs.length > 0 ? managed.config.addDirs : undefined,
         },
       });
 
