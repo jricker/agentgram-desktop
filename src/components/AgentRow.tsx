@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { formatModelLabel, formatBackendLabel } from "../lib/models";
 import { formatUptime, cn } from "../lib/utils";
-import { Play, Square, RotateCcw } from "lucide-react";
+import { Play, Square, RotateCcw, Crown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -214,12 +214,14 @@ export function AgentRow({
               <p className="text-sm font-medium truncate">
                 {managed.agent.displayName}
               </p>
-              {managed.agent.agentType && managed.agent.agentType !== "worker" && (
+              {managed.agent.agentType === "orchestrator" && (
+                <Crown className="h-3 w-3 text-[#007AFF] flex-shrink-0" />
+              )}
+              {managed.agent.agentType && !["worker", "orchestrator"].includes(managed.agent.agentType) && (
                 <Badge
                   variant="secondary"
                   className={cn(
                     "text-[10px] px-1.5 py-0 flex-shrink-0",
-                    managed.agent.agentType === "orchestrator" && "bg-violet-500/10 text-violet-500 border-violet-500/20",
                     managed.agent.agentType === "reviewer" && "bg-amber-500/10 text-amber-500 border-amber-500/20",
                     managed.agent.agentType === "observer" && "bg-cyan-500/10 text-cyan-500 border-cyan-500/20"
                   )}
