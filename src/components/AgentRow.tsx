@@ -210,8 +210,8 @@ export function AgentRow({
             </AvatarFallback>
           </Avatar>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="text-sm font-medium truncate">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-sm font-medium truncate flex-shrink-0">
                 {managed.agent.displayName}
               </p>
               {managed.agent.agentType === "orchestrator" && (
@@ -228,6 +228,19 @@ export function AgentRow({
                 >
                   {managed.agent.agentType}
                 </Badge>
+              )}
+              {isRunning && activity && (
+                <span className={cn(
+                  "flex items-center gap-1.5 text-[11px] font-medium truncate",
+                  ACTIVITY_COLORS[activity.type]
+                )}>
+                  <span className={cn(
+                    "w-1.5 h-1.5 rounded-full shrink-0",
+                    activity.type !== "idle" && "animate-pulse",
+                    ACTIVITY_DOT_COLORS[activity.type]
+                  )} />
+                  <span className="truncate">{activity.label}</span>
+                </span>
               )}
             </div>
             {managed.agent.description && (
@@ -295,22 +308,6 @@ export function AgentRow({
         </div>
       </div>
 
-      {/* Live activity stream — shown when agent is actively working */}
-      {isRunning && activity && (
-        <div className="px-5 pb-2 pl-[52px]">
-          <div className={cn(
-            "flex items-center gap-2 text-[11px] font-medium animate-in fade-in slide-in-from-top-1 duration-300",
-            ACTIVITY_COLORS[activity.type]
-          )}>
-            <span className={cn(
-              "w-1.5 h-1.5 rounded-full shrink-0",
-              activity.type !== "idle" && "animate-pulse",
-              ACTIVITY_DOT_COLORS[activity.type]
-            )} />
-            <span className="truncate">{activity.label}</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
