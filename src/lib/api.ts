@@ -229,6 +229,51 @@ export async function killExecutor(
   return request(`/api/agents/${agentId}/executors/${executorId}/kill`, { method: "POST" });
 }
 
+// Heartbeat Mind
+export interface HeartbeatConfig {
+  enabled?: boolean;
+  intervalMinutes?: number;
+  activeHours?: { start: number; end: number };
+  timezone?: string;
+  model?: string | null;
+  status?: string;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
+  runCount?: number;
+  consecutiveFailures?: number;
+}
+
+export interface HeartbeatData {
+  heartbeatMd: string | null;
+  heartbeatConfig: HeartbeatConfig | null;
+}
+
+export async function getAgentHeartbeat(id: string): Promise<HeartbeatData> {
+  return request(`/api/agents/${id}/heartbeat`);
+}
+
+export async function updateAgentHeartbeat(
+  id: string,
+  data: { heartbeat_md?: string; interval_minutes?: number; active_hours?: { start: number; end: number }; timezone?: string; model?: string | null }
+): Promise<HeartbeatData> {
+  return request(`/api/agents/${id}/heartbeat`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function enableAgentHeartbeat(id: string): Promise<{ heartbeatConfig: HeartbeatConfig }> {
+  return request(`/api/agents/${id}/heartbeat/enable`, { method: "POST" });
+}
+
+export async function disableAgentHeartbeat(id: string): Promise<{ heartbeatConfig: HeartbeatConfig }> {
+  return request(`/api/agents/${id}/heartbeat/disable`, { method: "POST" });
+}
+
+export async function triggerAgentHeartbeat(id: string): Promise<{ message: string }> {
+  return request(`/api/agents/${id}/heartbeat/trigger`, { method: "POST" });
+}
+
 // Invites
 export async function getInviteInfo(
   code: string

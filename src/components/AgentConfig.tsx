@@ -12,8 +12,14 @@ import {
   clearAgentMessages,
   clearAgentTasks,
   killExecutor,
+  getAgentHeartbeat,
+  updateAgentHeartbeat,
+  enableAgentHeartbeat,
+  disableAgentHeartbeat,
+  triggerAgentHeartbeat,
   type Connection,
   type AgentHealthDetail,
+  type HeartbeatData,
 } from "../lib/api";
 import { LogViewer } from "./LogViewer";
 import { SoulEditor } from "./SoulEditor";
@@ -81,6 +87,8 @@ import {
   ListTodo,
   Cpu,
   Clock,
+  HeartPulse,
+  Play,
 } from "lucide-react";
 import {
   Dialog,
@@ -147,6 +155,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
     { value: "templates", label: "Templates", icon: LayoutTemplate },
     { value: "routines", label: "Routines", icon: Timer },
     { value: "canvas", label: "Canvas", icon: Palette },
+    { value: "heartbeat", label: "Heartbeat", icon: HeartPulse },
     { value: "health", label: "Health", icon: Activity },
   ];
 
@@ -751,10 +760,246 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
           </div>
         )}
 
+        {activeSection === "heartbeat" && (
+          <HeartbeatPanel managed={managed} />
+        )}
+
         {activeSection === "health" && (
           <HealthPanel managed={managed} />
         )}
       </div>
+    </div>
+  );
+}
+
+function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
+  const [data, setData] = useState<HeartbeatData | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  // Editable fields
+  const [heartbeatMd, setHeartbeatMd] = useState("");
+  const [intervalMinutes, setIntervalMinutes] = useState(30);
+  const [activeStart, setActiveStart] = useState(8);
+  const [activeEnd, setActiveEnd] = useState(22);
+  const [timezone, setTimezone] = useState("Etc/UTC");
+  const [dirty, setDirty] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const d = await getAgentHeartbeat(managed.agent.id);
+      setData(d);
+      setHeartbeatMd(d.heartbeatMd || "");
+      setIntervalMinutes(d.heartbeatConfig?.intervalMinutes ?? 30);
+      setActiveStart(d.heartbeatConfig?.activeHours?.start ?? 8);
+      setActiveEnd(d.heartbeatConfig?.activeHours?.end ?? 22);
+      setTimezone(d.heartbeatConfig?.timezone ?? "Etc/UTC");
+      setDirty(false);
+    } catch {
+      // Non-fatal
+    }
+  }, [managed.agent.id]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const isEnabled = data?.heartbeatConfig?.enabled ?? false;
+  const status = data?.heartbeatConfig?.status ?? "active";
+  const runCount = data?.heartbeatConfig?.runCount ?? 0;
+  const failures = data?.heartbeatConfig?.consecutiveFailures ?? 0;
+  const lastRun = data?.heartbeatConfig?.lastRunAt;
+  const nextRun = data?.heartbeatConfig?.nextRunAt;
+
+  const handleToggle = async () => {
+    setActionLoading("toggle");
+    try {
+      if (isEnabled) {
+        await disableAgentHeartbeat(managed.agent.id);
+      } else {
+        await enableAgentHeartbeat(managed.agent.id);
+      }
+      await fetchData();
+    } catch {
+      // ignore
+    }
+    setActionLoading(null);
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateAgentHeartbeat(managed.agent.id, {
+        heartbeat_md: heartbeatMd,
+        interval_minutes: intervalMinutes,
+        active_hours: { start: activeStart, end: activeEnd },
+        timezone,
+      });
+      await fetchData();
+    } catch {
+      // ignore
+    }
+    setSaving(false);
+  };
+
+  const handleTrigger = async () => {
+    setActionLoading("trigger");
+    try {
+      await triggerAgentHeartbeat(managed.agent.id);
+    } catch {
+      // ignore
+    }
+    setActionLoading(null);
+  };
+
+  const formatTime = (iso: string | null | undefined) => {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  };
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      <Section title="Heartbeat Mind">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">
+              {isEnabled ? "Enabled" : "Disabled"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Periodic autonomous thinking
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isEnabled && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleTrigger}
+                disabled={actionLoading === "trigger"}
+              >
+                <Play className="h-3 w-3 mr-1" />
+                {actionLoading === "trigger" ? "..." : "Trigger Now"}
+              </Button>
+            )}
+            <Switch
+              checked={isEnabled}
+              onCheckedChange={handleToggle}
+              disabled={actionLoading === "toggle"}
+            />
+          </div>
+        </div>
+
+        {isEnabled && (
+          <div className="space-y-1 text-xs text-muted-foreground mt-2">
+            <FieldRow label="Status" value={
+              <Badge variant={status === "active" ? "default" : "secondary"}>
+                {status === "active" ? "Active" : status === "paused" ? "Paused (auto)" : status}
+              </Badge>
+            } />
+            <FieldRow label="Runs" value={String(runCount)} />
+            {failures > 0 && (
+              <FieldRow label="Consecutive Failures" value={
+                <span className="text-destructive">{failures}</span>
+              } />
+            )}
+            <FieldRow label="Last Run" value={formatTime(lastRun)} />
+            <FieldRow label="Next Run" value={formatTime(nextRun)} />
+          </div>
+        )}
+      </Section>
+
+      <Separator />
+
+      <Section title="Schedule">
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Interval (minutes)</Label>
+            <Input
+              type="number"
+              min={1}
+              max={1440}
+              value={intervalMinutes}
+              onChange={(e) => {
+                setIntervalMinutes(Number(e.target.value));
+                setDirty(true);
+              }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Active From</Label>
+              <Select
+                value={String(activeStart)}
+                onValueChange={(v) => { setActiveStart(Number(v)); setDirty(true); }}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 24 }, (_, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {String(i).padStart(2, "0")}:00
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Active Until</Label>
+              <Select
+                value={String(activeEnd)}
+                onValueChange={(v) => { setActiveEnd(Number(v)); setDirty(true); }}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 24 }, (_, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {String(i).padStart(2, "0")}:00
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Timezone</Label>
+            <Select value={timezone} onValueChange={(v) => { if (v) { setTimezone(v); setDirty(true); } }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {["Europe/Berlin", "Europe/London", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney", "Etc/UTC"].map((tz) => (
+                  <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </Section>
+
+      <Separator />
+
+      <Section title="Checklist">
+        <p className="text-xs text-muted-foreground mb-2">
+          What should the agent evaluate on each heartbeat? The agent will message you only if something needs attention.
+        </p>
+        <textarea
+          className="w-full min-h-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-ring"
+          value={heartbeatMd}
+          onChange={(e) => { setHeartbeatMd(e.target.value); setDirty(true); }}
+          placeholder="e.g., Check if any reminders are due..."
+        />
+      </Section>
+
+      {dirty && (
+        <div className="sticky bottom-0 bg-background border-t border-border pt-3 pb-1">
+          <Button onClick={handleSave} disabled={saving} className="w-full">
+            {saving ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
