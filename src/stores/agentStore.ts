@@ -35,6 +35,8 @@ export interface ManagedAgent {
   prevHealth: api.AgentHealth | null;
   /** Timestamp (ms) of last auto-restart attempt for stall recovery */
   stallRestartAttemptAt: number | null;
+  /** Timestamp (ms) when the process was started — used for startup grace period */
+  startedAt: number | null;
 }
 
 interface AgentState {
@@ -138,6 +140,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           lastActivityAt: existing?.lastActivityAt || null,
           prevHealth: existing?.prevHealth || null,
           stallRestartAttemptAt: existing?.stallRestartAttemptAt || null,
+          startedAt: existing?.startedAt || null,
         };
       }
 
@@ -204,8 +207,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             health.healthStatus === "offline" || health.healthStatus === "stuck";
           const processAlive =
             managed.processStatus === "running" || managed.processStatus === "stalled";
+          // Grace period: don't mark as stalled during bridge startup (warmup, executor registration)
+          const STARTUP_GRACE_MS = 90_000;
+          const inStartupGrace =
+            managed.startedAt != null && now - managed.startedAt < STARTUP_GRACE_MS;
 
-          if (backendDead && processAlive) {
+          if (backendDead && processAlive && !inStartupGrace) {
             // Process is alive but backend says executor is dead/stuck = stall
             if (managed.processStatus !== "stalled") {
               agents[health.agentId] = {
@@ -316,7 +323,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
       const current = get().agents[id];
       if (current) {
-        set({ agents: { ...get().agents, [id]: { ...current, processStatus: "running", uptimeSecs: 0 } } });
+        set({ agents: { ...get().agents, [id]: { ...current, processStatus: "running", uptimeSecs: 0, startedAt: Date.now() } } });
       }
     } catch (e) {
       const current = get().agents[id];
@@ -337,7 +344,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     const managed = get().agents[id];
     if (managed) {
-      set({ agents: { ...get().agents, [id]: { ...managed, processStatus: "stopped", uptimeSecs: null, crashReason: null } } });
+      set({ agents: { ...get().agents, [id]: { ...managed, processStatus: "stopped", uptimeSecs: null, crashReason: null, startedAt: null } } });
     }
   },
 
@@ -376,6 +383,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           lastActivityAt: null,
           prevHealth: null,
           stallRestartAttemptAt: null,
+          startedAt: null,
         },
       },
     });
