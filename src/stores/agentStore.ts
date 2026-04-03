@@ -342,10 +342,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       // Process may already be dead
     }
 
-    // Mark agent offline immediately by unsticking (resets executor state)
-    // so the web/mobile apps see the status change without waiting for cleanup
+    // Mark executors offline immediately so web/mobile apps see the change
+    // without waiting 45-105s for the cleanup worker
     try {
-      await api.unstickAgent(id);
+      await api.markAgentOffline(id);
     } catch {
       // Non-fatal — cleanup worker will handle it eventually
     }

@@ -233,6 +233,10 @@ export async function unstickAgent(id: string): Promise<{ message: string; execu
   return request(`/api/agents/${id}/health/unstick`, { method: "POST" });
 }
 
+export async function markAgentOffline(id: string): Promise<{ message: string }> {
+  return request(`/api/agents/${id}/health/offline`, { method: "POST" });
+}
+
 // Heartbeat Mind
 export interface HeartbeatConfig {
   enabled?: boolean;
