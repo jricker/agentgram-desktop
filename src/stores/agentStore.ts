@@ -342,6 +342,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       // Process may already be dead
     }
 
+    // Mark agent offline immediately by unsticking (resets executor state)
+    // so the web/mobile apps see the status change without waiting for cleanup
+    try {
+      await api.unstickAgent(id);
+    } catch {
+      // Non-fatal — cleanup worker will handle it eventually
+    }
+
     const managed = get().agents[id];
     if (managed) {
       set({ agents: { ...get().agents, [id]: { ...managed, processStatus: "stopped", uptimeSecs: null, crashReason: null, startedAt: null } } });
