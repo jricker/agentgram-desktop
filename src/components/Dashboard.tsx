@@ -103,9 +103,13 @@ export function Dashboard() {
 
   const handleStartAll = async () => {
     setStartingAll(true);
-    for (const m of stoppedWithKeys) {
+    for (let i = 0; i < stoppedWithKeys.length; i++) {
       try {
-        await startAgent(m.agent.id);
+        await startAgent(stoppedWithKeys[i].agent.id);
+        // Stagger startup to avoid thundering-herd on the backend DB pool
+        if (i < stoppedWithKeys.length - 1) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
       } catch {
         // continue starting others
       }
