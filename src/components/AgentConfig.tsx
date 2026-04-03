@@ -12,6 +12,7 @@ import {
   clearAgentMessages,
   clearAgentTasks,
   killExecutor,
+  unstickAgent,
   getAgentHeartbeat,
   updateAgentHeartbeat,
   enableAgentHeartbeat,
@@ -1044,8 +1045,9 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
     }
   };
 
-  const hasStuckItems = (detail?.stuckTasks.length ?? 0) > 0 || (detail?.unackedMessages.length ?? 0) > 0;
-  const hasQueue = health.queuedTasks > 0 || health.queuedMessages > 0;
+  // Used for conditional action buttons
+  const _hasStuckItems = (detail?.stuckTasks.length ?? 0) > 0 || (detail?.unackedMessages.length ?? 0) > 0;
+  void _hasStuckItems;
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -1083,50 +1085,59 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
         )}
       </Section>
 
-      {/* Quick Actions */}
-      {(hasStuckItems || hasQueue || health.healthStatus === "stuck" || health.healthStatus === "degraded") && (
-        <Section title="Actions">
-          <div className="flex flex-wrap gap-2 py-1">
-            {(health.queuedMessages > 0 || (detail?.unackedMessages.length ?? 0) > 0) && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={actionLoading !== null}
-                onClick={() =>
-                  handleAction("clear-messages", () => clearAgentMessages(managed.agent.id))
-                }
-              >
-                <Inbox className="w-3.5 h-3.5 mr-1.5" />
-                {actionLoading === "clear-messages" ? "Clearing..." : "Clear Messages"}
-              </Button>
-            )}
-            {(health.queuedTasks > 0 || (detail?.stuckTasks.length ?? 0) > 0) && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={actionLoading !== null}
-                onClick={() =>
-                  handleAction("clear-tasks", () => clearAgentTasks(managed.agent.id))
-                }
-              >
-                <ListTodo className="w-3.5 h-3.5 mr-1.5" />
-                {actionLoading === "clear-tasks" ? "Clearing..." : "Clear Tasks"}
-              </Button>
-            )}
+      {/* Quick Actions — always show Unstick, conditionally show others */}
+      <Section title="Actions">
+        <div className="flex flex-wrap gap-2 py-1">
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={actionLoading !== null}
+            onClick={() =>
+              handleAction("unstick", () => unstickAgent(managed.agent.id))
+            }
+          >
+            <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+            {actionLoading === "unstick" ? "Unsticking..." : "Unstick Agent"}
+          </Button>
+          {(health.queuedMessages > 0 || (detail?.unackedMessages.length ?? 0) > 0) && (
             <Button
               size="sm"
-              variant="destructive"
+              variant="outline"
               disabled={actionLoading !== null}
               onClick={() =>
-                handleAction("reset", () => forceResetAgent(managed.agent.id))
+                handleAction("clear-messages", () => clearAgentMessages(managed.agent.id))
               }
             >
-              <Zap className="w-3.5 h-3.5 mr-1.5" />
-              {actionLoading === "reset" ? "Resetting..." : "Force Reset"}
+              <Inbox className="w-3.5 h-3.5 mr-1.5" />
+              {actionLoading === "clear-messages" ? "Clearing..." : "Clear Messages"}
             </Button>
-          </div>
-        </Section>
-      )}
+          )}
+          {(health.queuedTasks > 0 || (detail?.stuckTasks.length ?? 0) > 0) && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={actionLoading !== null}
+              onClick={() =>
+                handleAction("clear-tasks", () => clearAgentTasks(managed.agent.id))
+              }
+            >
+              <ListTodo className="w-3.5 h-3.5 mr-1.5" />
+              {actionLoading === "clear-tasks" ? "Clearing..." : "Clear Tasks"}
+            </Button>
+          )}
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={actionLoading !== null}
+            onClick={() =>
+              handleAction("reset", () => forceResetAgent(managed.agent.id))
+            }
+          >
+            <Zap className="w-3.5 h-3.5 mr-1.5" />
+            {actionLoading === "reset" ? "Resetting..." : "Force Reset"}
+          </Button>
+        </div>
+      </Section>
 
       {/* Executors */}
       {detail && detail.executors.length > 0 && (

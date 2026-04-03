@@ -229,6 +229,10 @@ export async function killExecutor(
   return request(`/api/agents/${agentId}/executors/${executorId}/kill`, { method: "POST" });
 }
 
+export async function unstickAgent(id: string): Promise<{ message: string; executorsReset: number; tasksExpired: number; messagesExpired: number }> {
+  return request(`/api/agents/${id}/health/unstick`, { method: "POST" });
+}
+
 // Heartbeat Mind
 export interface HeartbeatConfig {
   enabled?: boolean;
