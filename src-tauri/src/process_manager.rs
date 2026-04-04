@@ -164,7 +164,8 @@ pub fn start_agent(
 
     let bridge_path = find_bridge_script()?;
 
-    let mut cmd = Command::new("python3");
+    let python = if cfg!(target_os = "windows") { "python" } else { "python3" };
+    let mut cmd = Command::new(python);
     cmd.arg(&bridge_path);
 
     cmd.env("AGENT_ID", &args.agent_id);
