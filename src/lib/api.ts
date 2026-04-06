@@ -505,6 +505,15 @@ export async function disconnectProvider(provider: string): Promise<void> {
   await request(`/api/integrations/${provider}`, { method: "DELETE" });
 }
 
+export async function getProviderStatus(provider: string): Promise<{
+  connected: boolean;
+  provider: string;
+  status?: string;
+  lastUsedAt?: string;
+}> {
+  return request(`/api/integrations/${provider}/status`);
+}
+
 // Annotations
 export async function listAnnotations(params?: {
   topic?: string;

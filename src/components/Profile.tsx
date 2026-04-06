@@ -43,6 +43,10 @@ import {
   Pencil,
   Trash2,
   Globe,
+  Brain,
+  CircleCheck,
+  CircleX,
+  Info,
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { PROVIDERS } from "../lib/models";
@@ -97,6 +101,7 @@ const STATUS_CONFIG: Record<
 // Sidebar sections
 const SECTIONS = [
   { value: "profile", label: "Profile", icon: User },
+  { value: "memory", label: "Memory", icon: Brain },
   { value: "llm-keys", label: "LLM Keys", icon: Key },
   { value: "connections", label: "Connections", icon: Link2 },
 ] as const;
@@ -557,6 +562,21 @@ export function Profile({ onClose }: { onClose: () => void }) {
               <LogOut className="w-3.5 h-3.5" />
               Sign Out
             </Button>
+          </div>
+        )}
+
+        {activeSection === "memory" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            {loadingIntegrations ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <MemorySection
+                credentials={credentials}
+                onRefreshCredentials={fetchIntegrations}
+              />
+            )}
           </div>
         )}
 
@@ -1217,6 +1237,397 @@ function LlmApiKeysSection() {
 function maskKey(key: string): string {
   if (key.length <= 8) return "••••••••";
   return key.slice(0, 6) + "••••" + key.slice(-4);
+}
+
+// ---------------------------------------------------------------------------
+// Memory Section
+// ---------------------------------------------------------------------------
+
+function MemorySection({
+  credentials,
+  onRefreshCredentials,
+}: {
+  credentials: api.UserCredential[];
+  onRefreshCredentials: () => Promise<void>;
+}) {
+  const openaiCred = credentials.find((c) => c.provider === "openai");
+  const isConnected = openaiCred?.status === "active";
+  const isRevoked = openaiCred?.status === "revoked";
+  const isFailed = openaiCred?.status === "refresh_failed";
+  const hasIssue = isRevoked || isFailed;
+
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [showKey, setShowKey] = useState(false);
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+
+  const handleSaveKey = async () => {
+    if (!apiKey.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api.storeProviderToken("openai", apiKey.trim());
+      setApiKey("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      await onRefreshCredentials();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save API key");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    setDisconnecting(true);
+    try {
+      await api.disconnectProvider("openai");
+      setConfirmDisconnect(false);
+      await onRefreshCredentials();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to disconnect");
+    } finally {
+      setDisconnecting(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Explainer */}
+      <section>
+        <SectionHeader
+          title="Semantic Memory"
+          subtitle="How your agents remember and recall information"
+        />
+
+        <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Brain className="w-4.5 h-4.5 text-primary" />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium">How it works</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Your agents store memories as they learn about you — preferences,
+                facts, decisions. Semantic memory uses AI embeddings to understand
+                the <em>meaning</em> of those memories, not just keywords.
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                This means when you ask about "scheduling meetings", your agent
+                can recall "prefers mornings before 10am" — even though those
+                phrases share no words.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Status */}
+      <section>
+        <SectionHeader title="Status" />
+
+        <div
+          className={cn(
+            "rounded-lg border p-3.5 flex items-center gap-3",
+            isConnected
+              ? "border-border bg-card"
+              : hasIssue
+                ? "border-destructive/30 bg-destructive/5"
+                : "border-dashed border-border bg-muted/20"
+          )}
+        >
+          {isConnected ? (
+            <CircleCheck className="w-5 h-5 text-green-500 flex-shrink-0" />
+          ) : hasIssue ? (
+            <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
+          ) : (
+            <CircleX className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+          )}
+
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">
+              {isConnected
+                ? "Semantic memory is active"
+                : hasIssue
+                  ? "Semantic memory has an issue"
+                  : "Semantic memory is not configured"}
+            </p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {isConnected
+                ? "Agents are using AI embeddings for smarter memory recall."
+                : hasIssue
+                  ? isRevoked
+                    ? "Your OpenAI API key was revoked — it may be invalid or out of funds."
+                    : "Your OpenAI API key failed. Check your account balance or replace the key."
+                  : "Without an embedding provider, agents use keyword-only search to recall memories. This works but misses semantically related memories."}
+            </p>
+          </div>
+
+          {isConnected && (
+            <Badge
+              variant="outline"
+              className="border-green-500/30 text-green-600 bg-green-500/10 text-[10px] py-0 flex-shrink-0"
+            >
+              Active
+            </Badge>
+          )}
+          {hasIssue && (
+            <Badge
+              variant="outline"
+              className="border-destructive/30 text-destructive bg-destructive/10 text-[10px] py-0 flex-shrink-0"
+            >
+              {isRevoked ? "Revoked" : "Failed"}
+            </Badge>
+          )}
+        </div>
+      </section>
+
+      {/* API Key Setup */}
+      <section>
+        <SectionHeader
+          title="Embedding Provider"
+          subtitle="Provide an API key to enable semantic memory"
+        />
+
+        {/* Info callout */}
+        <div className="flex items-start gap-2 text-xs text-muted-foreground bg-muted/30 border border-border px-3 py-2.5 rounded-md mb-4">
+          <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <div className="space-y-1">
+            <p>
+              Semantic memory requires an embedding model to convert text into
+              vectors. We use OpenAI's <code className="text-[11px] bg-muted px-1 rounded">text-embedding-3-small</code> — it costs
+              about <strong>$0.02 per million tokens</strong> (thousands of
+              memories for less than a penny).
+            </p>
+            <p>
+              Your key is encrypted at rest and never shared. Each user provides
+              their own key so costs scale with your usage, not ours.
+            </p>
+          </div>
+        </div>
+
+        {/* Connected state */}
+        {isConnected && (
+          <div className="rounded-lg border border-border bg-card p-3.5">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Key className="w-4.5 h-4.5 text-primary" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium">OpenAI API Key</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Connected
+                  {openaiCred?.lastUsedAt &&
+                    ` · Last used ${new Date(openaiCred.lastUsedAt).toLocaleDateString()}`}
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConfirmDisconnect(true)}
+                className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+              >
+                <Unlink className="w-3.5 h-3.5" />
+                Remove
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Error state — allow re-entering key */}
+        {hasIssue && (
+          <div className="space-y-3">
+            <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2.5 rounded-md">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <p className="text-xs">
+                {isRevoked
+                  ? "Your API key was invalid, revoked, or your OpenAI account is out of funds. Please enter a new key."
+                  : "Your API key encountered an error. Try replacing it with a new one."}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">New OpenAI API Key</Label>
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    type={showKey ? "text" : "password"}
+                    value={apiKey}
+                    onChange={(e) => {
+                      setApiKey(e.target.value);
+                      setError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && apiKey.trim()) handleSaveKey();
+                    }}
+                    placeholder="sk-proj-..."
+                    className="pr-8"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    aria-label={showKey ? "Hide API key" : "Show API key"}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showKey ? (
+                      <EyeOff className="w-3.5 h-3.5" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={handleSaveKey}
+                  disabled={!apiKey.trim() || saving}
+                >
+                  {saving ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : saved ? (
+                    <Check className="w-3.5 h-3.5" />
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Not connected — setup form */}
+        {!isConnected && !hasIssue && (
+          <div className="space-y-2">
+            <Label className="text-xs">OpenAI API Key</Label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Input
+                  type={showKey ? "text" : "password"}
+                  value={apiKey}
+                  onChange={(e) => {
+                    setApiKey(e.target.value);
+                    setError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && apiKey.trim()) handleSaveKey();
+                  }}
+                  placeholder="sk-proj-..."
+                  className="pr-8"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowKey(!showKey)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showKey ? (
+                    <EyeOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Eye className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              </div>
+              <Button
+                size="sm"
+                onClick={handleSaveKey}
+                disabled={!apiKey.trim() || saving}
+              >
+                {saving ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : saved ? (
+                  <Check className="w-3.5 h-3.5" />
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Get your key at{" "}
+              <button
+                onClick={() =>
+                  openExternal("https://platform.openai.com/api-keys")
+                }
+                className="text-primary hover:underline"
+              >
+                platform.openai.com/api-keys
+              </button>
+            </p>
+          </div>
+        )}
+
+        {error && <p className="text-xs text-destructive mt-2">{error}</p>}
+        {saved && !isConnected && (
+          <p className="text-xs text-green-600 mt-2">
+            API key saved — semantic memory is now active.
+          </p>
+        )}
+      </section>
+
+      {/* Local LLM Alternative */}
+      <section>
+        <SectionHeader title="Alternative: Local Embedding Model" />
+
+        <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-muted flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Database className="w-4.5 h-4.5 text-muted-foreground" />
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-sm font-medium text-muted-foreground">
+                Coming soon
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                We're working on support for local embedding models that run
+                entirely on your machine — no API key, no cost, no data leaving
+                your device. This will use lightweight models like
+                all-MiniLM-L6-v2 (~80MB) for comparable quality.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Disconnect confirmation */}
+      <Dialog
+        open={confirmDisconnect}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDisconnect(false);
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Remove OpenAI Key</DialogTitle>
+            <DialogDescription>
+              Semantic memory will stop working. Your agents will fall back to
+              keyword-only search until you add a new key.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmDisconnect(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDisconnect}
+              disabled={disconnecting}
+            >
+              {disconnecting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                "Remove"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
