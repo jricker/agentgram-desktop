@@ -47,6 +47,8 @@ import {
   CircleCheck,
   CircleX,
   Info,
+  Calendar,
+  RefreshCw,
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { PROVIDERS } from "../lib/models";
@@ -64,11 +66,17 @@ function openExternal(url: string) {
 // ---------------------------------------------------------------------------
 
 const PROVIDER_ICONS: Record<string, React.ElementType> = {
-  google: Mail,
+  google: Globe,
   github: Github,
   flyio: Cloud,
   supabase: Database,
 };
+
+/** Google services derived from OAuth scopes. */
+const GOOGLE_SERVICES: { scope: string; label: string; icon: React.ElementType }[] = [
+  { scope: "gmail.modify", label: "Gmail", icon: Mail },
+  { scope: "calendar", label: "Calendar", icon: Calendar },
+];
 
 function getProviderIcon(name: string) {
   return PROVIDER_ICONS[name] || Key;
@@ -1755,8 +1763,16 @@ function ProviderCard({
         </div>
       </div>
 
-      {/* Credential details (when connected) */}
-      {credential && credential.scopes.length > 0 && (
+      {/* Google: show services with status */}
+      {credential && provider.name === "google" && (
+        <GoogleServicesDetail
+          credential={credential}
+          onReconnect={onConnectOAuth}
+        />
+      )}
+
+      {/* Non-Google: show raw scopes */}
+      {credential && provider.name !== "google" && credential.scopes.length > 0 && (
         <div className="mt-2.5 pt-2.5 border-t border-border/50">
           <div className="flex flex-wrap gap-1">
             {credential.scopes.map((scope) => (
@@ -1770,6 +1786,59 @@ function ProviderCard({
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function GoogleServicesDetail({
+  credential,
+  onReconnect,
+}: {
+  credential: api.UserCredential;
+  onReconnect: () => void;
+}) {
+  const scopeStr = credential.scopes.join(" ");
+  const services = GOOGLE_SERVICES.map((svc) => ({
+    ...svc,
+    connected: scopeStr.includes(svc.scope),
+  }));
+  const hasMissing = services.some((s) => !s.connected);
+
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-border/50 space-y-2">
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {services.map((svc) => {
+          const SvcIcon = svc.icon;
+          return (
+            <div key={svc.scope} className="flex items-center gap-1.5">
+              <SvcIcon className={cn(
+                "w-3.5 h-3.5",
+                svc.connected ? "text-success" : "text-muted-foreground/50"
+              )} />
+              <span className={cn(
+                "text-xs",
+                svc.connected ? "text-foreground" : "text-muted-foreground/50 line-through"
+              )}>
+                {svc.label}
+              </span>
+              {svc.connected ? (
+                <Check className="w-3 h-3 text-success" />
+              ) : (
+                <AlertCircle className="w-3 h-3 text-warning" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {hasMissing && (
+        <button
+          onClick={onReconnect}
+          className="flex items-center gap-1.5 text-[11px] text-primary hover:underline cursor-pointer"
+        >
+          <RefreshCw className="w-3 h-3" />
+          Reconnect to enable all services
+        </button>
       )}
     </div>
   );
