@@ -65,42 +65,35 @@ export function SoulEditor({ agentId }: SoulEditorProps) {
     <div className="flex flex-col h-full p-4 gap-2">
       {isClone && (
         <div
-          className={`flex items-start gap-2.5 rounded-md border px-3 py-2.5 text-xs ${
+          className={`flex items-start gap-2.5 rounded-md px-3 py-2.5 text-xs ${
             isInherited
-              ? "border-blue-500/30 bg-blue-500/5 text-blue-200"
-              : "border-amber-500/30 bg-amber-500/5 text-amber-200"
+              ? "bg-blue-600 text-white"
+              : "bg-yellow-400 text-black"
           }`}
         >
           <Link className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <div className="space-y-1">
+          <p>
             {isInherited ? (
-              <p>
-                This soul is inherited from{" "}
-                <span className="font-medium">{agent.soulMdSourceName}</span>.
-                Editing it will create a local copy that no longer syncs with the
-                source.
-              </p>
+              <>Inherited from <span className="font-semibold">{agent.soulMdSourceName}</span>. Editing will detach from source.</>
             ) : (
               <>
-                <p>
-                  This soul was customized and no longer inherits from{" "}
-                  <span className="font-medium">{agent.soulMdSourceName}</span>.
-                </p>
+                Detached from <span className="font-semibold">{agent.soulMdSourceName}</span> — local edits override the source.
+                <span className="mx-1.5">·</span>
                 <button
                   onClick={handleRevert}
                   disabled={reverting}
-                  className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-100 transition-colors"
+                  className="inline-flex items-center gap-1 font-medium underline underline-offset-2 hover:opacity-80 transition-opacity"
                 >
                   {reverting ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
                     <RotateCcw className="h-3 w-3" />
                   )}
-                  Revert to source soul
+                  Revert to source
                 </button>
               </>
             )}
-          </div>
+          </p>
         </div>
       )}
       <Textarea
