@@ -126,7 +126,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           if (mc.model) serverConfig.model = mc.model as string;
           if (mc.max_tokens) serverConfig.maxTokens = mc.max_tokens as number;
           if (mc.execution_mode) serverConfig.executionMode = mc.execution_mode as string;
-          if (mc.timeout) serverConfig.historyLimit = mc.history_limit as number;
+          if (mc.history_limit) serverConfig.historyLimit = mc.history_limit as number;
         }
 
         updated[agent.id] = {

@@ -51,11 +51,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -72,7 +67,6 @@ import {
   EyeOff,
   RefreshCw,
   HelpCircle,
-  ChevronRight,
   LayoutTemplate,
   Palette,
   Timer,
@@ -108,7 +102,6 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   const [showApiKey, setShowApiKey] = useState(false);
   const [showLlmKey, setShowLlmKey] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const { agent, config, apiKey } = managed;
   const backend = config.backend || "anthropic";
@@ -604,55 +597,6 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
               )}
             </Section>
 
-            {/* Advanced */}
-            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-              <CollapsibleTrigger className="flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors w-full">
-                <ChevronRight
-                  className={cn(
-                    "w-3.5 h-3.5 transition-transform",
-                    advancedOpen && "rotate-90"
-                  )}
-                />
-                Advanced
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <div className="space-y-3 pt-3">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Max Tokens</Label>
-                    <Input
-                      type="number"
-                      value={config.maxTokens}
-                      onChange={(e) =>
-                        updateConfig(agent.id, {
-                          maxTokens: parseInt(e.target.value) || 4096,
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Maximum tokens the LLM can generate per response
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">History Limit</Label>
-                    <Input
-                      type="number"
-                      value={config.historyLimit}
-                      min={1}
-                      max={30}
-                      onChange={(e) =>
-                        updateConfig(agent.id, {
-                          historyLimit: parseInt(e.target.value) || 20,
-                        })
-                      }
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Number of prior messages included as context (max 30)
-                    </p>
-                  </div>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
 
             {/* Working Directories (Claude CLI only) */}
             {config.backend === "claude_cli" && (
