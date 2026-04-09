@@ -193,6 +193,10 @@ export async function updateSoulMd(
   });
 }
 
+export async function revertSoulMd(id: string): Promise<Agent> {
+  return request<Agent>(`/api/agents/${id}/soul/revert`, { method: "POST" });
+}
+
 // Health
 export async function getAgentHealth(): Promise<{ agents: AgentHealth[] }> {
   return request("/api/agents/health");
@@ -688,6 +692,9 @@ export interface Agent {
   online?: boolean;
   metadata?: Record<string, unknown>;
   soulMd?: string;
+  soulMdInherited?: boolean;
+  soulMdSourceName?: string;
+  soulMdSourceId?: string;
 }
 
 export interface AgentHealth {
