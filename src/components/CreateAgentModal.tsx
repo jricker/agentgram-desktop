@@ -74,9 +74,19 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const showApiKeyInput = needsApiKey && !hasDefaultKey;
   const showEffort = backend === "claude_cli";
 
-  // Split skills into auto-included (global/owner) and optional (agent-scoped)
+  // Split skills into:
+  // - auto: global/owner with no activation rules (always active for all agents)
+  // - optional: agent-scoped (must be explicitly assigned)
+  // Skills with activation_rules (tool gating, agent_type gating, etc.) are conditional —
+  // they only activate at runtime when the agent meets the criteria, so don't show them
+  // as "included automatically" since that's misleading.
+  const hasActivationRules = (s: Skill) => {
+    const rules = s.activationRules;
+    return rules && Object.keys(rules).length > 0;
+  };
+
   const autoSkills = useMemo(
-    () => availableSkills.filter((s) => s.scope === "global" || s.scope === "owner"),
+    () => availableSkills.filter((s) => (s.scope === "global" || s.scope === "owner") && !hasActivationRules(s)),
     [availableSkills]
   );
   const optionalSkills = useMemo(
