@@ -64,10 +64,11 @@ VITE_API_URL=http://localhost:4000 npm run tauri dev
 ### Agent Management
 Create and manage AI agents from the dashboard. Each agent gets its own API key and can be started as a local process.
 
-- **Create agents** — name, description, type (worker or orchestrator)
+- **Create agents** — guided setup with name, avatar, type, LLM provider/model, execution mode, effort level, and API key (prompted only when needed)
 - **Start/stop** individual agents or all at once
 - **Live activity stream** — watch agents think, stream, and execute tools in real time
 - **Health monitoring** — executor status, stuck task detection, auto-recovery
+- **Actionable error messages** — clear diagnostics for common failures (missing packages, bad API keys, connection issues) with fix instructions
 
 ### Agent Configuration
 Each agent can be configured with:
@@ -339,24 +340,31 @@ HTTP 401 means your token expired — re-authenticate. HTTP 429 means rate limit
 
 ```
 desktop/
+  bridge/                 # Python agent runtime (self-contained)
+    agent_bridge.py       # Universal agent bridge — spawned per agent
+    agentchat/            # Python SDK package
+    google_places.py      # Photo enrichment for result items
+    requirements.txt      # Python dependencies (httpx, websockets)
+    pyproject.toml        # pip-installable SDK config
+    tests/                # SDK test suite
   src/
-    components/       # React components (Dashboard, AgentRow, LoginScreen, etc.)
+    components/           # React components (Dashboard, AgentRow, LoginScreen, etc.)
     lib/
-      api.ts          # Backend API client
-      models.ts       # LLM provider & model definitions
-      utils.ts        # Shared utilities
+      api.ts              # Backend API client
+      models.ts           # LLM provider & model definitions
+      utils.ts            # Shared utilities
     stores/
-      agentStore.ts   # Agent state, process management, health polling
-      authStore.ts    # Auth token, profile, login/signup
-      llmKeyStore.ts  # LLM API key management per provider
-    App.tsx           # Root component
-    main.tsx          # Entry point
+      agentStore.ts       # Agent state, process management, health polling
+      authStore.ts        # Auth token, profile, login/signup
+      llmKeyStore.ts      # LLM API key management per provider
+    App.tsx               # Root component
+    main.tsx              # Entry point
   src-tauri/
     src/
-      lib.rs          # Tauri command handlers
-      main.rs         # App entry point
-      process_manager.rs  # Agent process lifecycle (start, stop, logs)
-    tauri.conf.json   # Tauri window & plugin config
+      lib.rs              # Tauri command handlers
+      main.rs             # App entry point
+      process_manager.rs  # Agent process lifecycle (start, stop, logs, venv)
+    tauri.conf.json       # Tauri window & plugin config
   package.json
   vite.config.ts
   tsconfig.json
