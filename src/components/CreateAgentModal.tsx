@@ -74,20 +74,29 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const showApiKeyInput = needsApiKey && !hasDefaultKey;
   const showEffort = backend === "claude_cli";
 
-  // Split skills into:
-  // - auto: global/owner with no activation rules (always active for all agents)
-  // - optional: agent-scoped (must be explicitly assigned)
-  // Skills with activation_rules (tool gating, agent_type gating, etc.) are conditional —
-  // they only activate at runtime when the agent meets the criteria, so don't show them
-  // as "included automatically" since that's misleading.
-  const hasActivationRules = (s: Skill) => {
+  // Split skills into auto-included vs optional.
+  // A skill is auto-included if it's global/owner AND either:
+  //   - has no activation_rules, OR
+  //   - only has agent_types gating that matches the selected agent type
+  // Skills gated on tools (requires_tools, requires_any_tools) are conditional
+  // and hidden — they activate at runtime when the agent gets matching tools.
+  const isAutoIncluded = (s: Skill) => {
+    if (s.scope !== "global" && s.scope !== "owner") return false;
     const rules = s.activationRules;
-    return rules && Object.keys(rules).length > 0;
+    if (!rules || Object.keys(rules).length === 0) return true;
+    // Tool-gated skills are not auto-included
+    const rt = rules.requires_tools as unknown[] | undefined;
+    const rat = rules.requires_any_tools as unknown[] | undefined;
+    if ((rt && rt.length > 0) || (rat && rat.length > 0)) return false;
+    // agent_types gating — include if the selected type matches
+    const types = rules.agent_types as string[] | undefined;
+    if (types && types.length > 0) return types.includes(agentType);
+    return true;
   };
 
   const autoSkills = useMemo(
-    () => availableSkills.filter((s) => (s.scope === "global" || s.scope === "owner") && !hasActivationRules(s)),
-    [availableSkills]
+    () => availableSkills.filter(isAutoIncluded),
+    [availableSkills, agentType]
   );
   const optionalSkills = useMemo(
     () => availableSkills.filter((s) => s.scope === "agent"),
