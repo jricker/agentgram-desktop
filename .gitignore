@@ -8,6 +8,9 @@ src-tauri/target/
 # Tauri generated (regenerated on build)
 src-tauri/gen/schemas/
 
+# Python venv (auto-created by process manager)
+bridge/venv/
+
 # Environment
 .env
 .env.*

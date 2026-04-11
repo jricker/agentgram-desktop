@@ -245,8 +245,11 @@ pub fn start_agent(
 
     let bridge_path = find_bridge_script(&app)?;
 
-    let python = if cfg!(target_os = "windows") { "python" } else { "python3" };
-    let mut cmd = Command::new(python);
+    let bridge_dir = std::path::Path::new(&bridge_path)
+        .parent()
+        .ok_or("Cannot determine bridge directory")?;
+    let python = ensure_venv(bridge_dir)?;
+    let mut cmd = Command::new(&python);
     cmd.arg(&bridge_path);
 
     // The agentchat SDK is co-located with the bridge script in bridge/.
@@ -310,14 +313,7 @@ pub fn start_agent(
     cmd.stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            format!(
-                "Python not found. Install Python 3.11+ from https://python.org and ensure '{}' is on your PATH.",
-                python
-            )
-        } else {
-            format!("Failed to start bridge: {}", e)
-        }
+        format!("Failed to start bridge: {}", e)
     })?;
 
     let logs = Arc::new(Mutex::new(Vec::new()));
@@ -504,6 +500,80 @@ fn kill_orphan_bridges() {
                 }
             }
         }
+    }
+}
+
+/// Ensure a Python virtual environment exists with required packages installed.
+/// Creates the venv and runs `pip install -r requirements.txt` on first launch,
+/// and re-installs when requirements.txt changes.
+/// Returns the path to the venv's python executable.
+fn ensure_venv(bridge_dir: &std::path::Path) -> Result<String, String> {
+    let venv_dir = bridge_dir.join("venv");
+
+    let (venv_python, system_python) = if cfg!(target_os = "windows") {
+        (venv_dir.join("Scripts").join("python.exe"), "python")
+    } else {
+        (venv_dir.join("bin").join("python3"), "python3")
+    };
+
+    // Create venv if it doesn't exist
+    if !venv_python.exists() {
+        eprintln!("[ProcessManager] Creating Python venv at {:?}", venv_dir);
+        let output = Command::new(system_python)
+            .args(["-m", "venv", &venv_dir.to_string_lossy()])
+            .output()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    format!(
+                        "Python not found. Install Python 3.11+ from https://python.org and ensure '{}' is on your PATH.",
+                        system_python
+                    )
+                } else {
+                    format!("Failed to create Python venv: {}", e)
+                }
+            })?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to create Python venv: {}", stderr));
+        }
+    }
+
+    // Install/update requirements if needed
+    let req_file = bridge_dir.join("requirements.txt");
+    let marker = venv_dir.join(".deps_installed");
+
+    if req_file.exists() && needs_dep_install(&req_file, &marker) {
+        eprintln!("[ProcessManager] Installing Python dependencies from requirements.txt");
+        let output = Command::new(&venv_python)
+            .args(["-m", "pip", "install", "--quiet", "-r", &req_file.to_string_lossy()])
+            .output()
+            .map_err(|e| format!("Failed to install Python dependencies: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Failed to install Python dependencies: {}", stderr));
+        }
+
+        // Touch marker so we skip next time unless requirements.txt changes
+        std::fs::write(&marker, "").ok();
+    }
+
+    Ok(venv_python.to_string_lossy().to_string())
+}
+
+/// Returns true if pip install should run: either the marker doesn't exist
+/// or requirements.txt has been modified since the last install.
+fn needs_dep_install(req_file: &std::path::Path, marker: &std::path::Path) -> bool {
+    if !marker.exists() {
+        return true;
+    }
+    match (req_file.metadata(), marker.metadata()) {
+        (Ok(req_meta), Ok(marker_meta)) => match (req_meta.modified(), marker_meta.modified()) {
+            (Ok(req_time), Ok(marker_time)) => req_time > marker_time,
+            _ => true,
+        },
+        _ => true,
     }
 }
 
