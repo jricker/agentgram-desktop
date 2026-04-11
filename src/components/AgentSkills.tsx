@@ -91,13 +91,22 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
   const ownerSkills = resolvedSkills.filter((s) => s.scope === "owner");
   const agentSkills = resolvedSkills.filter((s) => s.scope === "agent");
 
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<string | null>(null);
+
   const handleAssign = async (skillId: string) => {
+    setAssigning(skillId);
+    setAssignError(null);
     try {
       await assignSkill(skillId, agentId);
       await fetchSkills();
       setShowAdd(false);
     } catch (e) {
-      console.error("Failed to assign skill:", e);
+      const msg = e instanceof Error ? e.message : "Failed to assign skill";
+      console.error("Failed to assign skill:", msg);
+      setAssignError(msg);
+    } finally {
+      setAssigning(null);
     }
   };
 
@@ -326,9 +335,11 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
       {/* Add Skill Dialog */}
       <AddSkillDialog
         open={showAdd}
-        onClose={() => setShowAdd(false)}
+        onClose={() => { setShowAdd(false); setAssignError(null); }}
         skills={unassignedSkills}
         onAssign={handleAssign}
+        assigningId={assigning}
+        error={assignError}
       />
 
       {/* Create Skill Dialog */}
@@ -422,11 +433,15 @@ function AddSkillDialog({
   onClose,
   skills,
   onAssign,
+  assigningId,
+  error,
 }: {
   open: boolean;
   onClose: () => void;
   skills: Skill[];
   onAssign: (skillId: string) => void;
+  assigningId: string | null;
+  error: string | null;
 }) {
   const [search, setSearch] = useState("");
 
@@ -449,6 +464,11 @@ function AddSkillDialog({
           onChange={(e) => setSearch(e.target.value)}
           className="mb-3"
         />
+        {error && (
+          <div className="text-sm text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2 rounded-md mb-2">
+            {error}
+          </div>
+        )}
         {filtered.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
             {skills.length === 0 ? "All available skills are already attached." : "No matching skills."}
@@ -458,7 +478,8 @@ function AddSkillDialog({
             {filtered.map((skill) => (
               <div
                 key={skill.id}
-                className="flex items-center justify-between p-2.5 rounded-lg border hover:bg-accent/50"
+                className={`flex items-center justify-between p-2.5 rounded-lg border hover:bg-accent/50 cursor-pointer transition-colors ${assigningId === skill.id ? "opacity-50 pointer-events-none" : ""}`}
+                onClick={() => !assigningId && onAssign(skill.id)}
               >
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">{skill.displayName}</p>
@@ -466,9 +487,11 @@ function AddSkillDialog({
                     {skill.description.slice(0, 60)}
                   </p>
                 </div>
-                <Button size="sm" variant="ghost" onClick={() => onAssign(skill.id)}>
-                  <Plus className="w-3.5 h-3.5" />
-                </Button>
+                {assigningId === skill.id ? (
+                  <span className="text-xs text-muted-foreground flex-shrink-0 ml-2">Adding...</span>
+                ) : (
+                  <Plus className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0 ml-2" />
+                )}
               </div>
             ))}
           </div>
