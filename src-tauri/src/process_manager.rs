@@ -152,6 +152,7 @@ fn spawn_log_reader(stderr: std::process::ChildStderr, logs: Arc<Mutex<Vec<Strin
 
 #[tauri::command]
 pub fn start_agent(
+    app: tauri::AppHandle,
     state: State<'_, Mutex<ProcessManager>>,
     args: StartAgentArgs,
 ) -> Result<AgentProcess, String> {
@@ -162,11 +163,24 @@ pub fn start_agent(
         graceful_kill(&mut existing.child);
     }
 
-    let bridge_path = find_bridge_script()?;
+    let bridge_path = find_bridge_script(&app)?;
 
     let python = if cfg!(target_os = "windows") { "python" } else { "python3" };
     let mut cmd = Command::new(python);
     cmd.arg(&bridge_path);
+
+    // The agentchat SDK is co-located with the bridge script in bridge/.
+    // Python adds the script's directory to sys.path[0] automatically,
+    // but set PYTHONPATH as a belt-and-suspenders fallback.
+    if let Some(bridge_dir) = std::path::Path::new(&bridge_path).parent() {
+        let bridge_dir_str = bridge_dir.to_string_lossy().to_string();
+        let sep = if cfg!(target_os = "windows") { ";" } else { ":" };
+        let pythonpath = match std::env::var("PYTHONPATH") {
+            Ok(existing) => format!("{}{}{}", bridge_dir_str, sep, existing),
+            Err(_) => bridge_dir_str,
+        };
+        cmd.env("PYTHONPATH", pythonpath);
+    }
 
     cmd.env("AGENT_ID", &args.agent_id);
     cmd.env("AGENT_API_KEY", &args.api_key);
@@ -404,27 +418,40 @@ fn kill_orphan_bridges() {
     }
 }
 
-fn find_bridge_script() -> Result<String, String> {
-    let dev_path = std::env::current_dir()
-        .ok()
-        .map(|d| d.join("../scripts/agent_bridge.py"))
-        .and_then(|p| p.canonicalize().ok());
+fn find_bridge_script(app: &tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
 
-    if let Some(path) = dev_path {
+    // 1. Tauri resource directory (bundled app)
+    //    Resources from ../bridge/ resolve to _up_/bridge/ in the bundle
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        let path = resource_dir
+            .join("_up_")
+            .join("bridge")
+            .join("agent_bridge.py");
         if path.exists() {
             return Ok(path.to_string_lossy().to_string());
         }
     }
 
-    let project_paths = [
-        "/Users/jricker/Documents/GitHub/Agentgram/scripts/agent_bridge.py",
-    ];
-
-    for path in &project_paths {
-        if std::path::Path::new(path).exists() {
-            return Ok(path.to_string());
+    // 2. Walk up from the executable, looking for desktop/bridge/
+    if let Ok(exe) = std::env::current_exe().and_then(|e| e.canonicalize()) {
+        for ancestor in exe.ancestors().skip(1) {
+            let candidate = ancestor.join("bridge").join("agent_bridge.py");
+            if candidate.exists() {
+                return Ok(candidate.to_string_lossy().to_string());
+            }
         }
     }
 
-    Err("Bridge script not found. Ensure agent_bridge.py is accessible.".to_string())
+    // 3. Walk up from cwd (dev mode fallback)
+    if let Ok(cwd) = std::env::current_dir() {
+        for ancestor in cwd.ancestors() {
+            let candidate = ancestor.join("bridge").join("agent_bridge.py");
+            if candidate.exists() {
+                return Ok(candidate.to_string_lossy().to_string());
+            }
+        }
+    }
+
+    Err("Bridge script not found. Ensure desktop/bridge/agent_bridge.py exists.".to_string())
 }
