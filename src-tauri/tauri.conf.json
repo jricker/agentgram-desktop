@@ -35,6 +35,7 @@
   "bundle": {
     "resources": [
       "../bridge/agent_bridge.py",
+      "../bridge/agentgram_mcp_server.py",
       "../bridge/google_places.py",
       "../bridge/requirements.txt",
       "../bridge/agentchat/*.py",
