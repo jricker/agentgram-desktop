@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useAgentStore } from "../stores/agentStore";
 import { useLlmKeyStore } from "../stores/llmKeyStore";
 import {
@@ -9,8 +9,15 @@ import {
   getSupportedModes,
   providerRequiresLlmKey,
 } from "../lib/models";
-import { presignAvatarUpload, updateAgent } from "../lib/api";
-import { Bot, Workflow, Camera, Eye, EyeOff, ShieldOff } from "lucide-react";
+import {
+  presignAvatarUpload,
+  updateAgent,
+  listSkills,
+  assignSkill,
+  type Skill,
+} from "../lib/api";
+import { Bot, Workflow, Camera, Eye, EyeOff, ShieldOff, Sparkles, Check, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "../lib/utils";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -48,8 +55,17 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const [executionMode, setExecutionMode] = useState("tool_use");
   const [effort, setEffort] = useState<string | null>(null);
   const [skipPermissions, setSkipPermissions] = useState(false);
+  const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
+  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fetch available skills on mount
+  useEffect(() => {
+    listSkills()
+      .then((res) => setAvailableSkills(res.skills || []))
+      .catch(() => {});
+  }, []);
 
   const models = useMemo(() => getModelsForProvider(backend), [backend]);
   const supportedModes = useMemo(() => getSupportedModes(backend), [backend]);
@@ -57,6 +73,25 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const hasDefaultKey = llmKeyStore.getDefaultKey(backend) !== null;
   const showApiKeyInput = needsApiKey && !hasDefaultKey;
   const showEffort = backend === "claude_cli";
+
+  // Split skills into auto-included (global/owner) and optional (agent-scoped)
+  const autoSkills = useMemo(
+    () => availableSkills.filter((s) => s.scope === "global" || s.scope === "owner"),
+    [availableSkills]
+  );
+  const optionalSkills = useMemo(
+    () => availableSkills.filter((s) => s.scope === "agent"),
+    [availableSkills]
+  );
+
+  const toggleSkill = (id: string) => {
+    setSelectedSkillIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleBackendChange = (newBackend: string) => {
     setBackend(newBackend);
@@ -145,6 +180,13 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
         }
       }
 
+      // Assign selected optional skills
+      if (selectedSkillIds.size > 0) {
+        await Promise.allSettled(
+          Array.from(selectedSkillIds).map((skillId) => assignSkill(skillId, id))
+        );
+      }
+
       selectAgent(id);
       onClose();
     } catch (err) {
@@ -180,7 +222,7 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   return (
     <>
       <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="sm:max-w-[480px]">
+        <DialogContent className="sm:max-w-[480px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create New Agent</DialogTitle>
           </DialogHeader>
@@ -406,6 +448,71 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                   </p>
                 </div>
               </label>
+            )}
+
+            {/* Skills */}
+            {availableSkills.length > 0 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  Skills
+                </Label>
+
+                {/* Auto-included skills */}
+                {autoSkills.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
+                      Included automatically
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {autoSkills.map((s) => (
+                        <Badge
+                          key={s.id}
+                          variant="secondary"
+                          className="text-xs py-0.5 gap-1"
+                        >
+                          <Check className="w-3 h-3 text-green-500" />
+                          {s.displayName}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Optional skills */}
+                {optionalSkills.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-[11px] text-text-muted uppercase tracking-wider font-medium">
+                      Optional — click to add
+                    </p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {optionalSkills.map((s) => {
+                        const selected = selectedSkillIds.has(s.id);
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => toggleSkill(s.id)}
+                            className={cn(
+                              "inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border transition-colors",
+                              selected
+                                ? "border-accent bg-accent-light text-accent"
+                                : "border-border text-text-muted hover:border-border-strong hover:text-text"
+                            )}
+                          >
+                            {selected ? (
+                              <Check className="w-3 h-3" />
+                            ) : (
+                              <Plus className="w-3 h-3" />
+                            )}
+                            {s.displayName}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {error && (
