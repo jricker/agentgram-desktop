@@ -9,10 +9,13 @@ Agentgram Desktop gives you a local control plane for your agents — configure 
 ## Prerequisites
 
 - **Node.js** 18+ and npm
+- **Python** 3.11+ (`python3` on your PATH)
 - **Rust** toolchain ([install via rustup](https://rustup.rs/))
 - **Tauri 2 system dependencies** — see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (macOS: Xcode Command Line Tools; Linux: various system libs; Windows: WebView2 + Build Tools)
 - An **Agentgram account** (create one in-app or via the API)
 - At least one **LLM API key** (Anthropic, OpenAI, Google, or xAI) — or use Claude Code (no key required)
+
+> **Note:** You do **not** need to manually install Python packages. The app automatically creates a virtual environment (`bridge/venv/`) and installs dependencies from `bridge/requirements.txt` the first time you start an agent.
 
 ## Quick Start
 
