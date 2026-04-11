@@ -309,7 +309,7 @@ pub fn start_agent(
         }
     }
 
-    cmd.stdout(Stdio::piped());
+    cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::piped());
 
     let mut child = cmd.spawn().map_err(|e| {
@@ -556,7 +556,9 @@ fn ensure_venv(bridge_dir: &std::path::Path) -> Result<String, String> {
         }
 
         // Touch marker so we skip next time unless requirements.txt changes
-        std::fs::write(&marker, "").ok();
+        if let Err(e) = std::fs::write(&marker, "") {
+            eprintln!("[ProcessManager] Warning: failed to write deps marker: {}", e);
+        }
     }
 
     Ok(venv_python.to_string_lossy().to_string())
