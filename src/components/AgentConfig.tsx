@@ -219,6 +219,16 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
         {/* Header — editable name + avatar */}
         <AgentHeader agent={agent} />
 
+        {/* Crash reason banner — shown across all sections */}
+        {managed.processStatus === "crashed" && managed.crashReason && (
+          <div className="mx-4 mt-3 px-3 py-2.5 bg-destructive/10 border border-destructive/20 rounded-lg flex-shrink-0">
+            <div className="text-xs font-medium text-destructive mb-0.5">Agent crashed</div>
+            <div className="text-xs text-destructive/80 whitespace-pre-wrap break-words">
+              {managed.crashReason}
+            </div>
+          </div>
+        )}
+
         {activeSection === "config" && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             {/* LLM Provider — Primary section */}

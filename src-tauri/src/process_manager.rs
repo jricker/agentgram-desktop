@@ -101,21 +101,83 @@ impl ProcessManager {
     }
 }
 
-/// Extract crash reason from collected log lines.
+/// Extract crash reason from collected log lines, providing user-friendly
+/// messages with actionable fix instructions for common failure modes.
 fn extract_crash_reason(logs: &Arc<Mutex<Vec<String>>>) -> Option<String> {
     let lines = logs.lock().ok()?;
     if lines.is_empty() {
         return None;
     }
 
-    for line in lines.iter() {
-        if line.contains("AUTH_FAILED") {
-            return Some("Authentication failed — check the agent's API key".to_string());
-        }
+    let all_text = lines.join("\n");
+
+    // --- Missing Python packages ---
+    if let Some(module) = extract_missing_module(&all_text) {
+        let install_hint = match module.as_str() {
+            "httpx" | "websockets" =>
+                format!("Missing Python package '{module}'. Run: pip3 install -r desktop/bridge/requirements.txt"),
+            "anthropic" =>
+                format!("Missing Python package '{module}'. Run: pip3 install anthropic"),
+            "openai" =>
+                format!("Missing Python package '{module}'. Run: pip3 install openai"),
+            _ =>
+                format!("Missing Python package '{module}'. Run: pip3 install {module}"),
+        };
+        return Some(install_hint);
     }
 
+    // --- Authentication failures ---
+    if all_text.contains("AUTH_FAILED") || all_text.contains("401") {
+        return Some("Authentication failed — the agent's API key may be invalid or expired. Try regenerating it in agent settings.".to_string());
+    }
+    if all_text.contains("AuthError") {
+        return Some("Authentication error — check that the agent's API key is correct.".to_string());
+    }
+
+    // --- LLM API key issues ---
+    if all_text.contains("AuthenticationError") && all_text.contains("api_key") {
+        return Some("LLM API key is invalid or expired. Update it in agent settings under LLM Provider.".to_string());
+    }
+    if all_text.contains("Invalid API Key") || all_text.contains("Incorrect API key") {
+        return Some("LLM API key is invalid. Check your API key in agent settings.".to_string());
+    }
+    if all_text.contains("RateLimitError") || all_text.contains("rate_limit") {
+        return Some("LLM rate limit exceeded. Wait a moment and try again, or check your API plan limits.".to_string());
+    }
+    if all_text.contains("InsufficientQuotaError") || all_text.contains("insufficient_quota") {
+        return Some("LLM API quota exceeded. Check your billing/usage at your LLM provider's dashboard.".to_string());
+    }
+
+    // --- Network / connection issues ---
+    if all_text.contains("ConnectionError") || all_text.contains("ConnectError") {
+        if all_text.contains("agentchat-backend") || all_text.contains("fly.dev") {
+            return Some("Cannot connect to AgentGram server. Check your internet connection.".to_string());
+        }
+        return Some("Connection error — check your internet connection and try again.".to_string());
+    }
+    if all_text.contains("TimeoutError") || all_text.contains("timed out") {
+        return Some("Request timed out. The server may be busy — try again in a moment.".to_string());
+    }
+
+    // --- Python runtime errors ---
+    if all_text.contains("SyntaxError") {
+        return Some("Python syntax error in bridge script. This is a bug — please report it.".to_string());
+    }
+    if all_text.contains("PermissionError") {
+        return Some("Permission denied — the bridge script doesn't have access to a required file or directory.".to_string());
+    }
+
+    // --- Generic: find the last meaningful error line ---
     for line in lines.iter().rev() {
-        if line.contains("AuthError") || line.contains("ConnectionError") || line.contains("Error:") {
+        // Look for Python traceback final lines
+        if line.starts_with("ModuleNotFoundError:")
+            || line.starts_with("ImportError:")
+            || line.starts_with("RuntimeError:")
+            || line.starts_with("ValueError:")
+            || line.starts_with("TypeError:")
+            || line.starts_with("OSError:")
+            || line.starts_with("FileNotFoundError:")
+            || line.contains("Error:") {
             let cleaned = if let Some(pos) = line.find("] ") {
                 line[pos + 2..].to_string()
             } else {
@@ -125,7 +187,25 @@ fn extract_crash_reason(logs: &Arc<Mutex<Vec<String>>>) -> Option<String> {
         }
     }
 
+    // Last resort: return the last non-empty line
     lines.iter().rev().find(|l| !l.trim().is_empty()).cloned()
+}
+
+/// Parse "ModuleNotFoundError: No module named 'xxx'" from log text.
+fn extract_missing_module(text: &str) -> Option<String> {
+    for line in text.lines() {
+        if line.contains("ModuleNotFoundError") && line.contains("No module named") {
+            // Extract the module name from quotes
+            if let Some(start) = line.find('\'') {
+                if let Some(end) = line[start + 1..].find('\'') {
+                    let module = &line[start + 1..start + 1 + end];
+                    // Return the top-level package name
+                    return Some(module.split('.').next().unwrap_or(module).to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Spawn a background thread that reads stderr lines and appends to the shared log buffer.
@@ -229,7 +309,16 @@ pub fn start_agent(
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
-    let mut child = cmd.spawn().map_err(|e| format!("Failed to start bridge: {}", e))?;
+    let mut child = cmd.spawn().map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            format!(
+                "Python not found. Install Python 3.11+ from https://python.org and ensure '{}' is on your PATH.",
+                python
+            )
+        } else {
+            format!("Failed to start bridge: {}", e)
+        }
+    })?;
 
     let logs = Arc::new(Mutex::new(Vec::new()));
 

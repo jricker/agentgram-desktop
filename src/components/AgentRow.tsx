@@ -275,10 +275,12 @@ export function AgentRow({
               />
               {managed.processStatus === "crashed" && managed.crashReason && (
                 <span
-                  className="text-[10px] text-destructive/80 truncate block"
+                  className="text-[10px] text-destructive/80 line-clamp-2 block leading-tight"
                   title={managed.crashReason}
                 >
-                  {managed.crashReason.slice(0, 30)}
+                  {managed.crashReason.length > 80
+                    ? managed.crashReason.slice(0, 80) + "…"
+                    : managed.crashReason}
                 </span>
               )}
             </div>
