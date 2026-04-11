@@ -56,6 +56,11 @@ interface AgentState {
     displayName: string;
     description?: string;
     agentType?: string;
+    backend?: string;
+    model?: string;
+    executionMode?: string;
+    effort?: string;
+    dangerouslySkipPermissions?: boolean;
   }) => Promise<string>;
   regenerateKey: (id: string) => Promise<string>;
   refreshProcessStatuses: () => Promise<void>;
@@ -374,8 +379,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   createAgent: async (data) => {
-    const result = await api.createAgent(data);
-    const config = { ...DEFAULT_CONFIG };
+    const { backend: selectedBackend, model: selectedModel, executionMode: selectedMode, effort: selectedEffort, dangerouslySkipPermissions: skipPerms, ...apiData } = data;
+    const result = await api.createAgent(apiData);
+    const config = {
+      ...DEFAULT_CONFIG,
+      ...(selectedBackend ? { backend: selectedBackend } : {}),
+      ...(selectedModel ? { model: selectedModel } : {}),
+      ...(selectedMode ? { executionMode: selectedMode } : {}),
+      ...(selectedEffort ? { effort: selectedEffort } : {}),
+      ...(skipPerms ? { dangerouslySkipPermissions: true } : {}),
+    };
 
     set({
       agents: {
