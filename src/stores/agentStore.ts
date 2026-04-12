@@ -368,10 +368,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ agents: { ...get().agents, [id]: { ...managed, config } } });
       saveLocalConfig(id, config);
 
-      // Sync execution_mode to backend model_config when changed
-      if (partial.executionMode) {
-        api.updateModelConfig(id, { execution_mode: partial.executionMode }).catch((err) =>
-          console.warn(`[agentStore] Failed to sync execution_mode to backend:`, err)
+      // Sync model_config fields to backend when changed
+      const mcPatch: Record<string, unknown> = {};
+      if (partial.backend) mcPatch.backend = partial.backend;
+      if (partial.model) mcPatch.model = partial.model;
+      if (partial.executionMode) mcPatch.execution_mode = partial.executionMode;
+      if (partial.effort) mcPatch.effort = partial.effort;
+      if (Object.keys(mcPatch).length > 0) {
+        api.updateModelConfig(id, mcPatch).catch((err) =>
+          console.warn(`[agentStore] Failed to sync model_config to backend:`, err)
         );
       }
     }
@@ -419,11 +424,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     saveApiKey(result.agent.id, result.apiKey);
     saveLocalConfig(result.agent.id, config);
 
-    // Sync model_config to backend (backend, model, execution_mode)
+    // Sync model_config to backend (backend, model, execution_mode, effort)
     const modelConfigPatch: Record<string, unknown> = {};
     if (selectedBackend) modelConfigPatch.backend = selectedBackend;
     if (selectedModel) modelConfigPatch.model = selectedModel;
     if (selectedMode) modelConfigPatch.execution_mode = selectedMode;
+    if (selectedEffort) modelConfigPatch.effort = selectedEffort;
     if (Object.keys(modelConfigPatch).length > 0) {
       api.updateModelConfig(result.agent.id, modelConfigPatch).catch((err) =>
         console.warn(`[agentStore] Failed to sync model_config on create:`, err)
