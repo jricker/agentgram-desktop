@@ -222,8 +222,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           // --- Stall detection ---
           // Require CONSECUTIVE bad polls before declaring a stall.
           // "offline" needs more polls (often transient after deploys) than "stuck".
-          const CONSECUTIVE_OFFLINE_THRESHOLD = 3; // 3 polls = ~90s
-          const CONSECUTIVE_STUCK_THRESHOLD = 2;   // 2 polls = ~60s
+          const CONSECUTIVE_OFFLINE_THRESHOLD = 3; // 3 polls = ~30s
+          const CONSECUTIVE_STUCK_THRESHOLD = 2;   // 2 polls = ~20s
 
           const backendOffline = health.healthStatus === "offline";
           const backendStuck = health.healthStatus === "stuck";
