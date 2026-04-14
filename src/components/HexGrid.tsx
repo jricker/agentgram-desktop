@@ -184,7 +184,7 @@ export function HexBoard({
 
   useEffect(() => {
     pollActivity();
-    intervalRef.current = setInterval(pollActivity, 1500);
+    intervalRef.current = setInterval(pollActivity, 5000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };

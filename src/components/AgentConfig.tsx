@@ -974,7 +974,7 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
 
   useEffect(() => {
     fetchDetail();
-    const interval = setInterval(fetchDetail, 5000);
+    const interval = setInterval(fetchDetail, 30000);
     return () => clearInterval(interval);
   }, [fetchDetail]);
 

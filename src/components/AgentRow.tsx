@@ -163,7 +163,7 @@ export function AgentRow({
     };
 
     poll();
-    intervalRef.current = setInterval(poll, 1500);
+    intervalRef.current = setInterval(poll, 5000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
