@@ -37,6 +37,8 @@ export interface ManagedAgent {
   stallRestartAttemptAt: number | null;
   /** Timestamp (ms) when the process was started — used for startup grace period */
   startedAt: number | null;
+  /** Number of consecutive health polls that returned offline/stuck */
+  consecutiveBadPolls: number;
 }
 
 interface AgentState {
@@ -105,6 +107,15 @@ function saveApiKey(agentId: string, key: string) {
   localStorage.setItem(`agent:apikey:${agentId}`, key);
 }
 
+/**
+ * Track consecutive health endpoint failures (network errors, 502s, etc.).
+ * When the backend is deploying, the endpoint itself is unreachable — the first
+ * successful poll after an outage often shows "offline" because ETS is empty.
+ * We suppress stall detection for a grace period after endpoint recovery.
+ */
+let consecutiveHealthEndpointFailures = 0;
+let lastHealthEndpointRecoveryAt = 0;
+
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: {},
   selectedAgentId: null,
@@ -146,6 +157,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           prevHealth: existing?.prevHealth || null,
           stallRestartAttemptAt: existing?.stallRestartAttemptAt || null,
           startedAt: existing?.startedAt || null,
+          consecutiveBadPolls: existing?.consecutiveBadPolls || 0,
         };
       }
 
@@ -208,50 +220,89 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           }
 
           // --- Stall detection ---
-          const backendDead =
-            health.healthStatus === "offline" || health.healthStatus === "stuck";
+          // Require CONSECUTIVE bad polls before declaring a stall.
+          // "offline" needs more polls (often transient after deploys) than "stuck".
+          const CONSECUTIVE_OFFLINE_THRESHOLD = 3; // 3 polls = ~90s
+          const CONSECUTIVE_STUCK_THRESHOLD = 2;   // 2 polls = ~60s
+
+          const backendOffline = health.healthStatus === "offline";
+          const backendStuck = health.healthStatus === "stuck";
+          const backendDead = backendOffline || backendStuck;
           const processAlive =
             managed.processStatus === "running" || managed.processStatus === "stalled";
+
           // Grace period: don't mark as stalled during bridge startup (warmup, executor registration)
           const STARTUP_GRACE_MS = 90_000;
           const inStartupGrace =
             managed.startedAt != null && now - managed.startedAt < STARTUP_GRACE_MS;
 
-          if (backendDead && processAlive && !inStartupGrace) {
-            // Process is alive but backend says executor is dead/stuck = stall
-            if (managed.processStatus !== "stalled") {
-              agents[health.agentId] = {
-                ...agents[health.agentId],
-                processStatus: "stalled",
-              };
-              changed = true;
-              console.log(`[StallDetector] Agent ${health.agentId} marked stalled (backend: ${health.healthStatus})`);
-            }
+          // Deploy grace: after the health endpoint recovers from failures, suppress
+          // stall detection for 2 minutes. The first polls after a backend restart
+          // will show "offline" because ETS executors are gone — the bridge needs
+          // time to re-register.
+          const DEPLOY_RECOVERY_GRACE_MS = 120_000;
+          const inDeployRecoveryGrace =
+            lastHealthEndpointRecoveryAt > 0 &&
+            now - lastHealthEndpointRecoveryAt < DEPLOY_RECOVERY_GRACE_MS;
 
-            // Auto-restart with 30s cooldown
-            const STALL_COOLDOWN_MS = 30_000;
-            const lastRestart = agents[health.agentId].stallRestartAttemptAt || 0;
-            const current = agents[health.agentId];
-            if (
-              current.config.autoRestart &&
-              current.processStatus === "stalled" &&
-              now - lastRestart > STALL_COOLDOWN_MS
-            ) {
-              agents[health.agentId] = {
-                ...agents[health.agentId],
-                stallRestartAttemptAt: now,
-              };
-              changed = true;
-              // Defer restart to avoid blocking the health poll
-              const store = get();
-              setTimeout(() => {
-                console.log(`[StallDetector] Auto-restarting stalled agent ${health.agentId}`);
-                store.stopAgent(health.agentId).then(() => {
-                  store.startAgent(health.agentId).catch((err: unknown) => {
-                    console.error(`[StallDetector] Failed to restart ${health.agentId}:`, err);
+          if (backendDead && processAlive && !inStartupGrace && !inDeployRecoveryGrace) {
+            // Increment consecutive bad poll counter
+            const prevBadPolls = agents[health.agentId].consecutiveBadPolls || 0;
+            const newBadPolls = prevBadPolls + 1;
+            const threshold = backendStuck
+              ? CONSECUTIVE_STUCK_THRESHOLD
+              : CONSECUTIVE_OFFLINE_THRESHOLD;
+
+            agents[health.agentId] = {
+              ...agents[health.agentId],
+              consecutiveBadPolls: newBadPolls,
+            };
+            changed = true;
+
+            if (newBadPolls >= threshold) {
+              // Enough consecutive bad polls — mark as stalled
+              if (managed.processStatus !== "stalled") {
+                agents[health.agentId] = {
+                  ...agents[health.agentId],
+                  processStatus: "stalled",
+                };
+                changed = true;
+                console.log(
+                  `[StallDetector] Agent ${health.agentId} marked stalled ` +
+                  `(backend: ${health.healthStatus}, consecutive: ${newBadPolls})`
+                );
+              }
+
+              // Auto-restart with 60s cooldown (doubled from 30s to prevent rapid cycling)
+              const STALL_COOLDOWN_MS = 60_000;
+              const lastRestart = agents[health.agentId].stallRestartAttemptAt || 0;
+              const current = agents[health.agentId];
+              if (
+                current.config.autoRestart &&
+                current.processStatus === "stalled" &&
+                now - lastRestart > STALL_COOLDOWN_MS
+              ) {
+                agents[health.agentId] = {
+                  ...agents[health.agentId],
+                  stallRestartAttemptAt: now,
+                };
+                changed = true;
+                // Defer restart to avoid blocking the health poll
+                const store = get();
+                setTimeout(() => {
+                  console.log(`[StallDetector] Auto-restarting stalled agent ${health.agentId}`);
+                  store.stopAgent(health.agentId).then(() => {
+                    store.startAgent(health.agentId).catch((err: unknown) => {
+                      console.error(`[StallDetector] Failed to restart ${health.agentId}:`, err);
+                    });
                   });
-                });
-              }, 0);
+                }, 0);
+              }
+            } else {
+              console.log(
+                `[StallDetector] Agent ${health.agentId} backend=${health.healthStatus} ` +
+                `(poll ${newBadPolls}/${threshold}, waiting for consecutive threshold)`
+              );
             }
           } else if (!backendDead && managed.processStatus === "stalled") {
             // Backend recovered — clear stall status
@@ -259,16 +310,41 @@ export const useAgentStore = create<AgentState>((set, get) => ({
               ...agents[health.agentId],
               processStatus: "running",
               stallRestartAttemptAt: null,
+              consecutiveBadPolls: 0,
             };
             changed = true;
             console.log(`[StallDetector] Agent ${health.agentId} recovered from stall`);
+          } else if (!backendDead) {
+            // Healthy/degraded — reset consecutive bad poll counter
+            if (agents[health.agentId].consecutiveBadPolls > 0) {
+              agents[health.agentId] = {
+                ...agents[health.agentId],
+                consecutiveBadPolls: 0,
+              };
+              changed = true;
+            }
           }
         }
       }
 
       if (changed) set({ agents });
+
+      // Successful health poll — track endpoint recovery
+      if (consecutiveHealthEndpointFailures > 0) {
+        console.log(
+          `[StallDetector] Health endpoint recovered after ${consecutiveHealthEndpointFailures} failures`
+        );
+        lastHealthEndpointRecoveryAt = Date.now();
+        consecutiveHealthEndpointFailures = 0;
+      }
     } catch {
-      // Health check failure is non-fatal
+      // Health endpoint unreachable — likely a backend deploy in progress.
+      // Track failures so we can suppress stall detection after recovery.
+      consecutiveHealthEndpointFailures++;
+      console.log(
+        `[StallDetector] Health endpoint failure #${consecutiveHealthEndpointFailures} — ` +
+        `backend may be deploying, suppressing stall detection`
+      );
     }
   },
 
@@ -357,7 +433,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     const managed = get().agents[id];
     if (managed) {
-      set({ agents: { ...get().agents, [id]: { ...managed, processStatus: "stopped", uptimeSecs: null, crashReason: null, startedAt: null } } });
+      set({ agents: { ...get().agents, [id]: { ...managed, processStatus: "stopped", uptimeSecs: null, crashReason: null, startedAt: null, consecutiveBadPolls: 0 } } });
     }
   },
 
@@ -417,6 +493,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           prevHealth: null,
           stallRestartAttemptAt: null,
           startedAt: null,
+          consecutiveBadPolls: 0,
         },
       },
     });
