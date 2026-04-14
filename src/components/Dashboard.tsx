@@ -47,7 +47,7 @@ export function Dashboard() {
     intervalRef.current = setInterval(() => {
       refreshProcessStatuses();
       fetchHealth();
-    }, 5000);
+    }, 30000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
