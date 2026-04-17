@@ -28,6 +28,7 @@ export function Dashboard() {
     error,
     fetchAgents,
     fetchHealth,
+    fetchActivities,
     refreshProcessStatuses,
     selectAgent,
     startAgent,
@@ -38,21 +39,31 @@ export function Dashboard() {
   const [search, setSearch] = useState("");
   const [startingAll, setStartingAll] = useState(false);
   const [stoppingAll, setStoppingAll] = useState(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(null);
+  const healthIntervalRef = useRef<ReturnType<typeof setInterval>>(null);
+  const activityIntervalRef = useRef<ReturnType<typeof setInterval>>(null);
 
   useEffect(() => {
     fetchAgents();
     fetchHealth();
+    fetchActivities();
 
-    intervalRef.current = setInterval(() => {
+    // Health + process status: slow (backend REST)
+    healthIntervalRef.current = setInterval(() => {
       refreshProcessStatuses();
       fetchHealth();
     }, 10000);
 
+    // Bridge log activity: faster (local Tauri invoke, no backend cost).
+    // Single shared poll for all components that show activity.
+    activityIntervalRef.current = setInterval(() => {
+      fetchActivities();
+    }, 5000);
+
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (healthIntervalRef.current) clearInterval(healthIntervalRef.current);
+      if (activityIntervalRef.current) clearInterval(activityIntervalRef.current);
     };
-  }, [fetchAgents, fetchHealth, refreshProcessStatuses]);
+  }, [fetchAgents, fetchHealth, fetchActivities, refreshProcessStatuses]);
 
   const agentList = Object.values(agents)
     .filter((m) =>

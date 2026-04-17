@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState } from "react";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { formatModelLabel, formatBackendLabel } from "../lib/models";
 import { formatUptime, cn } from "../lib/utils";
@@ -7,43 +6,6 @@ import { Play, Square, RotateCcw, Crown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-
-// Parse the last few log lines into a human-readable activity label
-function parseActivity(lines: string[]): { label: string; type: "idle" | "thinking" | "streaming" | "tool" | "sending" | "error" } | null {
-  if (lines.length === 0) return null;
-
-  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 8); i--) {
-    const line = lines[i].toLowerCase();
-
-    if (line.includes("error") || line.includes("traceback")) {
-      const clean = lines[i].replace(/^\[.*?\]\s*/, "").slice(0, 60);
-      return { label: clean, type: "error" };
-    }
-    if (line.includes("executing tool") || line.includes("tool_use") || line.includes("tool_call")) {
-      // Try to extract tool name
-      const match = lines[i].match(/(?:executing tool|tool_use|tool_call)[:\s]*(\w+)/i);
-      return { label: match ? `Tool: ${match[1]}` : "Executing tool...", type: "tool" };
-    }
-    if (line.includes("text_delta") || line.includes("content_block") || line.includes("streaming")) {
-      return { label: "Streaming response...", type: "streaming" };
-    }
-    if (line.includes("sending message") || line.includes("send_message")) {
-      return { label: "Sending message...", type: "sending" };
-    }
-    if (line.includes("claimed task")) {
-      const match = lines[i].match(/claimed task.*?[:\s]+(.*)/i);
-      return { label: match ? `Task: ${match[1].slice(0, 40)}` : "Processing task...", type: "thinking" };
-    }
-    if (line.includes("new message") || line.includes("processing message")) {
-      return { label: "Reading message...", type: "thinking" };
-    }
-    if (line.includes("thinking") || line.includes("processing")) {
-      return { label: "Thinking...", type: "thinking" };
-    }
-  }
-
-  return null;
-}
 
 const ACTIVITY_COLORS = {
   idle: "",
@@ -137,37 +99,12 @@ export function AgentRow({
   onSelect: () => void;
 }) {
   const { startAgent, stopAgent } = useAgentStore();
+  const activity = useAgentStore(
+    (s) => s.activities[managed.agent.id] ?? null
+  );
   const [error, setError] = useState<string | null>(null);
-  const [activity, setActivity] = useState<ReturnType<typeof parseActivity>>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(null);
 
   const isRunning = managed.processStatus === "running";
-
-  // Poll logs for live activity when running
-  useEffect(() => {
-    if (!isRunning) {
-      setActivity(null);
-      return;
-    }
-
-    const poll = async () => {
-      try {
-        const lines: string[] = await invoke("get_agent_logs", {
-          agentId: managed.agent.id,
-          tail: 8,
-        });
-        setActivity(parseActivity(lines));
-      } catch {
-        setActivity(null);
-      }
-    };
-
-    poll();
-    intervalRef.current = setInterval(poll, 5000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [isRunning, managed.agent.id]);
 
   const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();

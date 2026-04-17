@@ -21,6 +21,133 @@ interface AgentConfig {
   addDirs: string[];
 }
 
+export type ActivityType =
+  | "idle"
+  | "thinking"
+  | "streaming"
+  | "tool"
+  | "sending"
+  | "error";
+
+export interface AgentActivity {
+  label: string;
+  type: ActivityType;
+}
+
+/**
+ * Runtime validator for server-sent modelConfig. Backend sends a loose
+ * Record<string, unknown>; validate field shapes before merging into local
+ * state so a typo ("max_toks") becomes a console warning instead of silently
+ * falling back to defaults.
+ */
+function parseServerModelConfig(
+  raw: unknown,
+  agentId: string
+): Partial<AgentConfig> {
+  if (!raw || typeof raw !== "object") return {};
+  const mc = raw as Record<string, unknown>;
+  const out: Partial<AgentConfig> = {};
+  const knownKeys = new Set([
+    "backend",
+    "model",
+    "max_tokens",
+    "execution_mode",
+    "history_limit",
+    "effort",
+  ]);
+
+  const takeString = (key: string, target: keyof AgentConfig) => {
+    if (mc[key] == null) return;
+    if (typeof mc[key] === "string") {
+      (out as Record<string, unknown>)[target] = mc[key];
+    } else {
+      console.warn(
+        `[agentStore] agent ${agentId} modelConfig.${key} expected string, got ${typeof mc[key]}`
+      );
+    }
+  };
+  const takeNumber = (key: string, target: keyof AgentConfig) => {
+    if (mc[key] == null) return;
+    if (typeof mc[key] === "number" && Number.isFinite(mc[key])) {
+      (out as Record<string, unknown>)[target] = mc[key];
+    } else {
+      console.warn(
+        `[agentStore] agent ${agentId} modelConfig.${key} expected number, got ${typeof mc[key]}`
+      );
+    }
+  };
+
+  takeString("backend", "backend");
+  takeString("model", "model");
+  takeNumber("max_tokens", "maxTokens");
+  takeString("execution_mode", "executionMode");
+  takeNumber("history_limit", "historyLimit");
+  takeString("effort", "effort");
+
+  for (const key of Object.keys(mc)) {
+    if (!knownKeys.has(key)) {
+      console.warn(
+        `[agentStore] agent ${agentId} modelConfig has unknown key "${key}" — ignoring`
+      );
+    }
+  }
+
+  return out;
+}
+
+// Parse bridge log tail into a human-readable activity label. Shared across
+// UI components via the agent store — each running agent is polled once per
+// tick, not once per component.
+function parseActivity(lines: string[]): AgentActivity | null {
+  if (lines.length === 0) return null;
+
+  for (let i = lines.length - 1; i >= Math.max(0, lines.length - 8); i--) {
+    const raw = lines[i];
+    const line = raw.toLowerCase();
+
+    if (line.includes("error") || line.includes("traceback")) {
+      const clean = raw.replace(/^\[.*?\]\s*/, "").slice(0, 60);
+      return { label: clean, type: "error" };
+    }
+    if (
+      line.includes("executing tool") ||
+      line.includes("tool_use") ||
+      line.includes("tool_call")
+    ) {
+      const match = raw.match(/(?:executing tool|tool_use|tool_call)[:\s]*(\w+)/i);
+      return {
+        label: match ? `Tool: ${match[1]}` : "Executing tool...",
+        type: "tool",
+      };
+    }
+    if (
+      line.includes("text_delta") ||
+      line.includes("content_block") ||
+      line.includes("streaming")
+    ) {
+      return { label: "Streaming response...", type: "streaming" };
+    }
+    if (line.includes("sending message") || line.includes("send_message")) {
+      return { label: "Sending message...", type: "sending" };
+    }
+    if (line.includes("claimed task")) {
+      const match = raw.match(/claimed task.*?[:\s]+(.*)/i);
+      return {
+        label: match ? `Task: ${match[1].slice(0, 40)}` : "Processing task...",
+        type: "thinking",
+      };
+    }
+    if (line.includes("new message") || line.includes("processing message")) {
+      return { label: "Reading message...", type: "thinking" };
+    }
+    if (line.includes("thinking") || line.includes("processing")) {
+      return { label: "Thinking...", type: "thinking" };
+    }
+  }
+
+  return null;
+}
+
 export interface ManagedAgent {
   agent: api.Agent;
   apiKey: string | null;
@@ -43,12 +170,16 @@ export interface ManagedAgent {
 
 interface AgentState {
   agents: Record<string, ManagedAgent>;
+  /** Per-agent activity parsed from bridge logs, keyed by agentId. */
+  activities: Record<string, AgentActivity | null>;
   selectedAgentId: string | null;
   loading: boolean;
   error: string | null;
 
   fetchAgents: () => Promise<void>;
   fetchHealth: () => Promise<void>;
+  /** Poll bridge logs for every running agent and update `activities`. */
+  fetchActivities: () => Promise<void>;
   selectAgent: (id: string | null) => Promise<void>;
   startAgent: (id: string) => Promise<void>;
   stopAgent: (id: string) => Promise<void>;
@@ -118,6 +249,7 @@ let lastHealthEndpointRecoveryAt = 0;
 
 export const useAgentStore = create<AgentState>((set, get) => ({
   agents: {},
+  activities: {},
   selectedAgentId: null,
   loading: false,
   error: null,
@@ -135,15 +267,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const localKey = loadApiKey(agent.id);
 
         // Merge: defaults <- server modelConfig <- local overrides
-        const serverConfig: Partial<AgentConfig> = {};
-        const mc = agent.modelConfig as Record<string, unknown> | undefined;
-        if (mc) {
-          if (mc.backend) serverConfig.backend = mc.backend as string;
-          if (mc.model) serverConfig.model = mc.model as string;
-          if (mc.max_tokens) serverConfig.maxTokens = mc.max_tokens as number;
-          if (mc.execution_mode) serverConfig.executionMode = mc.execution_mode as string;
-          if (mc.history_limit) serverConfig.historyLimit = mc.history_limit as number;
-        }
+        const serverConfig = parseServerModelConfig(agent.modelConfig, agent.id);
 
         updated[agent.id] = {
           agent,
@@ -346,6 +470,51 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         `backend may be deploying, suppressing stall detection`
       );
     }
+  },
+
+  fetchActivities: async () => {
+    const running = Object.values(get().agents).filter(
+      (m) => m.processStatus === "running"
+    );
+    if (running.length === 0) {
+      if (Object.keys(get().activities).length > 0) set({ activities: {} });
+      return;
+    }
+
+    const next: Record<string, AgentActivity | null> = {};
+    await Promise.all(
+      running.map(async (managed) => {
+        try {
+          const lines: string[] = await invoke("get_agent_logs", {
+            agentId: managed.agent.id,
+            tail: 8,
+          });
+          next[managed.agent.id] = parseActivity(lines);
+        } catch {
+          next[managed.agent.id] = null;
+        }
+      })
+    );
+
+    // Shallow-compare to avoid re-render churn when nothing changed
+    const prev = get().activities;
+    const prevIds = Object.keys(prev);
+    const nextIds = Object.keys(next);
+    if (prevIds.length === nextIds.length) {
+      let identical = true;
+      for (const id of nextIds) {
+        const a = prev[id];
+        const b = next[id];
+        if (!a || !b) {
+          if (a !== b) { identical = false; break; }
+        } else if (a.label !== b.label || a.type !== b.type) {
+          identical = false;
+          break;
+        }
+      }
+      if (identical) return;
+    }
+    set({ activities: next });
   },
 
   selectAgent: async (id) => {

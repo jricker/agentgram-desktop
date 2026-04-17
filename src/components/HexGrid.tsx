@@ -1,5 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useAgentStore } from "../stores/agentStore";
 
 // Unique color per agent (deterministic from index)
@@ -20,25 +19,6 @@ const AGENT_COLORS = [
 
 function getColor(index: number) {
   return AGENT_COLORS[index % AGENT_COLORS.length];
-}
-
-// Detect activity from recent log lines
-function detectActivity(lines: string[]): boolean {
-  if (lines.length === 0) return false;
-  const recent = lines.slice(-5).join("\n").toLowerCase();
-  return (
-    recent.includes("content_block") ||
-    recent.includes("text_delta") ||
-    recent.includes("streaming") ||
-    recent.includes("sending message") ||
-    recent.includes("thinking") ||
-    recent.includes("processing") ||
-    recent.includes("claimed task") ||
-    recent.includes("new message") ||
-    recent.includes("tool_use") ||
-    recent.includes("tool_call") ||
-    recent.includes("executing tool")
-  );
 }
 
 // Build a flat-top hex path for SVG
@@ -135,11 +115,9 @@ export function HexBoard({
   onSelectAgent: (id: string | null) => void;
   selectedAgentId: string | null;
 }) {
-  const { agents } = useAgentStore();
-  const [activities, setActivities] = useState<Record<string, boolean>>({});
+  const { agents, activities } = useAgentStore();
   const [containerWidth, setContainerWidth] = useState(600);
   const containerRef = useRef<HTMLDivElement>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>(null);
 
   const agentList = useMemo(
     () =>
@@ -161,34 +139,6 @@ export function HexBoard({
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-
-  // Poll logs to detect activity
-  const pollActivity = useCallback(async () => {
-    const running = agentList.filter((m) => m.processStatus === "running");
-    const newActivities: Record<string, boolean> = {};
-
-    for (const managed of running) {
-      try {
-        const lines: string[] = await invoke("get_agent_logs", {
-          agentId: managed.agent.id,
-          tail: 5,
-        });
-        newActivities[managed.agent.id] = detectActivity(lines);
-      } catch {
-        newActivities[managed.agent.id] = false;
-      }
-    }
-
-    setActivities(newActivities);
-  }, [agentList]);
-
-  useEffect(() => {
-    pollActivity();
-    intervalRef.current = setInterval(pollActivity, 5000);
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, [pollActivity]);
 
   const { cells, height } = useMemo(
     () => buildHexGrid(containerWidth, agentList.length),
@@ -236,7 +186,8 @@ export function HexBoard({
           const managed = agentList[cell.agentIndex];
           const color = getColor(cell.agentIndex);
           const isRunning = managed.processStatus === "running";
-          const isActive = isRunning && (activities[managed.agent.id] || false);
+          const isActive =
+            isRunning && activities[managed.agent.id] != null;
           const isSelected = managed.agent.id === selectedAgentId;
           const rgb = `${color.r}, ${color.g}, ${color.b}`;
 

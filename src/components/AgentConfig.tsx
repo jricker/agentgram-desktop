@@ -1461,7 +1461,14 @@ function DangerZone({
     setDeactivating(true);
     setError(null);
     try {
-      await stopAgent(agent.id).catch(() => {});
+      await stopAgent(agent.id).catch((err) => {
+        // Deactivation proceeds even if the process was already dead —
+        // log so an orphaned bridge process doesn't vanish silently.
+        console.warn(
+          `[AgentConfig] stopAgent failed before deactivate (${agent.id}):`,
+          err
+        );
+      });
       await deleteAgent(agent.id);
       await fetchAgents();
       onDeleted();
@@ -1477,7 +1484,12 @@ function DangerZone({
     setDeleting(true);
     setError(null);
     try {
-      await stopAgent(agent.id).catch(() => {});
+      await stopAgent(agent.id).catch((err) => {
+        console.warn(
+          `[AgentConfig] stopAgent failed before permanent delete (${agent.id}):`,
+          err
+        );
+      });
       await deleteAgentPermanently(agent.id, confirmName);
       setShowDelete(false);
       await fetchAgents();

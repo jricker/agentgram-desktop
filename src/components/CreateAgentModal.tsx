@@ -61,10 +61,16 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState<string | null>(null);
 
   // Fetch available skills on mount
+  const [skillsError, setSkillsError] = useState<string | null>(null);
   useEffect(() => {
     listSkills()
       .then((res) => setAvailableSkills(res.skills || []))
-      .catch(() => {});
+      .catch((err) => {
+        console.warn("[CreateAgentModal] listSkills failed:", err);
+        setSkillsError(
+          err instanceof Error ? err.message : "Failed to load skills"
+        );
+      });
   }, []);
 
   const models = useMemo(() => getModelsForProvider(backend), [backend]);
@@ -470,6 +476,11 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
             )}
 
             {/* Skills */}
+            {skillsError && (
+              <p className="text-[11px] text-destructive">
+                Couldn't load skills: {skillsError}
+              </p>
+            )}
             {availableSkills.length > 0 && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-1.5">
