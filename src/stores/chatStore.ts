@@ -1,0 +1,373 @@
+import { create } from "zustand";
+import * as api from "../lib/api";
+import type { Conversation, Message } from "../lib/api";
+import { ws } from "../services/websocket";
+import { useAuthStore } from "./authStore";
+
+const PENDING_PREFIX = "pending-";
+
+function dedup(messages: Message[]): Message[] {
+  const seen = new Set<string>();
+  return messages.filter((m) => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+}
+
+function sortMessages(messages: Message[]): Message[] {
+  return [...messages].sort(
+    (a, b) => new Date(a.insertedAt).getTime() - new Date(b.insertedAt).getTime()
+  );
+}
+
+function sortConversations(convos: Conversation[]): Conversation[] {
+  return [...convos].sort((a, b) => {
+    if (a.pinned && !b.pinned) return -1;
+    if (!a.pinned && b.pinned) return 1;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+}
+
+interface ChatState {
+  // Conversations
+  conversations: Conversation[];
+  conversationsLoading: boolean;
+
+  // Messages (per conversation)
+  messages: Record<string, Message[]>;
+  messagesLoading: Record<string, boolean>;
+  hasMore: Record<string, boolean>;
+  drafts: Record<string, string>;
+
+  // Session
+  activeConversationId: string | null;
+  unreadCounts: Record<string, number>;
+
+  // Actions — conversations
+  fetchConversations: () => Promise<void>;
+  refreshConversation: (id: string) => Promise<void>;
+  addConversation: (conv: Conversation) => void;
+  updateConversationFromEvent: (convId: string, lastMessage: Message) => void;
+  getConversation: (id: string) => Conversation | undefined;
+
+  // Actions — messages
+  fetchMessages: (conversationId: string, before?: string) => Promise<void>;
+  sendMessage: (conversationId: string, content: string) => Promise<void>;
+  addMessage: (conversationId: string, message: Message) => void;
+  setRecentMessages: (conversationId: string, messages: Message[]) => void;
+  setDraft: (conversationId: string, text: string) => void;
+
+  // Actions — session
+  setActiveConversation: (id: string | null) => void;
+  fetchUnreadCounts: () => Promise<void>;
+  incrementUnread: (conversationId: string) => void;
+
+  // WS wiring — returns cleanup
+  initWsListeners: () => () => void;
+}
+
+export const useChatStore = create<ChatState>((set, get) => ({
+  conversations: [],
+  conversationsLoading: false,
+  messages: {},
+  messagesLoading: {},
+  hasMore: {},
+  drafts: {},
+  activeConversationId: null,
+  unreadCounts: {},
+
+  fetchConversations: async () => {
+    set({ conversationsLoading: true });
+    try {
+      const convos = await api.listConversations("personal");
+      set({ conversations: sortConversations(convos) });
+    } finally {
+      set({ conversationsLoading: false });
+    }
+  },
+
+  refreshConversation: async (id) => {
+    try {
+      const conv = await api.getConversation(id);
+      set((s) => ({
+        conversations: s.conversations.map((c) => (c.id === id ? { ...c, ...conv } : c)),
+      }));
+    } catch (e) {
+      console.warn(`[chat] refreshConversation(${id}) failed`, e);
+    }
+  },
+
+  addConversation: (conv) => {
+    if (conv.parentConversationId || conv.type === "task") return;
+    set((s) => {
+      if (s.conversations.some((c) => c.id === conv.id)) return s;
+      return { conversations: sortConversations([conv, ...s.conversations]) };
+    });
+  },
+
+  updateConversationFromEvent: (convId, lastMessage) => {
+    set((s) => {
+      const idx = s.conversations.findIndex((c) => c.id === convId);
+      if (idx < 0) return s;
+      const updated = [...s.conversations];
+      updated[idx] = {
+        ...updated[idx],
+        lastMessage,
+        updatedAt: lastMessage.insertedAt,
+      };
+      return { conversations: sortConversations(updated) };
+    });
+  },
+
+  getConversation: (id) => get().conversations.find((c) => c.id === id),
+
+  fetchMessages: async (conversationId, before) => {
+    set((s) => ({
+      messagesLoading: { ...s.messagesLoading, [conversationId]: true },
+    }));
+    try {
+      const data = await api.fetchMessages(conversationId, before);
+      set((s) => {
+        const existing = s.messages[conversationId] ?? [];
+        const merged = dedup([...data.messages, ...existing]);
+        return {
+          messages: { ...s.messages, [conversationId]: sortMessages(merged) },
+          hasMore: { ...s.hasMore, [conversationId]: data.messages.length >= 30 },
+          messagesLoading: { ...s.messagesLoading, [conversationId]: false },
+        };
+      });
+    } catch (e) {
+      console.warn(`[chat] fetchMessages(${conversationId}) failed`, e);
+      set((s) => ({
+        messagesLoading: { ...s.messagesLoading, [conversationId]: false },
+      }));
+    }
+  },
+
+  sendMessage: async (conversationId, content) => {
+    const nonce = crypto.randomUUID();
+    const participant = useAuthStore.getState().participant;
+    const now = new Date().toISOString();
+    const placeholder: Message = {
+      id: `${PENDING_PREFIX}${nonce}`,
+      conversationId,
+      senderId: participant?.id ?? "",
+      sender: participant
+        ? {
+            id: participant.id,
+            type: "human",
+            displayName: participant.displayName,
+            avatarUrl: participant.avatarUrl,
+          }
+        : undefined,
+      content,
+      messageType: "text",
+      insertedAt: now,
+      updatedAt: now,
+      pending: true,
+      nonce,
+      metadata: { client_nonce: nonce },
+    };
+
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [conversationId]: [...(s.messages[conversationId] ?? []), placeholder],
+      },
+      drafts: { ...s.drafts, [conversationId]: "" },
+    }));
+
+    try {
+      await ws.sendMessage(conversationId, content, {
+        metadata: { client_nonce: nonce },
+      });
+    } catch (e) {
+      console.warn(`[chat] sendMessage failed, removing placeholder`, e);
+      set((s) => ({
+        messages: {
+          ...s.messages,
+          [conversationId]: (s.messages[conversationId] ?? []).filter(
+            (m) => m.id !== placeholder.id
+          ),
+        },
+      }));
+      throw e;
+    }
+  },
+
+  addMessage: (conversationId, message) => {
+    set((s) => {
+      const existing = s.messages[conversationId] ?? [];
+      if (existing.some((m) => m.id === message.id)) return s;
+
+      // Nonce replacement: the server echo of our own message replaces the
+      // optimistic placeholder we inserted in sendMessage.
+      const nonce = (message.metadata as Record<string, unknown> | undefined)
+        ?.client_nonce as string | undefined;
+      if (nonce) {
+        const placeholderId = `${PENDING_PREFIX}${nonce}`;
+        if (existing.some((m) => m.id === placeholderId)) {
+          return {
+            messages: {
+              ...s.messages,
+              [conversationId]: existing.map((m) =>
+                m.id === placeholderId ? message : m
+              ),
+            },
+          };
+        }
+      }
+
+      // Fast path: append if chronological; else sort
+      const last = existing[existing.length - 1];
+      const inOrder = !last || message.insertedAt >= last.insertedAt;
+      const updated = [...existing, message];
+      return {
+        messages: {
+          ...s.messages,
+          [conversationId]: inOrder ? updated : sortMessages(updated),
+        },
+      };
+    });
+  },
+
+  setRecentMessages: (conversationId, messages) => {
+    set((s) => {
+      const existing = s.messages[conversationId] ?? [];
+      let sorted: Message[];
+      if (existing.length === 0) {
+        sorted = sortMessages(messages);
+      } else {
+        // Keep local messages newer than the server snapshot (new_message
+        // events that arrived before recent_messages). Drop locally cached
+        // messages the server omitted (deleted since last fetch).
+        const incomingIds = new Set(messages.map((m) => m.id));
+        const newestIncoming =
+          messages.length > 0
+            ? Math.max(...messages.map((m) => new Date(m.insertedAt).getTime()))
+            : 0;
+        const extras = existing.filter(
+          (m) =>
+            !incomingIds.has(m.id) &&
+            new Date(m.insertedAt).getTime() > newestIncoming
+        );
+        sorted = sortMessages(dedup([...messages, ...extras]));
+      }
+      return { messages: { ...s.messages, [conversationId]: sorted } };
+    });
+  },
+
+  setDraft: (conversationId, text) => {
+    set((s) => ({ drafts: { ...s.drafts, [conversationId]: text } }));
+  },
+
+  setActiveConversation: (id) => {
+    const prev = get().activeConversationId;
+    if (prev && prev !== id) {
+      ws.leaveConversation(prev);
+    }
+    set((s) => ({
+      activeConversationId: id,
+      unreadCounts: id ? { ...s.unreadCounts, [id]: 0 } : s.unreadCounts,
+    }));
+    if (id) {
+      ws.joinConversation(id);
+      // Prefer WS for mark-read (piggybacks on the channel join, no extra
+      // round-trip). Fall back to REST if the channel isn't in the map.
+      if (!ws.markConversationRead(id)) {
+        api.markConversationReadRest(id).catch((err) =>
+          console.warn("[chat] mark-read REST fallback failed", id, err)
+        );
+      }
+    }
+  },
+
+  fetchUnreadCounts: async () => {
+    try {
+      const data = await api.fetchUnreadCounts();
+      set({ unreadCounts: data.unreadCounts });
+    } catch (e) {
+      console.warn("[chat] fetchUnreadCounts failed", e);
+    }
+  },
+
+  incrementUnread: (conversationId) => {
+    set((s) => ({
+      unreadCounts: {
+        ...s.unreadCounts,
+        [conversationId]: (s.unreadCounts[conversationId] ?? 0) + 1,
+      },
+    }));
+  },
+
+  initWsListeners: () => {
+    const unsubs: (() => void)[] = [];
+
+    unsubs.push(
+      ws.on("conv:new_message", (payload) => {
+        const msg = payload as unknown as Message & { _conversationId: string };
+        const convId = msg._conversationId ?? msg.conversationId;
+        get().addMessage(convId, msg);
+      })
+    );
+
+    unsubs.push(
+      ws.on("conv:recent_messages", (payload) => {
+        const convId = payload._conversationId as string;
+        const messages = payload.messages as Message[];
+        get().setRecentMessages(convId, messages);
+      })
+    );
+
+    unsubs.push(
+      ws.on("conv:message_deleted", (payload) => {
+        const convId = payload._conversationId as string;
+        const messageId = payload.messageId as string;
+        if (!convId || !messageId) return;
+        set((s) => ({
+          messages: {
+            ...s.messages,
+            [convId]: (s.messages[convId] ?? []).filter((m) => m.id !== messageId),
+          },
+        }));
+      })
+    );
+
+    unsubs.push(
+      ws.on("conv:conversation_title_changed", (payload) => {
+        const convId =
+          (payload._conversationId as string) ?? (payload.conversationId as string);
+        const title = payload.title as string;
+        if (!convId || !title) return;
+        set((s) => ({
+          conversations: s.conversations.map((c) =>
+            c.id === convId ? { ...c, title } : c
+          ),
+        }));
+      })
+    );
+
+    unsubs.push(
+      ws.on("conversation_updated", (payload) => {
+        const convId = payload.conversationId as string;
+        const lastMessage = payload.lastMessage as Message;
+        if (lastMessage) {
+          get().updateConversationFromEvent(convId, lastMessage);
+        }
+        if (convId !== get().activeConversationId) {
+          get().incrementUnread(convId);
+        }
+      })
+    );
+
+    unsubs.push(
+      ws.on("new_conversation", (payload) => {
+        const conv = payload.conversation as Conversation;
+        if (conv) get().addConversation(conv);
+      })
+    );
+
+    return () => unsubs.forEach((u) => u());
+  },
+}));

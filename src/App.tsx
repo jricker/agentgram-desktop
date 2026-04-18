@@ -4,7 +4,7 @@ import { useAuthStore } from "./stores/authStore";
 // first paint so the login screen doesn't flash in the wrong theme.
 import "./stores/themeStore";
 import { LoginScreen } from "./components/LoginScreen";
-import { Dashboard } from "./components/Dashboard";
+import { AppShell } from "./components/AppShell";
 
 // Global error boundary to prevent white-screen crashes
 class ErrorBoundary extends Component<
@@ -63,7 +63,7 @@ function App() {
     return <LoginScreen />;
   }
 
-  return <Dashboard />;
+  return <AppShell />;
 }
 
 export default function AppWithErrorBoundary() {

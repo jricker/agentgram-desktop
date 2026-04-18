@@ -141,7 +141,7 @@ export function Dashboard() {
   };
 
   return (
-    <div className="flex h-screen w-screen bg-background">
+    <div className="flex-1 flex h-full overflow-hidden bg-background">
       {/* Main content */}
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}

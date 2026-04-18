@@ -1,6 +1,6 @@
 const DEFAULT_API_URL = "https://agentchat-backend.fly.dev";
 
-function getApiUrl(): string {
+export function getApiUrl(): string {
   return localStorage.getItem("apiUrl") || DEFAULT_API_URL;
 }
 
@@ -8,7 +8,7 @@ function getToken(): string | null {
   return localStorage.getItem("authToken");
 }
 
-async function request<T>(
+export async function request<T>(
   path: string,
   options: RequestInit = {},
   _attempt = 0
@@ -649,6 +649,81 @@ export interface Participant {
   email?: string;
   type: "human" | "agent";
   avatarUrl?: string;
+  online?: boolean;
+}
+
+// --- Messaging types + endpoints ---
+
+export interface MessageSender {
+  id: string;
+  type: "human" | "agent";
+  displayName: string;
+  avatarUrl?: string;
+}
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  sender?: MessageSender;
+  content: string;
+  contentType?: string;
+  messageType?: string;
+  metadata?: Record<string, unknown>;
+  parentMessageId?: string;
+  insertedAt: string;
+  updatedAt: string;
+  pending?: boolean;
+  nonce?: string;
+}
+
+export interface ConversationMember {
+  participantId: string;
+  role?: string;
+  participant?: Participant;
+}
+
+export interface Conversation {
+  id: string;
+  title?: string;
+  type: "direct" | "group" | "task" | "channel";
+  createdBy?: string;
+  insertedAt: string;
+  updatedAt: string;
+  lastMessage?: Message;
+  members?: ConversationMember[];
+  pinned?: boolean;
+  parentConversationId?: string;
+}
+
+export async function listConversations(
+  scope: "personal" | "agents" = "personal"
+): Promise<Conversation[]> {
+  const data = await request<Conversation[] | { conversations: Conversation[] }>(
+    `/api/conversations?scope=${scope}`
+  );
+  return Array.isArray(data) ? data : data.conversations;
+}
+
+export async function getConversation(id: string): Promise<Conversation> {
+  return request(`/api/conversations/${id}`);
+}
+
+export async function fetchMessages(
+  conversationId: string,
+  before?: string
+): Promise<{ messages: Message[] }> {
+  const params = new URLSearchParams({ limit: "30" });
+  if (before) params.set("before", before);
+  return request(`/api/conversations/${conversationId}/messages?${params}`);
+}
+
+export async function fetchUnreadCounts(): Promise<{ unreadCounts: Record<string, number> }> {
+  return request("/api/unread-counts");
+}
+
+export async function markConversationReadRest(conversationId: string): Promise<void> {
+  await request(`/api/conversations/${conversationId}/read`, { method: "POST" });
 }
 
 export interface DetailField {
