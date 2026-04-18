@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquare, Info } from "lucide-react";
+import { MessageSquare, Info, SquarePen } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,6 +8,7 @@ import { ConversationList } from "./ConversationList";
 import { ChatThread } from "./ChatThread";
 import { MessageComposer } from "./MessageComposer";
 import { ConversationDetailsPanel } from "./ConversationDetailsPanel";
+import { NewConversationDialog } from "./NewConversationDialog";
 
 const DETAILS_KEY = "agentchat:showDetails";
 
@@ -22,6 +23,7 @@ function readDetailsPref(): boolean {
 export function MessagesView() {
   const activeId = useChatStore((s) => s.activeConversationId);
   const [showDetails, setShowDetails] = useState(readDetailsPref);
+  const [showNew, setShowNew] = useState(false);
 
   useEffect(() => {
     try {
@@ -38,10 +40,20 @@ export function MessagesView() {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
         <div
-          className="px-4 py-3 border-b border-border"
+          className="px-4 py-3 border-b border-border flex items-center justify-between"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >
           <h2 className="text-sm font-semibold text-foreground">Messages</h2>
+          <button
+            type="button"
+            onClick={() => setShowNew(true)}
+            title="New conversation"
+            aria-label="New conversation"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            <SquarePen className="h-4 w-4" />
+          </button>
         </div>
         <div
           className="flex-1 overflow-y-auto"
@@ -69,6 +81,8 @@ export function MessagesView() {
           onClose={() => setShowDetails(false)}
         />
       )}
+
+      {showNew && <NewConversationDialog onClose={() => setShowNew(false)} />}
     </div>
   );
 }

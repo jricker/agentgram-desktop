@@ -33,6 +33,11 @@ interface ChatState {
   // Conversations
   conversations: Conversation[];
   conversationsLoading: boolean;
+  /** Newly-created conversation, not yet promoted to the list. It only
+   *  enters `conversations` after the first message is sent or an event
+   *  (new_message / conversation_updated) arrives for it. Prevents the
+   *  list cluttering when a user opens "New Chat" then backs out. */
+  pendingConversation: Conversation | null;
 
   // Messages (per conversation)
   messages: Record<string, Message[]>;
@@ -50,6 +55,11 @@ interface ChatState {
   addConversation: (conv: Conversation) => void;
   updateConversationFromEvent: (convId: string, lastMessage: Message) => void;
   getConversation: (id: string) => Conversation | undefined;
+  createConversation: (attrs: {
+    type: "direct" | "group" | "channel";
+    title?: string;
+    memberIds: string[];
+  }) => Promise<Conversation>;
   updateConversationTitle: (id: string, title: string) => Promise<void>;
   addMember: (conversationId: string, participantId: string) => Promise<void>;
   removeMember: (conversationId: string, participantId: string) => Promise<void>;
@@ -75,6 +85,7 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   conversationsLoading: false,
+  pendingConversation: null,
   messages: {},
   messagesLoading: {},
   hasMore: {},
@@ -114,18 +125,46 @@ export const useChatStore = create<ChatState>((set, get) => ({
   updateConversationFromEvent: (convId, lastMessage) => {
     set((s) => {
       const idx = s.conversations.findIndex((c) => c.id === convId);
-      if (idx < 0) return s;
-      const updated = [...s.conversations];
-      updated[idx] = {
-        ...updated[idx],
-        lastMessage,
-        updatedAt: lastMessage.insertedAt,
-      };
-      return { conversations: sortConversations(updated) };
+      if (idx >= 0) {
+        const updated = [...s.conversations];
+        updated[idx] = {
+          ...updated[idx],
+          lastMessage,
+          updatedAt: lastMessage.insertedAt,
+        };
+        return { conversations: sortConversations(updated) };
+      }
+      // Conversation isn't in the list yet — if it's the pending one, promote.
+      if (s.pendingConversation?.id === convId) {
+        const conv = {
+          ...s.pendingConversation,
+          lastMessage,
+          updatedAt: lastMessage.insertedAt,
+        };
+        return {
+          conversations: sortConversations([conv, ...s.conversations]),
+          pendingConversation: null,
+        };
+      }
+      return s;
     });
   },
 
-  getConversation: (id) => get().conversations.find((c) => c.id === id),
+  getConversation: (id) => {
+    const s = get();
+    return (
+      s.conversations.find((c) => c.id === id) ??
+      (s.pendingConversation?.id === id ? s.pendingConversation : undefined)
+    );
+  },
+
+  createConversation: async (attrs) => {
+    const created = await api.createConversationRest(attrs);
+    // Refetch with full nested member/participant data
+    const full = await api.getConversation(created.id);
+    set({ pendingConversation: full });
+    return full;
+  },
 
   updateConversationTitle: async (id, title) => {
     await api.updateConversationTitleRest(id, title);
@@ -221,13 +260,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       metadata: { client_nonce: nonce },
     };
 
-    set((s) => ({
-      messages: {
-        ...s.messages,
-        [conversationId]: [...(s.messages[conversationId] ?? []), placeholder],
-      },
-      drafts: { ...s.drafts, [conversationId]: "" },
-    }));
+    set((s) => {
+      // Promote a pending (just-created) conversation to the list on first send
+      let conversations = s.conversations;
+      let pendingConversation = s.pendingConversation;
+      if (pendingConversation?.id === conversationId) {
+        conversations = sortConversations([pendingConversation, ...conversations]);
+        pendingConversation = null;
+      }
+      return {
+        conversations,
+        pendingConversation,
+        messages: {
+          ...s.messages,
+          [conversationId]: [...(s.messages[conversationId] ?? []), placeholder],
+        },
+        drafts: { ...s.drafts, [conversationId]: "" },
+      };
+    });
 
     try {
       await ws.sendMessage(conversationId, content, {

@@ -759,6 +759,21 @@ export async function deleteConversationRest(conversationId: string): Promise<vo
   await request(`/api/conversations/${conversationId}`, { method: "DELETE" });
 }
 
+export async function createConversationRest(attrs: {
+  type: "direct" | "group" | "channel";
+  title?: string;
+  memberIds: string[];
+}): Promise<Conversation> {
+  return request(`/api/conversations`, {
+    method: "POST",
+    body: JSON.stringify(attrs),
+  });
+}
+
+export async function searchPeople(query: string): Promise<{ people: Participant[] }> {
+  return request(`/api/people/search?q=${encodeURIComponent(query)}`);
+}
+
 export interface DetailField {
   key: string;
   label?: string;

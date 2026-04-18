@@ -1,8 +1,45 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import type { Conversation } from "./api"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+/**
+ * Display title for a conversation: the explicit title if set, otherwise the
+ * comma-joined list of other members' display names.
+ */
+export function getConversationTitle(
+  conversation: Conversation,
+  currentUserId?: string
+): string {
+  if (conversation.title) return conversation.title;
+  const others = (conversation.members ?? [])
+    .filter((m) => m.participantId !== currentUserId)
+    .map((m) => m.participant?.displayName ?? "Unknown");
+  return others.length > 0 ? others.join(", ") : "Conversation";
+}
+
+/**
+ * Compact timestamp for conversation list rows: "14:32" (today),
+ * "Mon" (<7d), "Jan 15" (older).
+ */
+export function formatConversationTime(iso: string | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+  const oneDay = 86400000;
+
+  if (diff < oneDay && d.getDate() === now.getDate()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  if (diff < 7 * oneDay) {
+    return d.toLocaleDateString([], { weekday: "short" });
+  }
+  return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 export function formatUptime(seconds: number): string {

@@ -1,0 +1,493 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAgentStore } from "../../stores/agentStore";
+import { useChatStore } from "../../stores/chatStore";
+import * as api from "../../lib/api";
+import type { Agent, Participant } from "../../lib/api";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  X,
+  Search,
+  Bot,
+  Check,
+  Loader2,
+  MessageCircle,
+  Users,
+  User,
+} from "lucide-react";
+import { cn } from "../../lib/utils";
+
+interface Props {
+  onClose: () => void;
+}
+
+type Mode = "select" | "channel";
+
+export function NewConversationDialog({ onClose }: Props) {
+  const agentsMap = useAgentStore((s) => s.agents);
+  // Stable flattened list — avoids the Zustand `?? []` re-render trap.
+  const agents = useMemo(
+    () => Object.values(agentsMap).map((m) => m.agent),
+    [agentsMap]
+  );
+
+  const conversations = useChatStore((s) => s.conversations);
+  const createConversation = useChatStore((s) => s.createConversation);
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [groupTitle, setGroupTitle] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [peopleResults, setPeopleResults] = useState<Participant[]>([]);
+  const [searchingPeople, setSearchingPeople] = useState(false);
+  const [mode, setMode] = useState<Mode>("select");
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  // Debounced people search
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+
+    if (search.length < 2) {
+      setPeopleResults([]);
+      setSearchingPeople(false);
+      return;
+    }
+
+    setSearchingPeople(true);
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const data = await api.searchPeople(search);
+        setPeopleResults(data.people);
+      } catch (e) {
+        console.warn("[NewConversation] people search failed", e);
+        setPeopleResults([]);
+      } finally {
+        setSearchingPeople(false);
+      }
+    }, 300);
+
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [search]);
+
+  // Close on Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const participantMap = useMemo(() => {
+    const map = new Map<string, { displayName: string }>();
+    for (const a of agents) map.set(a.id, { displayName: a.displayName });
+    for (const p of peopleResults) map.set(p.id, { displayName: p.displayName });
+    return map;
+  }, [agents, peopleResults]);
+
+  const activeAgents = useMemo(
+    () => agents.filter((a) => a.status !== "deactivated"),
+    [agents]
+  );
+
+  const filteredAgents = useMemo(() => {
+    if (!search) return activeAgents;
+    const q = search.toLowerCase();
+    return activeAgents.filter(
+      (a) =>
+        a.displayName.toLowerCase().includes(q) ||
+        a.description?.toLowerCase().includes(q)
+    );
+  }, [activeAgents, search]);
+
+  const isGroup = selected.size > 1;
+
+  const toggleParticipant = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setError(null);
+  }, []);
+
+  const findExistingDm = useCallback(
+    (peerId: string): string | null => {
+      const existing = conversations.find(
+        (c) =>
+          c.type === "direct" &&
+          c.members?.some((m) => m.participantId === peerId)
+      );
+      return existing?.id ?? null;
+    },
+    [conversations]
+  );
+
+  const handleCreate = useCallback(async () => {
+    setCreating(true);
+    setError(null);
+    try {
+      if (mode === "channel") {
+        if (!groupTitle.trim()) {
+          setError("Channel needs a name.");
+          setCreating(false);
+          return;
+        }
+        const conv = await createConversation({
+          type: "channel",
+          title: groupTitle.trim(),
+          memberIds: [...selected],
+        });
+        setActiveConversation(conv.id);
+        onClose();
+        return;
+      }
+
+      if (selected.size === 0) {
+        setCreating(false);
+        return;
+      }
+
+      if (selected.size === 1) {
+        const peerId = [...selected][0]!;
+        const existingId = findExistingDm(peerId);
+        if (existingId) {
+          setActiveConversation(existingId);
+          onClose();
+          return;
+        }
+        const conv = await createConversation({
+          type: "direct",
+          memberIds: [peerId],
+        });
+        setActiveConversation(conv.id);
+        onClose();
+        return;
+      }
+
+      if (!groupTitle.trim()) {
+        setError("Group conversations need a name.");
+        setCreating(false);
+        return;
+      }
+
+      const conv = await createConversation({
+        type: "group",
+        title: groupTitle.trim(),
+        memberIds: [...selected],
+      });
+      setActiveConversation(conv.id);
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create conversation");
+    } finally {
+      setCreating(false);
+    }
+  }, [
+    mode,
+    selected,
+    groupTitle,
+    findExistingDm,
+    createConversation,
+    setActiveConversation,
+    onClose,
+  ]);
+
+  const hasPeople = peopleResults.length > 0;
+  const canCreate =
+    mode === "channel"
+      ? Boolean(groupTitle.trim()) && !creating
+      : selected.size > 0 && !creating;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="flex max-h-[80vh] w-full max-w-md flex-col rounded-xl border border-border bg-card shadow-2xl">
+        <div className="flex items-center justify-between border-b border-border px-4 py-3 shrink-0">
+          <h2 className="text-sm font-semibold">New Conversation</h2>
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="flex gap-1 border-b border-border px-4 py-2 shrink-0">
+          <button
+            onClick={() => setMode("select")}
+            className={cn(
+              "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+              mode === "select"
+                ? "bg-primary/10 text-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <MessageCircle className="mr-1 inline h-3 w-3" />
+            Message
+          </button>
+          <button
+            onClick={() => setMode("channel")}
+            className={cn(
+              "rounded-md px-3 py-1 text-xs font-medium transition-colors",
+              mode === "channel"
+                ? "bg-primary/10 text-foreground"
+                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+            )}
+          >
+            <Users className="mr-1 inline h-3 w-3" />
+            Channel
+          </button>
+        </div>
+
+        {mode === "select" && (
+          <div className="border-b border-border px-4 py-2 shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input
+                placeholder="Search people or agents..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 pl-8 text-xs"
+                autoFocus
+              />
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="px-4 py-2 text-xs text-destructive shrink-0">{error}</div>
+        )}
+
+        {mode === "channel" ? (
+          <>
+            <div className="flex flex-col gap-3 border-b border-border px-4 py-3 shrink-0">
+              <div>
+                <Label className="text-xs text-muted-foreground">Channel name</Label>
+                <Input
+                  placeholder="e.g. project-planning"
+                  value={groupTitle}
+                  onChange={(e) => setGroupTitle(e.target.value)}
+                  className="mt-1 h-8 text-xs"
+                  autoFocus
+                />
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Add members now or later — members are optional.
+              </p>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {filteredAgents.map((agent) => (
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  isSelected={selected.has(agent.id)}
+                  onClick={() => toggleParticipant(agent.id)}
+                />
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            {selected.size > 0 && (
+              <div className="flex flex-wrap gap-1.5 border-b border-border px-4 py-2 shrink-0">
+                {[...selected].map((id) => {
+                  const p = participantMap.get(id);
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => toggleParticipant(id)}
+                      className="flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary hover:bg-primary/20"
+                    >
+                      {p?.displayName ?? "Participant"}
+                      <X className="h-3 w-3" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {isGroup && (
+              <div className="border-b border-border px-4 py-2 shrink-0">
+                <Label className="text-xs text-muted-foreground">Group name</Label>
+                <Input
+                  placeholder="Enter group name..."
+                  value={groupTitle}
+                  onChange={(e) => setGroupTitle(e.target.value)}
+                  className="mt-1 h-8 text-xs"
+                />
+              </div>
+            )}
+
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              {hasPeople && (
+                <>
+                  <div className="px-4 py-1.5">
+                    <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                      People
+                    </span>
+                  </div>
+                  {peopleResults.map((person) => (
+                    <PersonRow
+                      key={person.id}
+                      person={person}
+                      isSelected={selected.has(person.id)}
+                      onClick={() => toggleParticipant(person.id)}
+                    />
+                  ))}
+                </>
+              )}
+
+              {searchingPeople && search.length >= 2 && (
+                <div className="flex items-center gap-2 px-4 py-2">
+                  <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">
+                    Searching people...
+                  </span>
+                </div>
+              )}
+
+              {(hasPeople || search.length >= 2) && (
+                <div className="px-4 py-1.5">
+                  <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    Agents
+                  </span>
+                </div>
+              )}
+              {filteredAgents.length === 0 && !hasPeople && !searchingPeople && (
+                <p className="p-4 text-center text-xs text-muted-foreground">
+                  {search ? "No results match your search." : "No agents available."}
+                </p>
+              )}
+              {filteredAgents.map((agent) => (
+                <AgentRow
+                  key={agent.id}
+                  agent={agent}
+                  isSelected={selected.has(agent.id)}
+                  onClick={() => toggleParticipant(agent.id)}
+                />
+              ))}
+            </div>
+          </>
+        )}
+
+        <div className="flex items-center justify-between border-t border-border px-4 py-3 shrink-0">
+          <span className="text-xs text-muted-foreground">
+            {mode === "channel"
+              ? selected.size > 0
+                ? `${selected.size} member${selected.size > 1 ? "s" : ""} selected`
+                : "Members optional"
+              : selected.size === 0
+              ? "Select a person or agent"
+              : selected.size === 1
+              ? "Start DM"
+              : `Group with ${selected.size} participants`}
+          </span>
+          <Button size="sm" onClick={handleCreate} disabled={!canCreate}>
+            {creating ? (
+              <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+            ) : mode === "channel" ? (
+              <Users className="mr-1 h-3 w-3" />
+            ) : selected.size <= 1 ? (
+              <MessageCircle className="mr-1 h-3 w-3" />
+            ) : (
+              <Users className="mr-1 h-3 w-3" />
+            )}
+            {mode === "channel"
+              ? "Create Channel"
+              : selected.size <= 1
+              ? "Start Chat"
+              : "Create Group"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PersonRow({
+  person,
+  isSelected,
+  onClick,
+}: {
+  person: Participant;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50"
+    >
+      <Avatar className="h-8 w-8">
+        {person.avatarUrl && <AvatarImage src={person.avatarUrl} />}
+        <AvatarFallback className="text-[10px]">
+          <User className="h-3.5 w-3.5" />
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{person.displayName}</p>
+        {person.email && (
+          <p className="truncate text-[11px] text-muted-foreground">{person.email}</p>
+        )}
+      </div>
+      {isSelected && (
+        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+          <Check className="h-3 w-3 text-primary-foreground" />
+        </div>
+      )}
+    </button>
+  );
+}
+
+function AgentRow({
+  agent,
+  isSelected,
+  onClick,
+}: {
+  agent: Agent;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50"
+    >
+      <Avatar className="h-8 w-8">
+        {agent.avatarUrl && <AvatarImage src={agent.avatarUrl} />}
+        <AvatarFallback className="bg-primary/10 text-primary text-[10px]">
+          <Bot className="h-3.5 w-3.5" />
+        </AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{agent.displayName}</p>
+        {agent.description && (
+          <p className="truncate text-[11px] text-muted-foreground">
+            {agent.description}
+          </p>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        {agent.online && <span className="h-2 w-2 rounded-full bg-success" />}
+        {isSelected && (
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+            <Check className="h-3 w-3 text-primary-foreground" />
+          </div>
+        )}
+      </div>
+    </button>
+  );
+}
