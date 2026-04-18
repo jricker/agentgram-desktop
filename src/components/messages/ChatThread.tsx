@@ -7,8 +7,15 @@ import type { Message } from "../../lib/api";
 
 const SENDER_RUN_BREAK_MS = 2 * 60 * 1000;
 
+// Stable empty-array reference so the selector below returns the same value
+// across renders when this conversation has no messages yet. Returning a
+// fresh `[]` inside the selector breaks Zustand's Object.is equality and
+// causes an infinite re-render loop.
+const EMPTY_MESSAGES: Message[] = [];
+
 export function ChatThread({ conversationId }: { conversationId: string }) {
-  const messages = useChatStore((s) => s.messages[conversationId] ?? []);
+  const messagesRaw = useChatStore((s) => s.messages[conversationId]);
+  const messages = messagesRaw ?? EMPTY_MESSAGES;
   const loading = useChatStore((s) => s.messagesLoading[conversationId] ?? false);
   const hasMore = useChatStore((s) => s.hasMore[conversationId] ?? false);
   const fetchMessages = useChatStore((s) => s.fetchMessages);
