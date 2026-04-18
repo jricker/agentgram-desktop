@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuthStore } from "../stores/authStore";
+import { useThemeStore, type ThemePreference } from "../stores/themeStore";
 import * as api from "../lib/api";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,10 @@ import {
   Info,
   Calendar,
   RefreshCw,
+  Sun,
+  Moon,
+  Monitor,
+  Palette,
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { PROVIDERS } from "../lib/models";
@@ -109,6 +114,7 @@ const STATUS_CONFIG: Record<
 // Sidebar sections
 const SECTIONS = [
   { value: "profile", label: "Profile", icon: User },
+  { value: "appearance", label: "Appearance", icon: Palette },
   { value: "memory", label: "Memory", icon: Brain },
   { value: "llm-keys", label: "LLM Keys", icon: Key },
   { value: "connections", label: "Connections", icon: Link2 },
@@ -573,6 +579,12 @@ export function Profile({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        {activeSection === "appearance" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <AppearanceSection />
+          </div>
+        )}
+
         {activeSection === "memory" && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             {loadingIntegrations ? (
@@ -948,6 +960,65 @@ export function Profile({ onClose }: { onClose: () => void }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Appearance — light / dark / system theme preference
+// ---------------------------------------------------------------------------
+
+const THEME_OPTIONS: {
+  value: ThemePreference;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+}[] = [
+  { value: "light", label: "Light", description: "Always light", icon: Sun },
+  { value: "dark", label: "Dark", description: "Always dark", icon: Moon },
+  { value: "system", label: "System", description: "Match OS setting", icon: Monitor },
+];
+
+function AppearanceSection() {
+  const preference = useThemeStore((s) => s.preference);
+  const resolved = useThemeStore((s) => s.resolved);
+  const setPreference = useThemeStore((s) => s.setPreference);
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <Label className="text-xs">Theme</Label>
+        <p className="text-[11px] text-muted-foreground">
+          Currently showing <span className="font-medium capitalize">{resolved}</span>
+          {preference === "system" && " (from system)"}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        {THEME_OPTIONS.map((opt) => {
+          const Icon = opt.icon;
+          const selected = preference === opt.value;
+          return (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setPreference(opt.value)}
+              className={cn(
+                "flex flex-col items-center gap-1.5 rounded-lg border px-3 py-3 text-xs transition-colors",
+                "hover:bg-muted/50",
+                selected
+                  ? "border-primary bg-primary/10 text-foreground"
+                  : "border-border text-muted-foreground"
+              )}
+              aria-pressed={selected}
+            >
+              <Icon className="h-4 w-4" />
+              <span className="font-medium text-foreground">{opt.label}</span>
+              <span className="text-[10px] text-muted-foreground">{opt.description}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

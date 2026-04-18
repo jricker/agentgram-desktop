@@ -1,5 +1,8 @@
 import { useEffect, Component, type ReactNode } from "react";
 import { useAuthStore } from "./stores/authStore";
+// Import for side effect: applies stored theme preference to <html> before
+// first paint so the login screen doesn't flash in the wrong theme.
+import "./stores/themeStore";
 import { LoginScreen } from "./components/LoginScreen";
 import { Dashboard } from "./components/Dashboard";
 

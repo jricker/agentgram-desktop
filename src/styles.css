@@ -45,6 +45,20 @@
   --sidebar-accent-foreground: oklch(0.15 0.01 260);
   --sidebar-border: oklch(0.91 0.005 250);
   --sidebar-ring: oklch(0.60 0.22 257);
+
+  /* App-specific tokens that must flip with theme */
+  --surface-hover: oklch(0.97 0.003 250);
+  --surface-active: oklch(0.94 0.005 250);
+  --border-strong: oklch(0.84 0.01 250);
+  --text-secondary: oklch(0.48 0.01 260);
+  --accent-light: oklch(0.95 0.04 257);
+  --accent-hover: oklch(0.53 0.22 257);
+  --success: oklch(0.65 0.17 160);
+  --success-light: oklch(0.96 0.03 160);
+  --warning: oklch(0.75 0.16 75);
+  --warning-light: oklch(0.97 0.03 85);
+  --danger: oklch(0.58 0.22 25);
+  --danger-light: oklch(0.97 0.02 20);
 }
 
 .dark {
@@ -79,6 +93,20 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.70 0.22 257);
+
+  /* App-specific tokens (dark) */
+  --surface-hover: oklch(0.24 0 0);
+  --surface-active: oklch(0.30 0 0);
+  --border-strong: oklch(1 0 0 / 18%);
+  --text-secondary: oklch(0.78 0 0);
+  --accent-light: oklch(0.30 0.08 257);
+  --accent-hover: oklch(0.78 0.22 257);
+  --success: oklch(0.72 0.17 160);
+  --success-light: oklch(0.30 0.06 160);
+  --warning: oklch(0.80 0.16 75);
+  --warning-light: oklch(0.32 0.06 85);
+  --danger: oklch(0.70 0.22 25);
+  --danger-light: oklch(0.30 0.08 20);
 }
 
 @theme inline {
@@ -123,23 +151,24 @@
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 
-  /* App-specific color aliases (used by existing components) */
+  /* App-specific color aliases (used by existing components). These resolve
+   * to CSS vars defined in :root / .dark so they flip with the theme. */
   --color-bg: var(--background);
   --color-surface: var(--card);
-  --color-surface-hover: oklch(0.97 0.003 250);
-  --color-surface-active: oklch(0.94 0.005 250);
-  --color-border-strong: oklch(0.84 0.01 250);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-border-strong: var(--border-strong);
   --color-text: var(--foreground);
-  --color-text-secondary: oklch(0.48 0.01 260);
+  --color-text-secondary: var(--text-secondary);
   --color-text-muted: var(--muted-foreground);
-  --color-accent-light: oklch(0.95 0.04 257);
-  --color-accent-hover: oklch(0.53 0.22 257);
-  --color-success: oklch(0.65 0.17 160);
-  --color-success-light: oklch(0.96 0.03 160);
-  --color-warning: oklch(0.75 0.16 75);
-  --color-warning-light: oklch(0.97 0.03 85);
-  --color-danger: oklch(0.58 0.22 25);
-  --color-danger-light: oklch(0.97 0.02 20);
+  --color-accent-light: var(--accent-light);
+  --color-accent-hover: var(--accent-hover);
+  --color-success: var(--success);
+  --color-success-light: var(--success-light);
+  --color-warning: var(--warning);
+  --color-warning-light: var(--warning-light);
+  --color-danger: var(--danger);
+  --color-danger-light: var(--danger-light);
 }
 
 @layer base {
