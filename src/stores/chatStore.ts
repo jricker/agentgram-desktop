@@ -50,6 +50,11 @@ interface ChatState {
   addConversation: (conv: Conversation) => void;
   updateConversationFromEvent: (convId: string, lastMessage: Message) => void;
   getConversation: (id: string) => Conversation | undefined;
+  updateConversationTitle: (id: string, title: string) => Promise<void>;
+  addMember: (conversationId: string, participantId: string) => Promise<void>;
+  removeMember: (conversationId: string, participantId: string) => Promise<void>;
+  deleteConversation: (conversationId: string) => Promise<void>;
+  leaveConversation: (conversationId: string, participantId: string) => Promise<void>;
 
   // Actions — messages
   fetchMessages: (conversationId: string, before?: string) => Promise<void>;
@@ -121,6 +126,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   getConversation: (id) => get().conversations.find((c) => c.id === id),
+
+  updateConversationTitle: async (id, title) => {
+    await api.updateConversationTitleRest(id, title);
+    set((s) => ({
+      conversations: s.conversations.map((c) =>
+        c.id === id ? { ...c, title } : c
+      ),
+    }));
+  },
+
+  addMember: async (conversationId, participantId) => {
+    await api.addConversationMember(conversationId, participantId);
+    // Refresh so the member list + avatars come back populated
+    await get().refreshConversation(conversationId);
+  },
+
+  removeMember: async (conversationId, participantId) => {
+    await api.removeConversationMember(conversationId, participantId);
+    await get().refreshConversation(conversationId);
+  },
+
+  deleteConversation: async (conversationId) => {
+    await api.deleteConversationRest(conversationId);
+    set((s) => {
+      const { [conversationId]: _m, ...remainingMessages } = s.messages;
+      const { [conversationId]: _d, ...remainingDrafts } = s.drafts;
+      return {
+        conversations: s.conversations.filter((c) => c.id !== conversationId),
+        messages: remainingMessages,
+        drafts: remainingDrafts,
+        activeConversationId:
+          s.activeConversationId === conversationId ? null : s.activeConversationId,
+      };
+    });
+    ws.leaveConversation(conversationId);
+  },
+
+  leaveConversation: async (conversationId, participantId) => {
+    await api.removeConversationMember(conversationId, participantId);
+    set((s) => ({
+      conversations: s.conversations.filter((c) => c.id !== conversationId),
+      activeConversationId:
+        s.activeConversationId === conversationId ? null : s.activeConversationId,
+    }));
+    ws.leaveConversation(conversationId);
+  },
 
   fetchMessages: async (conversationId, before) => {
     set((s) => ({

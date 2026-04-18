@@ -726,6 +726,39 @@ export async function markConversationReadRest(conversationId: string): Promise<
   await request(`/api/conversations/${conversationId}/read`, { method: "POST" });
 }
 
+export async function updateConversationTitleRest(
+  conversationId: string,
+  title: string
+): Promise<Conversation> {
+  return request(`/api/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+}
+
+export async function addConversationMember(
+  conversationId: string,
+  participantId: string
+): Promise<void> {
+  await request(`/api/conversations/${conversationId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ participantId }),
+  });
+}
+
+export async function removeConversationMember(
+  conversationId: string,
+  participantId: string
+): Promise<void> {
+  await request(`/api/conversations/${conversationId}/members/${participantId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteConversationRest(conversationId: string): Promise<void> {
+  await request(`/api/conversations/${conversationId}`, { method: "DELETE" });
+}
+
 export interface DetailField {
   key: string;
   label?: string;

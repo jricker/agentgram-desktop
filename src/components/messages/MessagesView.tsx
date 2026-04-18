@@ -1,14 +1,35 @@
-import { useMemo } from "react";
-import { MessageSquare } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { MessageSquare, Info } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { cn } from "../../lib/utils";
 import { ConversationList } from "./ConversationList";
 import { ChatThread } from "./ChatThread";
 import { MessageComposer } from "./MessageComposer";
+import { ConversationDetailsPanel } from "./ConversationDetailsPanel";
+
+const DETAILS_KEY = "agentchat:showDetails";
+
+function readDetailsPref(): boolean {
+  try {
+    return localStorage.getItem(DETAILS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 export function MessagesView() {
   const activeId = useChatStore((s) => s.activeConversationId);
+  const [showDetails, setShowDetails] = useState(readDetailsPref);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DETAILS_KEY, showDetails ? "1" : "0");
+    } catch {
+      // localStorage unavailable — non-fatal
+    }
+  }, [showDetails]);
 
   return (
     <div className="flex-1 flex h-full overflow-hidden">
@@ -31,26 +52,52 @@ export function MessagesView() {
       </aside>
 
       <section className="flex-1 flex flex-col bg-background overflow-hidden">
-        {activeId ? <ActiveConversation conversationId={activeId} /> : <EmptyState />}
+        {activeId ? (
+          <ActiveConversation
+            conversationId={activeId}
+            showDetails={showDetails}
+            onToggleDetails={() => setShowDetails((v) => !v)}
+          />
+        ) : (
+          <EmptyState />
+        )}
       </section>
+
+      {activeId && showDetails && (
+        <DetailsPanelWrapper
+          conversationId={activeId}
+          onClose={() => setShowDetails(false)}
+        />
+      )}
     </div>
   );
 }
 
-function ActiveConversation({ conversationId }: { conversationId: string }) {
+function ActiveConversation({
+  conversationId,
+  showDetails,
+  onToggleDetails,
+}: {
+  conversationId: string;
+  showDetails: boolean;
+  onToggleDetails: () => void;
+}) {
   const conversation = useChatStore((s) =>
     s.conversations.find((c) => c.id === conversationId)
   );
   const myId = useAuthStore((s) => s.participant?.id);
 
-  const headerTitle = useMemo(() => {
-    if (!conversation) return "";
-    if (conversation.title) return conversation.title;
-    const other = (conversation.members ?? []).find(
-      (m) => m.participantId !== myId
-    );
-    return other?.participant?.displayName ?? "Conversation";
-  }, [conversation, myId]);
+  const otherParticipant = useMemo(
+    () =>
+      (conversation?.members ?? []).find((m) => m.participantId !== myId)
+        ?.participant,
+    [conversation, myId]
+  );
+
+  const headerTitle =
+    conversation?.title ||
+    otherParticipant?.displayName ||
+    (conversation?.type === "group" ? "Group" : "Conversation");
 
   return (
     <>
@@ -58,34 +105,82 @@ function ActiveConversation({ conversationId }: { conversationId: string }) {
         className="px-4 py-3 border-b border-border bg-card flex items-center gap-3"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
-        <Avatar className="h-8 w-8">
-          {conversation?.members?.find((m) => m.participantId !== myId)?.participant
-            ?.avatarUrl ? (
-            <AvatarImage
-              src={
-                conversation.members.find((m) => m.participantId !== myId)!.participant!
-                  .avatarUrl!
-              }
-              alt={headerTitle}
-            />
-          ) : null}
-          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-            {headerTitle.charAt(0).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0">
-          <p className="text-sm font-semibold truncate">{headerTitle}</p>
-          {conversation && conversation.type !== "direct" && (
-            <p className="text-[11px] text-muted-foreground">
-              {(conversation.members?.length ?? 0)} members
-            </p>
+        <button
+          type="button"
+          onClick={onToggleDetails}
+          title="Conversation details"
+          className="flex items-center gap-3 min-w-0 flex-1 rounded-md px-1 py-0.5 hover:bg-muted/50 text-left transition-colors"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <Avatar className="h-8 w-8 shrink-0">
+            {otherParticipant?.avatarUrl ? (
+              <AvatarImage src={otherParticipant.avatarUrl} alt={headerTitle} />
+            ) : null}
+            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+              {headerTitle.charAt(0).toUpperCase()}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold truncate">{headerTitle}</p>
+            {conversation && conversation.type !== "direct" && (
+              <p className="text-[11px] text-muted-foreground">
+                {conversation.members?.length ?? 0} members
+              </p>
+            )}
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={onToggleDetails}
+          title={showDetails ? "Hide details" : "Show details"}
+          aria-pressed={showDetails}
+          className={cn(
+            "rounded-md p-1.5 transition-colors shrink-0",
+            showDetails
+              ? "bg-primary/10 text-primary"
+              : "text-muted-foreground hover:bg-muted hover:text-foreground"
           )}
-        </div>
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        >
+          <Info className="h-4 w-4" />
+        </button>
       </header>
 
       <ChatThread conversationId={conversationId} />
       <MessageComposer conversationId={conversationId} />
     </>
+  );
+}
+
+function DetailsPanelWrapper({
+  conversationId,
+  onClose,
+}: {
+  conversationId: string;
+  onClose: () => void;
+}) {
+  const conversation = useChatStore((s) =>
+    s.conversations.find((c) => c.id === conversationId)
+  );
+  const myId = useAuthStore((s) => s.participant?.id);
+  const refreshConversation = useChatStore((s) => s.refreshConversation);
+
+  // The conversation list endpoint may not include full member / participant
+  // payloads. Pull a fresh copy on open so the panel has complete data.
+  useEffect(() => {
+    refreshConversation(conversationId);
+  }, [conversationId, refreshConversation]);
+
+  if (!conversation) return null;
+
+  return (
+    <ConversationDetailsPanel
+      conversation={conversation}
+      currentUserId={myId}
+      onClose={onClose}
+      onAfterLeave={onClose}
+    />
   );
 }
 

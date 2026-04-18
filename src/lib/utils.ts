@@ -36,3 +36,10 @@ export function formatClockTime(iso: string | undefined): string {
     minute: "2-digit",
   });
 }
+
+/** Two-letter initials from a display name — "James Ricker" → "JR". */
+export function getInitials(name: string | undefined): string {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p.charAt(0).toUpperCase()).join("") || "?";
+}
