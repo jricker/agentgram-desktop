@@ -37,7 +37,8 @@ export function MessagesView() {
   const activeId = useChatStore((s) => s.activeConversationId);
   const fetchAgentConversations = useChatStore((s) => s.fetchAgentConversations);
   const agentLoaded = useChatStore((s) => s.agentConversationsLoaded);
-  const personalUnread = useChatStore((s) => s.unreadCounts);
+  const unreadCounts = useChatStore((s) => s.unreadCounts);
+  const personalConversations = useChatStore((s) => s.conversations);
   const agentStreams = useStreamingStore((s) => s.streams);
 
   const [showDetails, setShowDetails] = useState(readDetailsPref);
@@ -74,16 +75,19 @@ export function MessagesView() {
     [agentStreams]
   );
 
-  // Show a dot on the Chats tab when there are unread personal convs and
-  // we're on a different tab.
-  const totalPersonalUnread = useMemo(
-    () =>
-      Object.values(personalUnread).reduce(
-        (sum, n) => sum + (typeof n === "number" ? n : 0),
-        0
-      ),
-    [personalUnread]
-  );
+  // Show a badge on the Chats tab when there are unread personal convs and
+  // we're on a different tab. Filter against the personal list — the
+  // server's unread-counts endpoint returns entries for every conversation
+  // the user can see, including agent-to-agent ones; summing those would
+  // inflate the badge.
+  const totalPersonalUnread = useMemo(() => {
+    const personalIds = new Set(personalConversations.map((c) => c.id));
+    let sum = 0;
+    for (const [id, n] of Object.entries(unreadCounts)) {
+      if (personalIds.has(id)) sum += typeof n === "number" ? n : 0;
+    }
+    return sum;
+  }, [unreadCounts, personalConversations]);
 
   return (
     <div className="flex-1 flex h-full overflow-hidden">

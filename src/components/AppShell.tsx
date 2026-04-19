@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MessageSquare, Bot, User, Zap } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useWebSocket } from "../hooks/useWebSocket";
@@ -84,7 +84,19 @@ function LeftRail({
   onOpenProfile: () => void;
 }) {
   const unread = useChatStore((s) => s.unreadCounts);
-  const totalUnread = Object.values(unread).reduce((sum, n) => sum + n, 0);
+  const personalConversations = useChatStore((s) => s.conversations);
+  // Only count unread against conversations in the personal "Chats" list —
+  // the server's /unread-counts endpoint returns entries for every
+  // conversation the user can see, including agent-to-agent ones, which
+  // would otherwise inflate the badge on the Chat tab.
+  const totalUnread = useMemo(() => {
+    const personalIds = new Set(personalConversations.map((c) => c.id));
+    let sum = 0;
+    for (const [id, n] of Object.entries(unread)) {
+      if (personalIds.has(id)) sum += typeof n === "number" ? n : 0;
+    }
+    return sum;
+  }, [unread, personalConversations]);
   const tasks = useTaskStore((s) => s.tasks);
   const activeTaskCount = countActiveTasks(tasks);
   const participant = useAuthStore((s) => s.participant);
