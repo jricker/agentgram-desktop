@@ -7,6 +7,10 @@ import { MarkdownContent } from "./MarkdownContent";
 import { isTaskMessage, TaskMessage } from "./TaskMessages";
 import { isToolMessage, ToolMessage } from "./ToolMessages";
 import { isFileMessage, FileMessage } from "./FileMessage";
+import {
+  isStatusUpdateMessage,
+  StatusUpdateMessage,
+} from "./StatusUpdateMessage";
 import type { Message } from "../../lib/api";
 
 export function MessageBubble({
@@ -29,6 +33,7 @@ export function MessageBubble({
   const senderName = message.sender?.displayName ?? "";
   const avatarUrl = message.sender?.avatarUrl;
   const isTask = isTaskMessage(message);
+  const isStatusUpdate = isStatusUpdateMessage(message);
 
   // Find the message we're replying to so we can render the preview
   const conversationId = message.conversationId;
@@ -39,8 +44,10 @@ export function MessageBubble({
     );
   });
 
-  // Task messages render full-width (no bubble); still support right-click.
-  if (isTask) {
+  // Full-width card messages (tasks + status lifecycle updates) render
+  // outside a chat bubble so the card styling (coloured border, expandable
+  // sections) stays visible. Still support right-click.
+  if (isTask || isStatusUpdate) {
     return (
       <div
         className={cn("px-4", showAvatar ? "mt-3" : "mt-0.5")}
@@ -50,7 +57,11 @@ export function MessageBubble({
           onContextMenu(message, e);
         }}
       >
-        <TaskMessage message={message} />
+        {isTask ? (
+          <TaskMessage message={message} />
+        ) : (
+          <StatusUpdateMessage message={message} />
+        )}
       </div>
     );
   }

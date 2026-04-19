@@ -1,0 +1,649 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  ArrowRightLeft,
+  Ban,
+  Bot,
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Copy,
+  Check as CheckIcon,
+  Eye,
+  Forward,
+  Loader2,
+  PlayCircle,
+  XCircle,
+  Zap,
+  AlertTriangle,
+} from "lucide-react";
+import { cn, formatClockTime } from "../../lib/utils";
+import type { Message } from "../../lib/api";
+import { useTaskStore } from "../../stores/taskStore";
+import { MarkdownContent } from "./MarkdownContent";
+
+/**
+ * Renders task-lifecycle status messages that the backend emits as
+ * `StatusUpdate` / `status_update` with the real data in JSON inside
+ * `message.content`. Without this renderer those land as raw JSON text.
+ *
+ * Payloads in the wild use different field names for the assignee depending
+ * on the lifecycle event — `agent_name` / `agent_avatar_url` for working /
+ * complete states; `assignee_name` / `assignee_avatar_url` for delegated
+ * states. This component normalizes both.
+ */
+
+interface StatusPayload {
+  task_id?: string;
+  status?: string;
+  /** Some payloads use `type` as the lifecycle tag instead of `lifecycle_type` */
+  type?: string;
+  lifecycle_type?: string;
+  summary?: string;
+  error?: string;
+  title?: string;
+  duration_seconds?: number;
+  agent_name?: string;
+  agent_avatar_url?: string;
+  assignee_name?: string;
+  assignee_avatar_url?: string;
+}
+
+const LIFECYCLE_TYPES = new Set<string>([
+  "task_delegated",
+  "task_self_assigned",
+  "task_accepted",
+  "task_in_progress",
+  "task_complete",
+  "task_complete_summary",
+  "task_failed",
+  "task_cancelled",
+]);
+
+// Map bare status words the server sometimes uses as lifecycle_type.
+const BARE_STATUS_TO_LIFECYCLE: Record<string, string> = {
+  pending: "task_delegated",
+  in_progress: "task_in_progress",
+  accepted: "task_accepted",
+  complete: "task_complete",
+  failed: "task_failed",
+  declined: "task_failed",
+  blocked: "task_in_progress",
+  cancelled: "task_cancelled",
+};
+
+// Re-route based on a live effective status (from taskStore) so a Working
+// card flips to Completion without waiting for a new StatusUpdate message.
+function resolveEffectiveType(
+  effectiveStatus: string | undefined,
+  fallback: string
+): string {
+  if (!effectiveStatus) return fallback;
+  switch (effectiveStatus) {
+    case "in_progress":
+    case "accepted":
+    case "blocked":
+      return "task_in_progress";
+    case "complete":
+      return "task_complete";
+    case "failed":
+    case "declined":
+      return "task_failed";
+    case "cancelled":
+      return "task_cancelled";
+    default:
+      return fallback;
+  }
+}
+
+function safeParseJson<T>(str: string, fallback: T): T {
+  try {
+    return JSON.parse(str) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function formatDuration(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins < 60) return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h ${rem}m` : `${hrs}h`;
+}
+
+function resolveAgentName(payload: StatusPayload, message: Message): string {
+  return (
+    payload.agent_name ??
+    payload.assignee_name ??
+    message.sender?.displayName ??
+    "Agent"
+  );
+}
+
+function resolveAvatarUrl(
+  payload: StatusPayload,
+  message: Message
+): string | undefined {
+  return (
+    payload.agent_avatar_url ?? payload.assignee_avatar_url ?? message.sender?.avatarUrl
+  );
+}
+
+function AgentAvatar({
+  name,
+  avatarUrl,
+  size = 32,
+}: {
+  name: string;
+  avatarUrl?: string;
+  size?: number;
+}) {
+  const initials = name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase();
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className="rounded-full object-cover"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+  return (
+    <div
+      className="flex items-center justify-center rounded-full bg-primary/20 text-[10px] font-semibold text-primary"
+      style={{ width: size, height: size }}
+    >
+      {initials}
+    </div>
+  );
+}
+
+function CopyableTaskId({ taskId }: { taskId: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard?.writeText(taskId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <button
+      onClick={handleCopy}
+      type="button"
+      className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-left"
+      title="Copy task ID"
+    >
+      <span className="text-[10px] text-muted-foreground/60">ID</span>
+      <span className="font-mono text-[10px] text-muted-foreground/60">
+        {taskId.slice(0, 8)}...
+      </span>
+      {copied ? (
+        <CheckIcon className="h-2.5 w-2.5 text-green-500" />
+      ) : (
+        <Copy className="h-2.5 w-2.5 text-muted-foreground/40" />
+      )}
+    </button>
+  );
+}
+
+function LiveProgressTimeline({ steps }: { steps: string[] }) {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef(Date.now());
+
+  useEffect(() => {
+    startRef.current = Date.now();
+    setElapsed(0);
+  }, [steps.length]);
+
+  useEffect(() => {
+    const id = setInterval(
+      () => setElapsed(Math.floor((Date.now() - startRef.current) / 1000)),
+      1000
+    );
+    return () => clearInterval(id);
+  }, [steps.length]);
+
+  if (steps.length === 0) return null;
+
+  const pastSteps = steps.slice(0, -1).slice(-4);
+  const currentStep = steps[steps.length - 1];
+
+  return (
+    <div className="mt-3 space-y-1.5 border-t border-border pt-3">
+      {pastSteps.map((step, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <div className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+          <span className="text-[11px] text-muted-foreground/50">{step}</span>
+        </div>
+      ))}
+      <div className="flex items-center gap-2">
+        <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+        <span className="text-[11px] font-medium text-foreground">{currentStep}</span>
+        {elapsed > 0 && (
+          <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/50">
+            {formatDuration(elapsed)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function WorkingCard({
+  payload,
+  message,
+  recentSteps,
+}: {
+  payload: StatusPayload;
+  message: Message;
+  recentSteps: string[];
+}) {
+  const agentName = resolveAgentName(payload, message);
+  const avatarUrl = resolveAvatarUrl(payload, message);
+  const title = payload.title || "Untitled task";
+
+  return (
+    <div className="my-2 w-full">
+      <div className="overflow-hidden rounded-xl border border-blue-500/20 border-l-4 border-l-blue-500 bg-card">
+        <div className="p-4">
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={36} />
+              <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-card bg-blue-500" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-foreground">{agentName}</p>
+              <p className="text-xs text-muted-foreground">is working on this</p>
+            </div>
+            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+          </div>
+
+          <p className="mt-3 text-sm font-semibold leading-snug text-foreground">
+            {title}
+          </p>
+
+          <LiveProgressTimeline steps={recentSteps} />
+
+          {payload.task_id && <CopyableTaskId taskId={payload.task_id} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompletionCard({
+  payload,
+  message,
+}: {
+  payload: StatusPayload;
+  message: Message;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const agentName = resolveAgentName(payload, message);
+  const avatarUrl = resolveAvatarUrl(payload, message);
+  const title = payload.title || "Untitled task";
+  const summary = payload.summary;
+
+  if (!expanded) {
+    return (
+      <div className="my-2 w-full">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center gap-3 rounded-xl bg-green-600 px-4 py-2.5 text-left transition-colors hover:bg-green-700"
+        >
+          <CheckCircle className="h-[18px] w-[18px] shrink-0 text-white" />
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-semibold text-white">Task Complete</span>
+            <p className="mt-0.5 truncate text-xs text-white/75">
+              {title} · {agentName}
+            </p>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-white/50" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 w-full">
+      <div className="overflow-hidden rounded-xl border border-green-500/20 border-l-4 border-l-green-500 bg-green-500/5">
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="flex w-full items-center gap-3 p-4 pb-0 text-left"
+        >
+          <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={36} />
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 dark:text-green-400">
+              Task Complete
+            </span>
+            <p className="text-xs text-muted-foreground">{agentName}</p>
+          </div>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+        </button>
+        <div className="px-4 pb-4">
+          <p className="mt-3 text-sm font-semibold leading-snug text-foreground">
+            {title}
+          </p>
+          {summary && (
+            <div className="mt-3 border-t border-green-500/10 pt-3">
+              <MarkdownContent content={summary} />
+            </div>
+          )}
+          {payload.duration_seconds != null && (
+            <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground/60">
+              <Clock className="h-3 w-3" />
+              <span>Completed in {formatDuration(payload.duration_seconds)}</span>
+            </div>
+          )}
+          {payload.task_id && <CopyableTaskId taskId={payload.task_id} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FailureCard({
+  payload,
+  message,
+}: {
+  payload: StatusPayload;
+  message: Message;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const agentName = resolveAgentName(payload, message);
+  const avatarUrl = resolveAvatarUrl(payload, message);
+  const title = payload.title || "Untitled task";
+  const error = payload.error || payload.summary;
+
+  if (!expanded) {
+    return (
+      <div className="my-2 w-full">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="flex w-full items-center gap-3 rounded-xl border border-red-500/20 border-l-4 border-l-red-500 bg-red-500/5 px-4 py-2.5 text-left transition-colors hover:bg-red-500/10"
+        >
+          <XCircle className="h-[18px] w-[18px] shrink-0 text-red-500" />
+          <div className="min-w-0 flex-1">
+            <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+              Task Failed
+            </span>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {title} · {agentName}
+            </p>
+          </div>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-2 w-full">
+      <div className="overflow-hidden rounded-xl border border-red-500/20 border-l-4 border-l-red-500 bg-red-500/5">
+        <button
+          type="button"
+          onClick={() => setExpanded(false)}
+          className="flex w-full items-center gap-3 p-4 pb-0 text-left"
+        >
+          <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={36} />
+          <div className="min-w-0 flex-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
+              Task Failed
+            </span>
+            <p className="text-xs text-muted-foreground">{agentName}</p>
+          </div>
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+        </button>
+        <div className="px-4 pb-4">
+          <p className="mt-3 text-sm font-semibold leading-snug text-foreground">
+            {title}
+          </p>
+          {error && (
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/10 bg-red-500/5 p-3">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
+              <p className="text-xs leading-relaxed text-red-700 dark:text-red-300">
+                {error}
+              </p>
+            </div>
+          )}
+          {payload.task_id && <CopyableTaskId taskId={payload.task_id} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CancelledCard({
+  payload,
+  message,
+}: {
+  payload: StatusPayload;
+  message: Message;
+}) {
+  const agentName = resolveAgentName(payload, message);
+  const title = payload.title || "Untitled task";
+  return (
+    <div className="my-2 w-full">
+      <div className="flex w-full items-center gap-3 rounded-xl border border-muted-foreground/20 border-l-4 border-l-muted-foreground bg-muted/50 px-4 py-2.5">
+        <Ban className="h-[18px] w-[18px] shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <span className="text-xs font-semibold text-muted-foreground">
+            Task Cancelled
+          </span>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground/70">
+            {title} · {agentName}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LifecycleCard({
+  payload,
+  message,
+  lifecycle,
+}: {
+  payload: StatusPayload;
+  message: Message;
+  lifecycle: string;
+}) {
+  const agentName = resolveAgentName(payload, message);
+  const avatarUrl = resolveAvatarUrl(payload, message);
+  const title = payload.title || "Untitled task";
+
+  const config: Record<
+    string,
+    {
+      label: string;
+      meta: string;
+      Icon: typeof CheckCircle;
+      borderColor: string;
+      iconColor: string;
+    }
+  > = {
+    task_delegated: {
+      label: "Task Assigned",
+      meta: `Assigned to ${agentName}`,
+      Icon: Forward,
+      borderColor: "border-l-blue-500",
+      iconColor: "text-blue-500",
+    },
+    task_self_assigned: {
+      label: "Working on It",
+      meta: `${agentName} is on it`,
+      Icon: Zap,
+      borderColor: "border-l-orange-500",
+      iconColor: "text-orange-500",
+    },
+    task_accepted: {
+      label: "Task Accepted",
+      meta: `Picked up by ${agentName}`,
+      Icon: Eye,
+      borderColor: "border-l-blue-500",
+      iconColor: "text-blue-500",
+    },
+  };
+
+  const c = config[lifecycle] ?? {
+    label: lifecycle.replace(/_/g, " "),
+    meta: agentName,
+    Icon: ArrowRightLeft,
+    borderColor: "border-l-muted-foreground",
+    iconColor: "text-muted-foreground",
+  };
+
+  const Icon = c.Icon;
+
+  return (
+    <div className="my-2 w-full">
+      <div
+        className={cn(
+          "overflow-hidden rounded-xl border border-border border-l-4 bg-card p-4",
+          c.borderColor
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={32} />
+          <div className="min-w-0 flex-1">
+            <span
+              className={cn(
+                "text-[10px] font-bold uppercase tracking-wider",
+                c.iconColor
+              )}
+            >
+              {c.label}
+            </span>
+            <p className="mt-0.5 text-sm font-semibold leading-snug text-foreground">
+              {title}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{c.meta}</p>
+          </div>
+          <Icon className={cn("h-5 w-5 shrink-0", c.iconColor)} />
+        </div>
+        {payload.task_id && <CopyableTaskId taskId={payload.task_id} />}
+      </div>
+    </div>
+  );
+}
+
+export function StatusUpdateMessage({ message }: { message: Message }) {
+  const payload = safeParseJson<StatusPayload>(message.content, {
+    summary: message.content,
+  });
+  const rawLifecycle =
+    payload.lifecycle_type ?? payload.type ?? payload.status ?? "task_in_progress";
+  const lifecycle = BARE_STATUS_TO_LIFECYCLE[rawLifecycle] ?? rawLifecycle;
+
+  const liveMeta = useTaskStore((s) =>
+    payload.task_id ? s.taskLifecycleMeta[payload.task_id] : undefined
+  );
+  const taskProgress = useTaskStore((s) =>
+    payload.task_id ? s.taskProgress[payload.task_id] : undefined
+  );
+  const effectiveStatus = liveMeta?.effectiveStatus;
+  const effectiveType = resolveEffectiveType(effectiveStatus, lifecycle);
+
+  const enriched: StatusPayload = { ...payload };
+  if (liveMeta?.summary) enriched.summary = liveMeta.summary;
+  if (liveMeta?.error) enriched.error = liveMeta.error;
+
+  const isLifecycle =
+    LIFECYCLE_TYPES.has(lifecycle) || LIFECYCLE_TYPES.has(effectiveType);
+  if (isLifecycle && payload.task_id) {
+    const stillWorking =
+      !effectiveStatus ||
+      effectiveStatus === "in_progress" ||
+      effectiveStatus === "accepted";
+    if (effectiveType === "task_in_progress" && stillWorking) {
+      return (
+        <WorkingCard
+          payload={enriched}
+          message={message}
+          recentSteps={taskProgress?.recentSteps ?? []}
+        />
+      );
+    }
+    if (
+      effectiveType === "task_complete" ||
+      effectiveType === "task_complete_summary"
+    ) {
+      return <CompletionCard payload={enriched} message={message} />;
+    }
+    if (effectiveType === "task_failed") {
+      return <FailureCard payload={enriched} message={message} />;
+    }
+    if (effectiveType === "task_cancelled") {
+      return <CancelledCard payload={enriched} message={message} />;
+    }
+    return (
+      <LifecycleCard payload={enriched} message={message} lifecycle={effectiveType} />
+    );
+  }
+
+  // Fallback: unknown lifecycle with no task_id — render a compact status row.
+  const Icon =
+    lifecycle === "task_complete"
+      ? CheckCircle
+      : lifecycle === "task_failed"
+      ? XCircle
+      : lifecycle === "task_cancelled"
+      ? Ban
+      : lifecycle === "task_in_progress"
+      ? PlayCircle
+      : ArrowRightLeft;
+
+  const iconColor =
+    lifecycle === "task_complete"
+      ? "text-green-500"
+      : lifecycle === "task_failed"
+      ? "text-red-500"
+      : lifecycle === "task_cancelled"
+      ? "text-muted-foreground"
+      : lifecycle === "task_in_progress"
+      ? "text-orange-500"
+      : "text-muted-foreground";
+
+  return (
+    <div className="my-2 flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2">
+      <Icon className={cn("h-4 w-4 shrink-0", iconColor)} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold">
+            {lifecycle.replace(/_/g, " ")}
+          </span>
+          {message.sender?.displayName && (
+            <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <Bot className="h-2.5 w-2.5" />
+              {message.sender.displayName}
+            </span>
+          )}
+        </div>
+        {payload.summary && (
+          <p className="mt-0.5 text-xs text-muted-foreground">{payload.summary}</p>
+        )}
+      </div>
+      <span className="shrink-0 text-[10px] text-muted-foreground">
+        {formatClockTime(message.insertedAt)}
+      </span>
+    </div>
+  );
+}
+
+const STATUS_TYPES = new Set(["StatusUpdate", "status_update"]);
+
+export function isStatusUpdateMessage(message: Message): boolean {
+  const type = message.messageType || message.contentType || "";
+  return STATUS_TYPES.has(type);
+}
