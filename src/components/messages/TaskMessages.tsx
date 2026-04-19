@@ -15,13 +15,17 @@ import { cn } from "../../lib/utils";
 import { getMessagePayload } from "../../lib/api";
 import type { Message } from "../../lib/api";
 import { MarkdownContent } from "./MarkdownContent";
+import { useTaskStore } from "../../stores/taskStore";
 
 /**
  * Task message renderers ported from web/src/components/messages/TaskMessages.tsx.
- * Intentionally omits the live-step streaming view — desktop doesn't wire
- * `task_progress` WS events to a dedicated store yet. Live activity stays
- * visible via whatever `activities` the server packs into the progress
- * message payload itself.
+ *
+ * Pulls live task state from `useTaskStore`:
+ *  - `taskLifecycleMeta[id].effectiveStatus` overrides the static
+ *    `taskSnapshot.status` so a running TaskRequest card flips to
+ *    complete/failed without a fresh message arriving.
+ *  - `taskProgress[id]` drives the LiveSteps ticker inside the working
+ *    state of a TaskRequest card.
  */
 
 // --- Helpers ---
@@ -38,6 +42,29 @@ function formatDuration(seconds: number): string {
 function firstLine(text: string): string {
   const line = text.split("\n")[0] ?? text;
   return line.length > 80 ? line.slice(0, 77) + "..." : line;
+}
+
+function LiveSteps({ taskId }: { taskId: string }) {
+  const progress = useTaskStore((s) => s.taskProgress[taskId]);
+  if (!progress || progress.recentSteps.length === 0) return null;
+
+  const pastSteps = progress.recentSteps.slice(0, -1).slice(-3);
+  const currentStep = progress.recentSteps[progress.recentSteps.length - 1];
+
+  return (
+    <div className="mt-2 space-y-1 border-t border-border pt-2">
+      {pastSteps.map((step, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/30" />
+          <span className="text-[11px] text-muted-foreground/60">{step}</span>
+        </div>
+      ))}
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+        <span className="text-[11px] font-medium">{currentStep}</span>
+      </div>
+    </div>
+  );
 }
 
 function AgentAvatar({
@@ -81,13 +108,26 @@ interface TaskRequestPayload {
 export function TaskRequestMessage({ message }: { message: Message }) {
   const p = getMessagePayload<TaskRequestPayload>(message);
   const title = p.title ?? message.content;
-  const status = message.taskSnapshot?.status ?? "pending";
+  const taskId =
+    message.taskSnapshot?.id ??
+    ((message.metadata as Record<string, unknown> | undefined)?.task_id as
+      | string
+      | undefined) ??
+    ((p as Record<string, unknown>).task_id as string | undefined);
+
+  // Live status: taskStore.taskLifecycleMeta overrides the static snapshot
+  // so this card updates in-place as the task progresses.
+  const liveStatus = useTaskStore((s) =>
+    taskId ? s.taskLifecycleMeta[taskId]?.effectiveStatus : undefined
+  );
+  const status = liveStatus ?? message.taskSnapshot?.status ?? "pending";
   const agentName = message.sender?.displayName ?? "Agent";
   const avatarUrl = message.sender?.avatarUrl;
   const isWorking =
     status === "in_progress" || status === "accepted" || status === "pending";
   const isComplete = status === "complete";
-  const isFailed = status === "failed" || status === "declined";
+  const isFailed =
+    status === "failed" || status === "declined" || status === "rejected";
 
   if (isWorking) {
     return (
@@ -120,6 +160,8 @@ export function TaskRequestMessage({ message }: { message: Message }) {
             )}
           </div>
           <p className="mt-2 text-sm font-semibold leading-snug">{title}</p>
+
+          {taskId && <LiveSteps taskId={taskId} />}
         </div>
       </div>
     );
@@ -180,7 +222,8 @@ interface TaskDecisionPayload {
 
 export function TaskDecisionMessage({ message }: { message: Message }) {
   const p = getMessagePayload<TaskDecisionPayload>(message);
-  const isAccept = message.messageType === "TaskAccept";
+  const type = message.messageType || message.contentType;
+  const isAccept = type === "TaskAccept";
 
   return (
     <div className="flex items-start gap-2">
@@ -478,6 +521,7 @@ const TASK_MESSAGE_TYPES = new Set([
   "TaskRequest",
   "TaskAccept",
   "TaskReject",
+  "TaskDeclined",
   "TaskProgress",
   "TaskComplete",
   "TaskFail",
@@ -495,6 +539,7 @@ export function TaskMessage({ message }: { message: Message }) {
       return <TaskRequestMessage message={message} />;
     case "TaskAccept":
     case "TaskReject":
+    case "TaskDeclined":
       return <TaskDecisionMessage message={message} />;
     case "TaskProgress":
       return <TaskProgressMessage message={message} />;

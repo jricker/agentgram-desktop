@@ -58,6 +58,12 @@ class WebSocketService {
       "typing_indicator",
       "agent_status_changed",
       "agent_health_updated",
+      // Task lifecycle — drives live task card status + progress.
+      "task_created",
+      "task_updated",
+      "task_assigned",
+      "task_completed",
+      "task_progress",
     ];
 
     for (const event of userEvents) {
@@ -90,6 +96,8 @@ class WebSocketService {
       "member_removed",
       "conversation_title_changed",
       "message_deleted",
+      "message_streaming",
+      "task_progress",
     ];
 
     for (const event of convEvents) {

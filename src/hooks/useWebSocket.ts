@@ -3,6 +3,7 @@ import { useAuthStore } from "../stores/authStore";
 import { useChatStore } from "../stores/chatStore";
 import { usePresenceStore } from "../stores/presenceStore";
 import { useStreamingStore } from "../stores/streamingStore";
+import { useTaskStore } from "../stores/taskStore";
 import { ws } from "../services/websocket";
 
 /**
@@ -23,6 +24,7 @@ export function useWebSocket() {
     const unsubChat = useChatStore.getState().initWsListeners();
     const unsubPresence = usePresenceStore.getState().initWsListeners();
     const unsubStreaming = useStreamingStore.getState().initWsListeners();
+    const unsubTasks = useTaskStore.getState().initWsListeners();
 
     // Fire initial loads — UI renders loading states from the store
     useChatStore.getState().fetchConversations();
@@ -32,6 +34,7 @@ export function useWebSocket() {
       unsubChat();
       unsubPresence();
       unsubStreaming();
+      unsubTasks();
       ws.disconnect();
     };
   }, [token, participant]);
