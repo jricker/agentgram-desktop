@@ -60,16 +60,24 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
     setAttachment(null);
   }, [conversationId]);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const attachFile = (file: File | null | undefined) => {
     if (!file) return;
-    const isImage = isImageFile(file);
-    setAttachment({
-      file,
-      isImage,
-      previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+    // Replace any existing attachment (revoke its preview URL first to avoid
+    // leaking the Blob)
+    setAttachment((prev) => {
+      if (prev?.previewUrl) URL.revokeObjectURL(prev.previewUrl);
+      const isImage = isImageFile(file);
+      return {
+        file,
+        isImage,
+        previewUrl: isImage ? URL.createObjectURL(file) : undefined,
+      };
     });
     setError(null);
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    attachFile(e.target.files?.[0]);
     // Reset so selecting the same file again re-triggers onChange
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -77,6 +85,43 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
   const clearAttachment = () => {
     if (attachment?.previewUrl) URL.revokeObjectURL(attachment.previewUrl);
     setAttachment(null);
+  };
+
+  // Drag-and-drop: accept a single file drop anywhere on the composer.
+  const [isDragOver, setIsDragOver] = useState(false);
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer?.types?.includes("Files")) return;
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    // `dragleave` fires when moving between child elements; compare the
+    // target against the container to avoid flicker.
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setIsDragOver(false);
+  };
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) attachFile(file);
+  };
+
+  // Paste-to-attach: if the clipboard contains an image (or any file),
+  // intercept and attach it instead of letting the textarea paste junk.
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of Array.from(items)) {
+      if (item.kind === "file") {
+        const file = item.getAsFile();
+        if (file) {
+          e.preventDefault();
+          attachFile(file);
+          return;
+        }
+      }
+    }
   };
 
   // Derived list of current picker items (for keyboard selection)
@@ -223,7 +268,19 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
   const canSend = (draft.trim().length > 0 || attachment != null) && !sending && !uploading;
 
   return (
-    <div className="border-t border-border bg-card">
+    <div
+      className="relative border-t border-border bg-card"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {isDragOver && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-t-md border-2 border-dashed border-primary/60 bg-primary/5">
+          <p className="text-sm font-medium text-primary">
+            Drop to attach
+          </p>
+        </div>
+      )}
       {replyingTo && (
         <ReplyBanner conversationId={conversationId} message={replyingTo} />
       )}
@@ -273,6 +330,7 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
             onKeyDown={handleKeyDown}
             onKeyUp={handleSelectionChange}
             onClick={handleSelectionChange}
+            onPaste={handlePaste}
             placeholder={attachment ? "Add a caption…" : "Message…"}
             rows={1}
             className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
