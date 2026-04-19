@@ -712,6 +712,65 @@ export function getMessagePayload<T = Record<string, unknown>>(
     {}) as T;
 }
 
+// --- Tasks ---
+
+export type TaskStatus =
+  | "pending"
+  | "accepted"
+  | "rejected"
+  | "in_progress"
+  | "blocked"
+  | "complete"
+  | "cancelled"
+  | "exhausted";
+
+export interface Task {
+  id: string;
+  conversationId: string;
+  title: string;
+  description?: string;
+  status: TaskStatus;
+  createdBy?: string;
+  assignedTo: string[];
+  assignees?: Participant[];
+  dependsOn?: string[];
+  deadline?: string;
+  metadata?: Record<string, unknown>;
+  completionDetails?: Record<string, unknown>;
+  resultData?: Record<string, unknown>;
+  creator?: Participant;
+  insertedAt: string;
+  updatedAt: string;
+}
+
+export async function fetchTasksRest(
+  status?: TaskStatus
+): Promise<{ tasks: Task[] }> {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+  const data = await request<Task[] | { tasks: Task[] }>(`/api/tasks${qs}`);
+  return Array.isArray(data) ? { tasks: data } : data;
+}
+
+export async function updateTaskStatusRest(
+  taskId: string,
+  status: TaskStatus
+): Promise<Task> {
+  return request(`/api/tasks/${taskId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function requestTaskRevisionRest(
+  taskId: string,
+  feedback: string
+): Promise<Task> {
+  return request(`/api/tasks/${taskId}/revision`, {
+    method: "POST",
+    body: JSON.stringify({ feedback }),
+  });
+}
+
 // --- Streaming ---
 
 export type StreamPhase =

@@ -1,15 +1,17 @@
-import { useEffect, useState } from "react";
-import { MessageSquare, Bot, User } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { MessageSquare, Bot, User, Zap } from "lucide-react";
 import { cn } from "../lib/utils";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useChatStore } from "../stores/chatStore";
 import { useAuthStore } from "../stores/authStore";
+import { useTaskStore, countActiveTasks } from "../stores/taskStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dashboard } from "./Dashboard";
 import { MessagesView } from "./messages/MessagesView";
+import { TasksView } from "./tasks/TasksView";
 import { Profile } from "./Profile";
 
-type View = "chat" | "agents";
+type View = "chat" | "tasks" | "agents";
 
 export function AppShell() {
   const [view, setView] = useState<View>("chat");
@@ -27,6 +29,15 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKey);
   }, [showProfile]);
 
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const handleOpenConversation = useCallback(
+    (conversationId: string) => {
+      setActiveConversation(conversationId);
+      setView("chat");
+    },
+    [setActiveConversation]
+  );
+
   return (
     <div className="flex h-screen w-screen bg-background">
       <LeftRail
@@ -34,7 +45,13 @@ export function AppShell() {
         onChange={setView}
         onOpenProfile={() => setShowProfile(true)}
       />
-      {view === "chat" ? <MessagesView /> : <Dashboard />}
+      {view === "chat" ? (
+        <MessagesView />
+      ) : view === "tasks" ? (
+        <TasksView onOpenConversation={handleOpenConversation} />
+      ) : (
+        <Dashboard />
+      )}
 
       {/* Profile drawer — lifted to shell so it's reachable from any view */}
       <div
@@ -68,6 +85,8 @@ function LeftRail({
 }) {
   const unread = useChatStore((s) => s.unreadCounts);
   const totalUnread = Object.values(unread).reduce((sum, n) => sum + n, 0);
+  const tasks = useTaskStore((s) => s.tasks);
+  const activeTaskCount = countActiveTasks(tasks);
   const participant = useAuthStore((s) => s.participant);
 
   return (
@@ -85,6 +104,16 @@ function LeftRail({
           active={view === "chat"}
           onClick={() => onChange("chat")}
           badge={view !== "chat" && totalUnread > 0 ? totalUnread : undefined}
+        />
+        <RailButton
+          icon={Zap}
+          label="Tasks"
+          active={view === "tasks"}
+          onClick={() => onChange("tasks")}
+          badge={
+            view !== "tasks" && activeTaskCount > 0 ? activeTaskCount : undefined
+          }
+          badgeColor="orange"
         />
         <RailButton
           icon={Bot}
@@ -120,13 +149,19 @@ function RailButton({
   active,
   onClick,
   badge,
+  badgeColor = "primary",
 }: {
   icon: React.ElementType;
   label: string;
   active: boolean;
   onClick: () => void;
   badge?: number;
+  badgeColor?: "primary" | "orange";
 }) {
+  const badgeClass =
+    badgeColor === "orange"
+      ? "bg-orange-500 text-white"
+      : "bg-primary text-primary-foreground";
   return (
     <button
       type="button"
@@ -143,7 +178,12 @@ function RailButton({
     >
       <Icon className="w-5 h-5" />
       {badge !== undefined && badge > 0 && (
-        <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-semibold flex items-center justify-center">
+        <span
+          className={cn(
+            "absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full text-[9px] font-semibold flex items-center justify-center",
+            badgeClass
+          )}
+        >
           {badge > 99 ? "99+" : badge}
         </span>
       )}

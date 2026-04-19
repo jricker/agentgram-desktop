@@ -1,14 +1,16 @@
 import { create } from "zustand";
+import * as api from "../lib/api";
+import type { Task, TaskStatus } from "../lib/api";
 import { ws } from "../services/websocket";
 
 /**
- * Minimal task store for desktop: drives the LiveSteps indicator and the
- * "live status" override on inline task cards. No fetch/revision APIs — the
- * desktop has no tasks tab yet, so we only carry what the chat thread needs.
+ * Tasks store — the tasks tab's state + the live progress / status that
+ * drives inline task cards in the chat thread.
  *
- * Web's equivalent maintains a full `tasks: Task[]` list plus CRUD actions;
- * this desktop port omits that. If/when a tasks screen is added, extend
- * this store with `fetchTasks`, `updateTaskStatus`, etc.
+ * `tasks` is the authoritative list backing the Tasks tab. `taskProgress`
+ * accumulates step history per task so the LiveSteps ticker can render it,
+ * and `taskLifecycleMeta.effectiveStatus` lets message renderers show a
+ * live status without needing a fresh message to arrive.
  */
 
 export interface TaskProgressInfo {
@@ -24,9 +26,24 @@ export interface TaskLifecycleMeta {
   error?: string;
 }
 
+const ACTIVE_STATUSES = new Set<TaskStatus>([
+  "pending",
+  "accepted",
+  "in_progress",
+  "blocked",
+]);
+
 interface TaskState {
+  tasks: Task[];
+  loading: boolean;
+  selectedTaskId: string | null;
   taskProgress: Record<string, TaskProgressInfo>;
   taskLifecycleMeta: Record<string, TaskLifecycleMeta>;
+
+  fetchTasks: (status?: TaskStatus) => Promise<void>;
+  selectTask: (id: string | null) => void;
+  updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
+  requestRevision: (taskId: string, feedback: string) => Promise<void>;
 
   initWsListeners: () => () => void;
 }
@@ -51,18 +68,94 @@ function mergeProgress(
   return { currentStep, recentSteps };
 }
 
+function sortByUpdatedDesc(tasks: Task[]): Task[] {
+  return [...tasks].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+}
+
 export const useTaskStore = create<TaskState>((set) => ({
+  tasks: [],
+  loading: false,
+  selectedTaskId: null,
   taskProgress: {},
   taskLifecycleMeta: {},
+
+  fetchTasks: async (status) => {
+    set({ loading: true });
+    try {
+      const { tasks } = await api.fetchTasksRest(status);
+      set({ tasks: sortByUpdatedDesc(tasks) });
+      // Seed lifecycle metadata so cards show the server's truth even when
+      // the completion message is outside the recent_messages window.
+      set((s) => {
+        const meta = { ...s.taskLifecycleMeta };
+        for (const t of tasks) {
+          meta[t.id] = { ...(meta[t.id] ?? {}), effectiveStatus: t.status };
+        }
+        return { taskLifecycleMeta: meta };
+      });
+    } catch (e) {
+      console.warn("[tasks] fetchTasks failed", e);
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  selectTask: (id) => set({ selectedTaskId: id }),
+
+  updateTaskStatus: async (taskId, status) => {
+    const updated = await api.updateTaskStatusRest(taskId, status);
+    set((s) => ({
+      tasks: sortByUpdatedDesc(
+        s.tasks.map((t) => (t.id === taskId ? updated : t))
+      ),
+      taskLifecycleMeta: {
+        ...s.taskLifecycleMeta,
+        [taskId]: {
+          ...(s.taskLifecycleMeta[taskId] ?? {}),
+          effectiveStatus: updated.status,
+        },
+      },
+    }));
+  },
+
+  requestRevision: async (taskId, feedback) => {
+    const updated = await api.requestTaskRevisionRest(taskId, feedback);
+    set((s) => ({
+      tasks: sortByUpdatedDesc(
+        s.tasks.map((t) => (t.id === taskId ? updated : t))
+      ),
+      taskLifecycleMeta: {
+        ...s.taskLifecycleMeta,
+        [taskId]: {
+          ...(s.taskLifecycleMeta[taskId] ?? {}),
+          effectiveStatus: updated.status,
+        },
+      },
+    }));
+  },
 
   initWsListeners: () => {
     const unsubs: (() => void)[] = [];
 
-    // Task lifecycle upserts — set effectiveStatus from the event so a running
-    // TaskRequest card flips to complete/failed without needing a new message.
+    // Upsert Task objects from the user channel so the Tasks tab stays live.
+    const upsertTask = (payload: Record<string, unknown>) => {
+      // Some events wrap the task under a key, some don't — handle both.
+      const task =
+        ((payload as { task?: Task }).task as Task | undefined) ??
+        (payload as unknown as Task);
+      if (!task?.id) return;
+      set((s) => {
+        const filtered = s.tasks.filter((t) => t.id !== task.id);
+        return { tasks: sortByUpdatedDesc([task, ...filtered]) };
+      });
+    };
+
     const handleTaskLifecycle = (payload: Record<string, unknown>) => {
       const taskId = extractTaskId(payload);
       if (!taskId) return;
+      upsertTask(payload);
       const status = payload.status as string | undefined;
       if (!status) return;
       set((s) => ({
@@ -85,8 +178,6 @@ export const useTaskStore = create<TaskState>((set) => ({
       unsubs.push(ws.on(event, handleTaskLifecycle));
     }
 
-    // Progress events — live step ticker. Server may send the step flat or
-    // nested under `progress`; handle both.
     const handleProgress = (payload: Record<string, unknown>) => {
       const taskId = extractTaskId(payload);
       if (!taskId) return;
@@ -110,3 +201,9 @@ export const useTaskStore = create<TaskState>((set) => ({
     return () => unsubs.forEach((u) => u());
   },
 }));
+
+/** Helper: how many tasks are in an active state (pending/accepted/in_progress/blocked).
+ * Use for the Tasks-tab badge in the left rail. */
+export function countActiveTasks(tasks: Task[]): number {
+  return tasks.filter((t) => ACTIVE_STATUSES.has(t.status)).length;
+}
