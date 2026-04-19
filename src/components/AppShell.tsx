@@ -127,16 +127,14 @@ function LeftRail({
           label="Chat"
           active={view === "chat"}
           onClick={() => onChange("chat")}
-          badge={view !== "chat" && totalUnread > 0 ? totalUnread : undefined}
+          badge={totalUnread > 0 ? totalUnread : undefined}
         />
         <RailButton
           icon={Zap}
           label="Tasks"
           active={view === "tasks"}
           onClick={() => onChange("tasks")}
-          badge={
-            view !== "tasks" && activeTaskCount > 0 ? activeTaskCount : undefined
-          }
+          badge={activeTaskCount > 0 ? activeTaskCount : undefined}
           badgeColor="orange"
         />
         <RailButton

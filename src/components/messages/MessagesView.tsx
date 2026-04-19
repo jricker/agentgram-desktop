@@ -123,18 +123,14 @@ export function MessagesView() {
             icon={MessageSquare}
             active={activeTab === "chats"}
             onClick={() => setActiveTab("chats")}
-            badge={
-              activeTab !== "chats" && totalPersonalUnread > 0
-                ? totalPersonalUnread
-                : undefined
-            }
+            badge={totalPersonalUnread > 0 ? totalPersonalUnread : undefined}
           />
           <TabPill
             label="Agent-to-Agent"
             icon={Bot}
             active={activeTab === "agents"}
             onClick={() => setActiveTab("agents")}
-            activity={activeTab !== "agents" && hasAgentActivity}
+            activity={hasAgentActivity}
           />
         </div>
 
