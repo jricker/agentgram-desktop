@@ -5,6 +5,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Reply as ReplyIcon } from "lucide-react";
 import { MarkdownContent } from "./MarkdownContent";
 import { isTaskMessage, TaskMessage } from "./TaskMessages";
+import { isToolMessage, ToolMessage } from "./ToolMessages";
+import { isFileMessage, FileMessage } from "./FileMessage";
 import type { Message } from "../../lib/api";
 
 export function MessageBubble({
@@ -119,7 +121,13 @@ export function MessageBubble({
             message.pending && "opacity-60"
           )}
         >
-          <MarkdownContent content={message.content} />
+          {isToolMessage(message) ? (
+            <ToolMessage message={message} />
+          ) : isFileMessage(message) ? (
+            <FileMessage message={message} />
+          ) : (
+            <MarkdownContent content={message.content} />
+          )}
         </div>
 
         <span className="text-[10px] text-muted-foreground mt-0.5 px-1">

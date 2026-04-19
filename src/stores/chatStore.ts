@@ -3,6 +3,7 @@ import * as api from "../lib/api";
 import type { Conversation, Message } from "../lib/api";
 import { ws } from "../services/websocket";
 import { useAuthStore } from "./authStore";
+import { useStreamingStore } from "./streamingStore";
 
 const PENDING_PREFIX = "pending-";
 
@@ -82,6 +83,14 @@ interface ChatState {
   replyingTo: Record<string, Message>;
   setReplyingTo: (conversationId: string, message: Message | null) => void;
 
+  // Local-only chat clear (clears messages from the client; server history stays)
+  clearChatLocal: (conversationId: string) => void;
+
+  /** First unread message id captured at the moment the conversation was
+   * opened. Used only to render a one-shot "New messages" divider; cleared
+   * when the user navigates away or manually reopens the conversation. */
+  firstUnreadIds: Record<string, string | undefined>;
+
   // Actions — session
   setActiveConversation: (id: string | null) => void;
   fetchUnreadCounts: () => Promise<void>;
@@ -100,6 +109,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hasMore: {},
   drafts: {},
   replyingTo: {},
+  firstUnreadIds: {},
   activeConversationId: null,
   unreadCounts: {},
 
@@ -415,20 +425,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (prev && prev !== id) {
       ws.leaveConversation(prev);
     }
-    set((s) => ({
-      activeConversationId: id,
-      unreadCounts: id ? { ...s.unreadCounts, [id]: 0 } : s.unreadCounts,
-    }));
+    set((s) => {
+      // Capture first unread message id for this conversation at open time,
+      // so we can render a "New messages" divider. If there were no unread
+      // messages we leave the slot undefined.
+      let firstUnreadIds = s.firstUnreadIds;
+      if (id) {
+        const existing = s.messages[id] ?? [];
+        const unread = s.unreadCounts[id] ?? 0;
+        if (unread > 0 && existing.length >= unread) {
+          const firstUnread = existing[existing.length - unread];
+          firstUnreadIds = {
+            ...s.firstUnreadIds,
+            [id]: firstUnread?.id,
+          };
+        } else {
+          // Clear any stale divider from a prior open
+          if (s.firstUnreadIds[id] !== undefined) {
+            const copy = { ...s.firstUnreadIds };
+            delete copy[id];
+            firstUnreadIds = copy;
+          }
+        }
+      }
+      return {
+        activeConversationId: id,
+        unreadCounts: id ? { ...s.unreadCounts, [id]: 0 } : s.unreadCounts,
+        firstUnreadIds,
+      };
+    });
     if (id) {
       ws.joinConversation(id);
-      // Prefer WS for mark-read (piggybacks on the channel join, no extra
-      // round-trip). Fall back to REST if the channel isn't in the map.
       if (!ws.markConversationRead(id)) {
         api.markConversationReadRest(id).catch((err) =>
           console.warn("[chat] mark-read REST fallback failed", id, err)
         );
       }
     }
+  },
+
+  clearChatLocal: (conversationId) => {
+    // Clears messages from the local store only — server history is
+    // untouched. Matches web's clearChat action; the DB is still the
+    // source of truth if you re-open the conversation on another device.
+    set((s) => {
+      const nextMessages = { ...s.messages };
+      delete nextMessages[conversationId];
+      const nextHasMore = { ...s.hasMore };
+      delete nextHasMore[conversationId];
+      const nextFirstUnread = { ...s.firstUnreadIds };
+      delete nextFirstUnread[conversationId];
+      return {
+        messages: nextMessages,
+        hasMore: nextHasMore,
+        firstUnreadIds: nextFirstUnread,
+      };
+    });
   },
 
   fetchUnreadCounts: async () => {
@@ -457,6 +509,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const msg = payload as unknown as Message & { _conversationId: string };
         const convId = msg._conversationId ?? msg.conversationId;
         get().addMessage(convId, msg);
+
+        // Clear any active streaming bubble for this sender/stream — the
+        // real message has landed, so the "is writing" placeholder should
+        // disappear immediately rather than waiting for the 3s timeout.
+        const streamId = (msg.metadata as Record<string, unknown> | undefined)
+          ?.stream_id as string | undefined;
+        if (streamId) {
+          useStreamingStore.getState().clearStreamByStreamId(streamId);
+        } else if (msg.senderId) {
+          useStreamingStore.getState().clearStreamBySender(convId, msg.senderId);
+        }
       })
     );
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MessageSquare, Info, SquarePen } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
+import { usePresenceStore } from "../../stores/presenceStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../../lib/utils";
 import { ConversationList } from "./ConversationList";
@@ -101,6 +102,8 @@ function ActiveConversation({
   );
   const myId = useAuthStore((s) => s.participant?.id);
 
+  const online = usePresenceStore((s) => s.online);
+
   const otherParticipant = useMemo(
     () =>
       (conversation?.members ?? []).find((m) => m.participantId !== myId)
@@ -112,6 +115,31 @@ function ActiveConversation({
     conversation?.title ||
     otherParticipant?.displayName ||
     (conversation?.type === "group" ? "Group" : "Conversation");
+
+  const presenceLine = useMemo(() => {
+    if (!conversation) return null;
+    const members = conversation.members ?? [];
+    const others = members.filter((m) => m.participantId !== myId);
+    const onlineCount = others.filter((m) => online.has(m.participantId)).length;
+    const isDM = conversation.type === "direct" || others.length === 1;
+    if (isDM) {
+      return onlineCount > 0 ? "Online" : "Offline";
+    }
+    if (conversation.type === "channel" || conversation.type === "group") {
+      return onlineCount > 0
+        ? `${onlineCount} online · ${others.length + 1} members`
+        : `${others.length + 1} members`;
+    }
+    return null;
+  }, [conversation, online, myId]);
+
+  const presenceDotColor = useMemo(() => {
+    if (!presenceLine) return null;
+    if (presenceLine === "Online" || presenceLine.startsWith(`${"0"} online`)) {
+      return presenceLine === "Online" ? "bg-success" : "bg-muted-foreground/40";
+    }
+    return presenceLine.includes("online ·") ? "bg-success" : null;
+  }, [presenceLine]);
 
   return (
     <>
@@ -136,9 +164,12 @@ function ActiveConversation({
           </Avatar>
           <div className="min-w-0">
             <p className="text-sm font-semibold truncate">{headerTitle}</p>
-            {conversation && conversation.type !== "direct" && (
-              <p className="text-[11px] text-muted-foreground">
-                {conversation.members?.length ?? 0} members
+            {presenceLine && (
+              <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                {presenceDotColor && (
+                  <span className={cn("h-1.5 w-1.5 rounded-full", presenceDotColor)} />
+                )}
+                {presenceLine}
               </p>
             )}
           </div>

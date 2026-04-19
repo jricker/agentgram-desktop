@@ -1,0 +1,206 @@
+import { create } from "zustand";
+import { ws } from "../services/websocket";
+import type { ActiveStream, StreamPhase } from "../lib/api";
+
+/**
+ * Ported from web/src/stores/streamingStore.ts.
+ *
+ * Tracks one active stream per conversation. Driven by the
+ * `conv:message_streaming` WS event with a `status` of `started` |
+ * `streaming` | `complete` | `cancelled`.
+ *
+ * Clears:
+ *  - on `cancelled` status (if sender matches active stream)
+ *  - on `complete` status after 3s (bridge between "done" signal and actual
+ *    new_message arrival)
+ *  - on `new_message` arrival with matching stream_id (via clearStreamByStreamId)
+ *    or matching senderId (via clearStreamBySender) — wired in chatStore.
+ *  - on stale (no update in 110s) — safety net if backend cancellation event
+ *    was missed.
+ */
+
+const STALE_STREAM_MS = 110_000;
+
+interface StreamingState {
+  streams: Record<string, ActiveStream>;
+  _lastUpdate: Record<string, number>;
+  clearStream: (conversationId: string) => void;
+  clearStreamBySender: (conversationId: string, senderId: string) => void;
+  clearStreamByStreamId: (streamId: string) => void;
+  initWsListeners: () => () => void;
+}
+
+function phaseLabel(phase: StreamPhase, detail?: string): string {
+  const labels: Record<StreamPhase, string> = {
+    connecting: "Connecting",
+    thinking: "Thinking",
+    tool_call: detail ?? "Using tool",
+    writing: "Writing",
+    analyzing: "Analyzing",
+    queued: "Message queued",
+    waiting: "Waiting for turn",
+  };
+  return labels[phase] ?? phase;
+}
+
+export const useStreamingStore = create<StreamingState>((set, get) => ({
+  streams: {},
+  _lastUpdate: {},
+
+  clearStream: (conversationId) => {
+    set((s) => {
+      const next = { ...s.streams };
+      const nextTs = { ...s._lastUpdate };
+      delete next[conversationId];
+      delete nextTs[conversationId];
+      return { streams: next, _lastUpdate: nextTs };
+    });
+  },
+
+  clearStreamBySender: (conversationId, senderId) => {
+    const active = get().streams[conversationId];
+    if (active && active.senderId === senderId) {
+      get().clearStream(conversationId);
+    }
+  },
+
+  clearStreamByStreamId: (streamId) => {
+    set((s) => {
+      for (const [convId, stream] of Object.entries(s.streams)) {
+        if (stream.streamId === streamId) {
+          const next = { ...s.streams };
+          const nextTs = { ...s._lastUpdate };
+          delete next[convId];
+          delete nextTs[convId];
+          return { streams: next, _lastUpdate: nextTs };
+        }
+      }
+      return s;
+    });
+  },
+
+  initWsListeners: () => {
+    const unsub = ws.on("conv:message_streaming", (payload) => {
+      const convId = payload._conversationId as string;
+      const streamId = payload.streamId as string;
+      const status = payload.status as string;
+      const senderId = payload.senderId as string;
+      const senderName = (payload.senderName as string) ?? "Agent";
+      const content = (payload.content as string) ?? "";
+      const phase = (payload.phase as StreamPhase) ?? "thinking";
+      const phaseDetail = payload.phaseDetail as string | undefined;
+
+      if (status === "cancelled") {
+        // Only clear if sender matches — prevents cancelling agent A's stream
+        // when agent B's (irrelevant) stream is cancelled.
+        const active = get().streams[convId];
+        if (!active || active.senderId === senderId) {
+          get().clearStream(convId);
+        }
+        return;
+      }
+
+      if (status === "complete") {
+        const existing = get().streams[convId];
+        if (!existing) return;
+        set((s) => ({
+          streams: {
+            ...s.streams,
+            [convId]: { ...existing, lastUpdateAt: Date.now() },
+          },
+          _lastUpdate: { ...s._lastUpdate, [convId]: Date.now() },
+        }));
+        // Fallback: clear after 3s if new_message didn't land to clear it.
+        setTimeout(() => {
+          set((s) => {
+            if (s.streams[convId]?.streamId === streamId) {
+              const next = { ...s.streams };
+              const nextTs = { ...s._lastUpdate };
+              delete next[convId];
+              delete nextTs[convId];
+              return { streams: next, _lastUpdate: nextTs };
+            }
+            return s;
+          });
+        }, 3000);
+        return;
+      }
+
+      // started or streaming
+      set((s) => {
+        const existing = s.streams[convId];
+        const passivePhases = new Set(["waiting", "queued"]);
+
+        // Don't let a passive signal overwrite an active-working stream
+        // (e.g. in a group, InstantAgentSignal fires for all agents).
+        if (
+          passivePhases.has(phase) &&
+          existing &&
+          !passivePhases.has(existing.phase)
+        ) {
+          return s;
+        }
+
+        const isNewStream = existing != null && existing.streamId !== streamId;
+        let recentSteps = isNewStream ? [] : existing?.recentSteps ?? [];
+        if (
+          existing &&
+          existing.phase !== phase &&
+          !passivePhases.has(phase)
+        ) {
+          const label = phaseLabel(phase, phaseDetail);
+          recentSteps = [...recentSteps, label].slice(-8);
+        }
+
+        // Clear content when switching away from writing
+        const updatedContent =
+          phase === "writing"
+            ? content
+            : existing?.phase === "writing"
+            ? ""
+            : content;
+
+        return {
+          streams: {
+            ...s.streams,
+            [convId]: {
+              streamId,
+              senderId,
+              senderName,
+              content: updatedContent,
+              phase,
+              phaseDetail,
+              recentSteps,
+              lastUpdateAt: Date.now(),
+            },
+          },
+          _lastUpdate: { ...s._lastUpdate, [convId]: Date.now() },
+        };
+      });
+    });
+
+    const staleTimer = setInterval(() => {
+      const now = Date.now();
+      const { streams, _lastUpdate } = get();
+      const stale = Object.keys(streams).filter(
+        (convId) => now - (_lastUpdate[convId] ?? 0) > STALE_STREAM_MS
+      );
+      if (stale.length > 0) {
+        set((s) => {
+          const next = { ...s.streams };
+          const nextTs = { ...s._lastUpdate };
+          for (const id of stale) {
+            delete next[id];
+            delete nextTs[id];
+          }
+          return { streams: next, _lastUpdate: nextTs };
+        });
+      }
+    }, 10_000);
+
+    return () => {
+      unsub();
+      clearInterval(staleTimer);
+    };
+  },
+}));

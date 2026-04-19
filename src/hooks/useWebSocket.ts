@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAuthStore } from "../stores/authStore";
 import { useChatStore } from "../stores/chatStore";
 import { usePresenceStore } from "../stores/presenceStore";
+import { useStreamingStore } from "../stores/streamingStore";
 import { ws } from "../services/websocket";
 
 /**
@@ -21,6 +22,7 @@ export function useWebSocket() {
 
     const unsubChat = useChatStore.getState().initWsListeners();
     const unsubPresence = usePresenceStore.getState().initWsListeners();
+    const unsubStreaming = useStreamingStore.getState().initWsListeners();
 
     // Fire initial loads — UI renders loading states from the store
     useChatStore.getState().fetchConversations();
@@ -29,6 +31,7 @@ export function useWebSocket() {
     return () => {
       unsubChat();
       unsubPresence();
+      unsubStreaming();
       ws.disconnect();
     };
   }, [token, participant]);

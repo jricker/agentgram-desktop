@@ -14,6 +14,7 @@ import {
   Crown,
   Trash2,
   LogOut,
+  Eraser,
 } from "lucide-react";
 import { cn, getInitials } from "../../lib/utils";
 import type { Conversation, ConversationMember } from "../../lib/api";
@@ -37,6 +38,7 @@ export function ConversationDetailsPanel({
   const removeMember = useChatStore((s) => s.removeMember);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const leaveConversation = useChatStore((s) => s.leaveConversation);
+  const clearChatLocal = useChatStore((s) => s.clearChatLocal);
 
   // Desktop's agent store is a Record<id, ManagedAgent>. Memoize the
   // flattened list so the selector returns a stable reference until the
@@ -280,6 +282,21 @@ export function ConversationDetailsPanel({
               )}
             </div>
           )}
+        </div>
+
+        {/* Clear chat — local-only (server history stays) */}
+        <div className="border-t border-border px-4 py-3">
+          <button
+            onClick={() => {
+              if (confirm("Clear messages from this conversation locally? Server history stays intact.")) {
+                clearChatLocal(conversation.id);
+              }
+            }}
+            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Eraser className="h-4 w-4" />
+            Clear chat (local)
+          </button>
         </div>
 
         {/* Danger zone */}

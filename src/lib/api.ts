@@ -676,6 +676,14 @@ export interface MessageContentStructured {
   items?: unknown[];
 }
 
+export interface FileAttachment {
+  id: string;
+  filename?: string;
+  contentType?: string;
+  sizeBytes?: number;
+  downloadUrl?: string;
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -688,6 +696,7 @@ export interface Message {
   contentStructured?: MessageContentStructured;
   taskSnapshot?: TaskSnapshot;
   parentMessageId?: string;
+  fileAttachments?: FileAttachment[];
   insertedAt: string;
   updatedAt: string;
   pending?: boolean;
@@ -701,6 +710,28 @@ export function getMessagePayload<T = Record<string, unknown>>(
   return (message.contentStructured?.data ??
     message.contentStructured?.payload ??
     {}) as T;
+}
+
+// --- Streaming ---
+
+export type StreamPhase =
+  | "connecting"
+  | "thinking"
+  | "tool_call"
+  | "writing"
+  | "analyzing"
+  | "queued"
+  | "waiting";
+
+export interface ActiveStream {
+  streamId: string;
+  senderId: string;
+  senderName: string;
+  content: string;
+  phase: StreamPhase;
+  phaseDetail?: string;
+  recentSteps: string[];
+  lastUpdateAt: number;
 }
 
 export interface ConversationMember {
@@ -798,6 +829,45 @@ export async function createConversationRest(attrs: {
 
 export async function searchPeople(query: string): Promise<{ people: Participant[] }> {
   return request(`/api/people/search?q=${encodeURIComponent(query)}`);
+}
+
+// --- File attachments ---
+
+export interface UploadUrlResponse {
+  uploadUrl: string;
+  storageKey: string;
+}
+
+export async function requestUploadUrl(
+  conversationId: string,
+  file: { filename: string; contentType: string; sizeBytes: number }
+): Promise<UploadUrlResponse> {
+  return request(`/api/conversations/${conversationId}/upload-url`, {
+    method: "POST",
+    body: JSON.stringify(file),
+  });
+}
+
+export async function confirmUpload(
+  conversationId: string,
+  body: {
+    storageKey: string;
+    filename: string;
+    contentType: string;
+    sizeBytes: number;
+    caption?: string;
+  }
+): Promise<void> {
+  await request(`/api/conversations/${conversationId}/files/confirm`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function getFileDownloadUrl(
+  attachmentId: string
+): Promise<{ url: string }> {
+  return request(`/api/files/${attachmentId}/download-url`);
 }
 
 export interface DetailField {
