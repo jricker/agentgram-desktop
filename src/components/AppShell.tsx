@@ -4,6 +4,7 @@ import { cn } from "../lib/utils";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useChatStore } from "../stores/chatStore";
 import { useAuthStore } from "../stores/authStore";
+import { useAgentStore } from "../stores/agentStore";
 import { useTaskStore, countActiveTasks } from "../stores/taskStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dashboard } from "./Dashboard";
@@ -101,6 +102,17 @@ function LeftRail({
   const activeTaskCount = countActiveTasks(tasks);
   const participant = useAuthStore((s) => s.participant);
 
+  // Agent online/total — "running" is the only fully-up state; "starting"
+  // and "stalled" keep a process alive but it's not actually serving, so
+  // we exclude them from the "online" count. Shown on the Agents rail
+  // button as a muted "N/M" ratio; hidden when there are no agents.
+  const agentsMap = useAgentStore((s) => s.agents);
+  const agentStats = useMemo(() => {
+    const all = Object.values(agentsMap);
+    const online = all.filter((m) => m.processStatus === "running").length;
+    return { online, total: all.length };
+  }, [agentsMap]);
+
   return (
     <nav
       className="flex flex-col w-14 shrink-0 border-r border-border bg-card py-3 items-center justify-between"
@@ -129,9 +141,18 @@ function LeftRail({
         />
         <RailButton
           icon={Bot}
-          label="Agents"
+          label={
+            agentStats.total > 0
+              ? `Agents (${agentStats.online}/${agentStats.total} online)`
+              : "Agents"
+          }
           active={view === "agents"}
           onClick={() => onChange("agents")}
+          textBadge={
+            agentStats.total > 0
+              ? `${agentStats.online}/${agentStats.total}`
+              : undefined
+          }
         />
       </div>
 
@@ -162,6 +183,7 @@ function RailButton({
   onClick,
   badge,
   badgeColor = "primary",
+  textBadge,
 }: {
   icon: React.ElementType;
   label: string;
@@ -169,6 +191,10 @@ function RailButton({
   onClick: () => void;
   badge?: number;
   badgeColor?: "primary" | "orange";
+  /** Free-form text badge (e.g. "3/10" for agent online count). Ignored
+   *  when `badge` is set. Renders below the icon rather than as an
+   *  overlay so longer strings have room. */
+  textBadge?: string;
 }) {
   const badgeClass =
     badgeColor === "orange"
@@ -197,6 +223,16 @@ function RailButton({
           )}
         >
           {badge > 99 ? "99+" : badge}
+        </span>
+      )}
+      {badge === undefined && textBadge && (
+        <span
+          className={cn(
+            "absolute bottom-0.5 left-1/2 -translate-x-1/2 px-1 rounded-full text-[8px] font-semibold tabular-nums leading-none flex items-center justify-center h-3 bg-background/90 ring-1 ring-border",
+            active ? "text-primary" : "text-muted-foreground"
+          )}
+        >
+          {textBadge}
         </span>
       )}
     </button>
