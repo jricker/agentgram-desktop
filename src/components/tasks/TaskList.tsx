@@ -16,8 +16,8 @@ const FILTERS: { value: Filter; label: string; matches: (s: TaskStatus) => boole
       s === "pending" || s === "accepted" || s === "in_progress" || s === "blocked",
   },
   { value: "pending", label: "Pending", matches: (s) => s === "pending" },
-  { value: "in_progress", label: "In Progress", matches: (s) => s === "in_progress" },
-  { value: "complete", label: "Complete", matches: (s) => s === "complete" },
+  { value: "in_progress", label: "Progress", matches: (s) => s === "in_progress" },
+  { value: "complete", label: "Done", matches: (s) => s === "complete" },
   {
     value: "cancelled",
     label: "Cancelled",
@@ -86,14 +86,14 @@ export function TaskList() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <div className="flex gap-1 overflow-x-auto pb-1">
+        <div className="flex flex-wrap gap-1">
           {FILTERS.map((f) => (
             <button
               key={f.value}
               type="button"
               onClick={() => setFilter(f.value)}
               className={cn(
-                "shrink-0 rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
+                "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
                 filter === f.value
                   ? "bg-primary/10 text-foreground"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
