@@ -147,9 +147,13 @@ function LeftRail({
           active={view === "agents"}
           onClick={() => onChange("agents")}
           textBadge={
-            agentStats.total > 0
-              ? `${agentStats.online}/${agentStats.total}`
-              : undefined
+            agentStats.total > 0 ? (
+              <>
+                <span className="text-success">{agentStats.online}</span>
+                <span className="opacity-50">/</span>
+                <span>{agentStats.total}</span>
+              </>
+            ) : undefined
           }
         />
       </div>
@@ -189,10 +193,10 @@ function RailButton({
   onClick: () => void;
   badge?: number;
   badgeColor?: "primary" | "orange";
-  /** Free-form text badge (e.g. "3/10" for agent online count). Ignored
-   *  when `badge` is set. Renders below the icon rather than as an
-   *  overlay so longer strings have room. */
-  textBadge?: string;
+  /** Free-form badge content (e.g. coloured "3/10" for agent online count).
+   *  Ignored when `badge` is set. Rendered as a small chip pinned to the
+   *  bottom-center of the icon so vertical rhythm of the rail is preserved. */
+  textBadge?: React.ReactNode;
 }) {
   const badgeClass =
     badgeColor === "orange"
