@@ -34,6 +34,14 @@ interface ChatState {
   // Conversations
   conversations: Conversation[];
   conversationsLoading: boolean;
+  /** Agent-to-agent conversations — fetched with `?scope=agents`, shown in
+   *  the Agent-to-Agent tab. Separate list so unread badges and sort don't
+   *  intermix with personal conversations. */
+  agentConversations: Conversation[];
+  agentConversationsLoading: boolean;
+  /** True until `fetchAgentConversations` has resolved at least once. Used
+   *  to lazy-load the agent tab the first time the user switches to it. */
+  agentConversationsLoaded: boolean;
   /** Newly-created conversation, not yet promoted to the list. It only
    *  enters `conversations` after the first message is sent or an event
    *  (new_message / conversation_updated) arrives for it. Prevents the
@@ -52,6 +60,7 @@ interface ChatState {
 
   // Actions — conversations
   fetchConversations: () => Promise<void>;
+  fetchAgentConversations: () => Promise<void>;
   refreshConversation: (id: string) => Promise<void>;
   addConversation: (conv: Conversation) => void;
   updateConversationFromEvent: (convId: string, lastMessage: Message) => void;
@@ -103,6 +112,9 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   conversationsLoading: false,
+  agentConversations: [],
+  agentConversationsLoading: false,
+  agentConversationsLoaded: false,
   pendingConversation: null,
   messages: {},
   messagesLoading: {},
@@ -123,11 +135,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
+  fetchAgentConversations: async () => {
+    set({ agentConversationsLoading: true });
+    try {
+      const convos = await api.listConversations("agents");
+      set({
+        agentConversations: sortConversations(convos),
+        agentConversationsLoaded: true,
+      });
+    } finally {
+      set({ agentConversationsLoading: false });
+    }
+  },
+
   refreshConversation: async (id) => {
     try {
       const conv = await api.getConversation(id);
+      const replace = (convos: Conversation[]) =>
+        convos.map((c) => (c.id === id ? { ...c, ...conv } : c));
       set((s) => ({
-        conversations: s.conversations.map((c) => (c.id === id ? { ...c, ...conv } : c)),
+        conversations: replace(s.conversations),
+        agentConversations: replace(s.agentConversations),
+        pendingConversation:
+          s.pendingConversation?.id === id ? { ...s.pendingConversation, ...conv } : s.pendingConversation,
       }));
     } catch (e) {
       console.warn(`[chat] refreshConversation(${id}) failed`, e);
@@ -154,7 +184,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
         return { conversations: sortConversations(updated) };
       }
-      // Conversation isn't in the list yet — if it's the pending one, promote.
       if (s.pendingConversation?.id === convId) {
         const conv = {
           ...s.pendingConversation,
@@ -166,6 +195,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
           pendingConversation: null,
         };
       }
+      // Check the agent-conversation list too
+      const agentIdx = s.agentConversations.findIndex((c) => c.id === convId);
+      if (agentIdx >= 0) {
+        const updated = [...s.agentConversations];
+        updated[agentIdx] = {
+          ...updated[agentIdx],
+          lastMessage,
+          updatedAt: lastMessage.insertedAt,
+        };
+        return { agentConversations: sortConversations(updated) };
+      }
       return s;
     });
   },
@@ -174,6 +214,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const s = get();
     return (
       s.conversations.find((c) => c.id === id) ??
+      s.agentConversations.find((c) => c.id === id) ??
       (s.pendingConversation?.id === id ? s.pendingConversation : undefined)
     );
   },
@@ -188,10 +229,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateConversationTitle: async (id, title) => {
     await api.updateConversationTitleRest(id, title);
+    const update = (convos: Conversation[]) =>
+      convos.map((c) => (c.id === id ? { ...c, title } : c));
     set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c.id === id ? { ...c, title } : c
-      ),
+      conversations: update(s.conversations),
+      agentConversations: update(s.agentConversations),
     }));
   },
 
@@ -213,6 +255,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { [conversationId]: _d, ...remainingDrafts } = s.drafts;
       return {
         conversations: s.conversations.filter((c) => c.id !== conversationId),
+        agentConversations: s.agentConversations.filter((c) => c.id !== conversationId),
         messages: remainingMessages,
         drafts: remainingDrafts,
         activeConversationId:
@@ -226,6 +269,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await api.removeConversationMember(conversationId, participantId);
     set((s) => ({
       conversations: s.conversations.filter((c) => c.id !== conversationId),
+      agentConversations: s.agentConversations.filter((c) => c.id !== conversationId),
       activeConversationId:
         s.activeConversationId === conversationId ? null : s.activeConversationId,
     }));
@@ -566,7 +610,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (lastMessage) {
           get().updateConversationFromEvent(convId, lastMessage);
         }
-        if (convId !== get().activeConversationId) {
+        // Only bump unread for personal conversations — agent-to-agent
+        // conversations are observational and shouldn't accumulate badges.
+        const isPersonal = get().conversations.some((c) => c.id === convId);
+        if (isPersonal && convId !== get().activeConversationId) {
           get().incrementUnread(convId);
         }
       })
