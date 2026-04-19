@@ -144,6 +144,19 @@ class WebSocketService {
     });
   }
 
+  deleteMessage(conversationId: string, messageId: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const channel = this.conversationChannels.get(conversationId);
+      if (!channel) return reject(new Error("Not joined to conversation"));
+
+      channel
+        .push("delete_message", { message_id: messageId })
+        .receive("ok", () => resolve())
+        .receive("error", reject)
+        .receive("timeout", () => reject(new Error("Delete message timeout")));
+    });
+  }
+
   sendTyping(conversationId: string) {
     const channel = this.conversationChannels.get(conversationId);
     if (!channel) return;

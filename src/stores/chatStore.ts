@@ -68,10 +68,19 @@ interface ChatState {
 
   // Actions — messages
   fetchMessages: (conversationId: string, before?: string) => Promise<void>;
-  sendMessage: (conversationId: string, content: string) => Promise<void>;
+  sendMessage: (
+    conversationId: string,
+    content: string,
+    options?: { parentMessageId?: string }
+  ) => Promise<void>;
+  deleteMessage: (conversationId: string, messageId: string) => void;
   addMessage: (conversationId: string, message: Message) => void;
   setRecentMessages: (conversationId: string, messages: Message[]) => void;
   setDraft: (conversationId: string, text: string) => void;
+
+  // Reply-to
+  replyingTo: Record<string, Message>;
+  setReplyingTo: (conversationId: string, message: Message | null) => void;
 
   // Actions — session
   setActiveConversation: (id: string | null) => void;
@@ -90,6 +99,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messagesLoading: {},
   hasMore: {},
   drafts: {},
+  replyingTo: {},
   activeConversationId: null,
   unreadCounts: {},
 
@@ -235,10 +245,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  sendMessage: async (conversationId, content) => {
+  sendMessage: async (conversationId, content, options) => {
     const nonce = crypto.randomUUID();
     const participant = useAuthStore.getState().participant;
     const now = new Date().toISOString();
+    const parentMessageId = options?.parentMessageId;
     const placeholder: Message = {
       id: `${PENDING_PREFIX}${nonce}`,
       conversationId,
@@ -253,6 +264,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         : undefined,
       content,
       messageType: "text",
+      parentMessageId,
       insertedAt: now,
       updatedAt: now,
       pending: true,
@@ -268,6 +280,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         conversations = sortConversations([pendingConversation, ...conversations]);
         pendingConversation = null;
       }
+      const nextReplyingTo = { ...s.replyingTo };
+      delete nextReplyingTo[conversationId];
       return {
         conversations,
         pendingConversation,
@@ -276,12 +290,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           [conversationId]: [...(s.messages[conversationId] ?? []), placeholder],
         },
         drafts: { ...s.drafts, [conversationId]: "" },
+        replyingTo: nextReplyingTo,
       };
     });
 
     try {
       await ws.sendMessage(conversationId, content, {
         metadata: { client_nonce: nonce },
+        parentMessageId,
       });
     } catch (e) {
       console.warn(`[chat] sendMessage failed, removing placeholder`, e);
@@ -295,6 +311,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }));
       throw e;
     }
+  },
+
+  deleteMessage: (conversationId, messageId) => {
+    const removed = (get().messages[conversationId] ?? []).find(
+      (m) => m.id === messageId
+    );
+    // Optimistic removal
+    set((s) => ({
+      messages: {
+        ...s.messages,
+        [conversationId]: (s.messages[conversationId] ?? []).filter(
+          (m) => m.id !== messageId
+        ),
+      },
+    }));
+    ws.deleteMessage(conversationId, messageId).catch((e) => {
+      console.warn(`[chat] deleteMessage failed, restoring`, e);
+      if (removed) get().addMessage(conversationId, removed);
+    });
+  },
+
+  setReplyingTo: (conversationId, message) => {
+    set((s) => {
+      const next = { ...s.replyingTo };
+      if (message) {
+        next[conversationId] = message;
+      } else {
+        delete next[conversationId];
+      }
+      return { replyingTo: next };
+    });
   },
 
   addMessage: (conversationId, message) => {

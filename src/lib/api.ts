@@ -661,6 +661,21 @@ export interface MessageSender {
   avatarUrl?: string;
 }
 
+export interface TaskSnapshot {
+  id?: string;
+  status?: string;
+  title?: string;
+}
+
+export interface MessageContentStructured {
+  /** Structured payload — servers send as `data` or `payload` depending on
+   *  the message type. `getMessagePayload` helper normalizes both. */
+  data?: Record<string, unknown>;
+  payload?: Record<string, unknown>;
+  result_type?: string;
+  items?: unknown[];
+}
+
 export interface Message {
   id: string;
   conversationId: string;
@@ -670,11 +685,22 @@ export interface Message {
   contentType?: string;
   messageType?: string;
   metadata?: Record<string, unknown>;
+  contentStructured?: MessageContentStructured;
+  taskSnapshot?: TaskSnapshot;
   parentMessageId?: string;
   insertedAt: string;
   updatedAt: string;
   pending?: boolean;
   nonce?: string;
+}
+
+/** Normalize `contentStructured.data` / `.payload` into a single accessor. */
+export function getMessagePayload<T = Record<string, unknown>>(
+  message: Message
+): T {
+  return (message.contentStructured?.data ??
+    message.contentStructured?.payload ??
+    {}) as T;
 }
 
 export interface ConversationMember {

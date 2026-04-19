@@ -1,16 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
+import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { MessageBubble } from "./MessageBubble";
+import { MessageContextMenu } from "./MessageContextMenu";
 import type { Message } from "../../lib/api";
 
 const SENDER_RUN_BREAK_MS = 2 * 60 * 1000;
 
 // Stable empty-array reference so the selector below returns the same value
-// across renders when this conversation has no messages yet. Returning a
-// fresh `[]` inside the selector breaks Zustand's Object.is equality and
-// causes an infinite re-render loop.
+// across renders when this conversation has no messages yet.
 const EMPTY_MESSAGES: Message[] = [];
 
 export function ChatThread({ conversationId }: { conversationId: string }) {
@@ -19,6 +19,9 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const loading = useChatStore((s) => s.messagesLoading[conversationId] ?? false);
   const hasMore = useChatStore((s) => s.hasMore[conversationId] ?? false);
   const fetchMessages = useChatStore((s) => s.fetchMessages);
+  const setReplyingTo = useChatStore((s) => s.setReplyingTo);
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
+  const myId = useAuthStore((s) => s.participant?.id);
 
   const typingIds = usePresenceStore((s) => s.typing[conversationId]);
   const typingNames = usePresenceStore((s) => s.typingNames);
@@ -27,8 +30,13 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const prevLengthRef = useRef(0);
   const prevConvIdRef = useRef<string | null>(null);
 
-  // Fetch on first open of a conversation (WS `recent_messages` usually beats
-  // this, but REST is the safety net if the channel join stalls).
+  // Right-click context menu state
+  const [menu, setMenu] = useState<{
+    message: Message;
+    x: number;
+    y: number;
+  } | null>(null);
+
   useEffect(() => {
     if (messages.length === 0 && !loading) {
       fetchMessages(conversationId);
@@ -36,7 +44,6 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  // Autoscroll to bottom on: conversation change, new incoming/sent message
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -49,7 +56,6 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     prevConvIdRef.current = conversationId;
   }, [conversationId, messages.length]);
 
-  // Infinite scroll up — when scroll nears top, page older messages
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     if (!hasMore || loading) return;
     if (e.currentTarget.scrollTop < 80) {
@@ -68,6 +74,10 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
     return `${names[0]} and ${names.length - 1} others are typing…`;
   }, [typingIds, typingNames]);
+
+  const handleContextMenu = (message: Message, e: React.MouseEvent) => {
+    setMenu({ message, x: e.clientX, y: e.clientY });
+  };
 
   return (
     <div
@@ -104,6 +114,7 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
                 message={msg}
                 showAvatar={showAvatar}
                 showSenderName={showSenderName}
+                onContextMenu={handleContextMenu}
               />
             );
           })}
@@ -113,6 +124,24 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
             </div>
           )}
         </>
+      )}
+
+      {menu && (
+        <MessageContextMenu
+          message={menu.message}
+          x={menu.x}
+          y={menu.y}
+          canDelete={menu.message.senderId === myId && !menu.message.pending}
+          onReply={(m) => setReplyingTo(conversationId, m)}
+          onCopy={(m) => navigator.clipboard?.writeText(m.content ?? "")}
+          onCopyId={(m) => navigator.clipboard?.writeText(m.id)}
+          onDelete={(m) => {
+            if (confirm("Delete this message?")) {
+              deleteMessage(conversationId, m.id);
+            }
+          }}
+          onClose={() => setMenu(null)}
+        />
       )}
     </div>
   );
