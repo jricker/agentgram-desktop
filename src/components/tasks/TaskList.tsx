@@ -8,6 +8,16 @@ import type { Task, TaskStatus } from "../../lib/api";
 
 type Filter = "active" | "pending" | "in_progress" | "complete" | "cancelled";
 
+/**
+ * Buckets cover the full set of backend task states so no task is ever
+ * orphaned outside a filter. Canonical states (backend/lib/agentchat/tasks/
+ * task.ex:9): pending accepted rejected in_progress blocked complete
+ * cancelled exhausted. Matchers are grouped semantically:
+ *  - Pending = waiting to start or just picked up (pending + accepted)
+ *  - Progress = actively running, including stalled (in_progress + blocked)
+ *  - Done = completed successfully
+ *  - Cancelled = terminated without success (cancelled + rejected + exhausted)
+ */
 const FILTERS: { value: Filter; label: string; matches: (s: TaskStatus) => boolean }[] = [
   {
     value: "active",
@@ -15,8 +25,16 @@ const FILTERS: { value: Filter; label: string; matches: (s: TaskStatus) => boole
     matches: (s) =>
       s === "pending" || s === "accepted" || s === "in_progress" || s === "blocked",
   },
-  { value: "pending", label: "Pending", matches: (s) => s === "pending" },
-  { value: "in_progress", label: "Progress", matches: (s) => s === "in_progress" },
+  {
+    value: "pending",
+    label: "Pending",
+    matches: (s) => s === "pending" || s === "accepted",
+  },
+  {
+    value: "in_progress",
+    label: "Progress",
+    matches: (s) => s === "in_progress" || s === "blocked",
+  },
   { value: "complete", label: "Done", matches: (s) => s === "complete" },
   {
     value: "cancelled",
