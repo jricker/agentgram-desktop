@@ -571,7 +571,7 @@ export function Profile({ onClose }: { onClose: () => void }) {
               variant="outline"
               size="sm"
               onClick={logout}
-              className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive/90"
             >
               <LogOut className="w-3.5 h-3.5" />
               Sign Out
@@ -698,7 +698,7 @@ export function Profile({ onClose }: { onClose: () => void }) {
                           <Button
                             variant="ghost"
                             size="icon-sm"
-                            className="text-destructive hover:text-destructive"
+                            className="text-destructive hover:text-destructive/90"
                             onClick={() => setDeleteCustomApiId(entry.id)}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1270,7 +1270,7 @@ function LlmApiKeysSection() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 text-xs text-destructive hover:text-destructive"
+                              className="h-7 text-xs text-destructive hover:text-destructive/90"
                               onClick={() => handleDelete(key.id)}
                             >
                               Confirm
@@ -1288,7 +1288,7 @@ function LlmApiKeysSection() {
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                            className="h-7 w-7 text-muted-foreground hover:text-destructive/90"
                             onClick={() => setConfirmDelete(key.id)}
                             title="Delete"
                           >
@@ -1419,7 +1419,7 @@ function MemorySection({
           )}
         >
           {isConnected ? (
-            <CircleCheck className="w-5 h-5 text-green-500 flex-shrink-0" />
+            <CircleCheck className="w-5 h-5 text-success flex-shrink-0" />
           ) : hasIssue ? (
             <AlertCircle className="w-5 h-5 text-destructive flex-shrink-0" />
           ) : (
@@ -1448,7 +1448,7 @@ function MemorySection({
           {isConnected && (
             <Badge
               variant="outline"
-              className="border-green-500/30 text-green-600 bg-green-500/10 text-[10px] py-0 flex-shrink-0"
+              className="border-success/30 text-success bg-success/10 text-[10px] py-0 flex-shrink-0"
             >
               Active
             </Badge>
@@ -1507,7 +1507,7 @@ function MemorySection({
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmDisconnect(true)}
-                className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+                className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive/90"
               >
                 <Unlink className="w-3.5 h-3.5" />
                 Remove
@@ -1637,7 +1637,7 @@ function MemorySection({
 
         {error && <p className="text-xs text-destructive mt-2">{error}</p>}
         {saved && !isConnected && (
-          <p className="text-xs text-green-600 mt-2">
+          <p className="text-xs text-success mt-2">
             API key saved — semantic memory is now active.
           </p>
         )}
@@ -1815,7 +1815,7 @@ function ProviderCard({
               variant="outline"
               size="sm"
               onClick={onDisconnect}
-              className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive/90"
             >
               <Unlink className="w-3.5 h-3.5" />
               Disconnect

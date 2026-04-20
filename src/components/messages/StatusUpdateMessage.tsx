@@ -186,7 +186,7 @@ function CopyableTaskId({ taskId }: { taskId: string }) {
         {taskId.slice(0, 8)}...
       </span>
       {copied ? (
-        <CheckIcon className="h-2.5 w-2.5 text-green-500" />
+        <CheckIcon className="h-2.5 w-2.5 text-success" />
       ) : (
         <Copy className="h-2.5 w-2.5 text-muted-foreground/40" />
       )}
@@ -225,7 +225,7 @@ function LiveProgressTimeline({ steps }: { steps: string[] }) {
         </div>
       ))}
       <div className="flex items-center gap-2">
-        <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+        <div className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
         <span className="text-[11px] font-medium text-foreground">{currentStep}</span>
         {elapsed > 0 && (
           <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/50">
@@ -252,18 +252,18 @@ function WorkingCard({
 
   return (
     <div className="my-2 w-full">
-      <div className="overflow-hidden rounded-xl border border-blue-500/20 border-l-4 border-l-blue-500 bg-card">
+      <div className="overflow-hidden rounded-xl border border-primary/20 border-l-4 border-l-primary bg-card">
         <div className="p-4">
           <div className="flex items-center gap-3">
             <div className="relative">
               <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={36} />
-              <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-card bg-blue-500" />
+              <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-card bg-primary" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-foreground">{agentName}</p>
               <p className="text-xs text-muted-foreground">is working on this</p>
             </div>
-            <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+            <Loader2 className="h-4 w-4 animate-spin text-primary" />
           </div>
 
           <p className="mt-3 text-sm font-semibold leading-snug text-foreground">
@@ -298,7 +298,7 @@ function CompletionCard({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="flex w-full items-center gap-3 rounded-xl bg-green-600 px-4 py-2.5 text-left transition-colors hover:bg-green-700"
+          className="flex w-full items-center gap-3 rounded-xl bg-success px-4 py-2.5 text-left transition-colors hover:bg-success/90"
         >
           <CheckCircle className="h-[18px] w-[18px] shrink-0 text-white" />
           <div className="min-w-0 flex-1">
@@ -315,7 +315,7 @@ function CompletionCard({
 
   return (
     <div className="my-2 w-full">
-      <div className="overflow-hidden rounded-xl border border-green-500/20 border-l-4 border-l-green-500 bg-green-500/5">
+      <div className="overflow-hidden rounded-xl border border-success/20 border-l-4 border-l-success bg-success/5">
         <button
           type="button"
           onClick={() => setExpanded(false)}
@@ -323,7 +323,7 @@ function CompletionCard({
         >
           <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={36} />
           <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 dark:text-green-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-success dark:text-success">
               Task Complete
             </span>
             <p className="text-xs text-muted-foreground">{agentName}</p>
@@ -335,7 +335,7 @@ function CompletionCard({
             {title}
           </p>
           {summary && (
-            <div className="mt-3 border-t border-green-500/10 pt-3">
+            <div className="mt-3 border-t border-success/10 pt-3">
               <MarkdownContent content={summary} />
             </div>
           )}
@@ -371,11 +371,11 @@ function FailureCard({
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="flex w-full items-center gap-3 rounded-xl border border-red-500/20 border-l-4 border-l-red-500 bg-red-500/5 px-4 py-2.5 text-left transition-colors hover:bg-red-500/10"
+          className="flex w-full items-center gap-3 rounded-xl border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 px-4 py-2.5 text-left transition-colors hover:bg-destructive/10"
         >
-          <XCircle className="h-[18px] w-[18px] shrink-0 text-red-500" />
+          <XCircle className="h-[18px] w-[18px] shrink-0 text-destructive" />
           <div className="min-w-0 flex-1">
-            <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+            <span className="text-xs font-semibold text-destructive dark:text-destructive">
               Task Failed
             </span>
             <p className="mt-0.5 truncate text-xs text-muted-foreground">
@@ -390,7 +390,7 @@ function FailureCard({
 
   return (
     <div className="my-2 w-full">
-      <div className="overflow-hidden rounded-xl border border-red-500/20 border-l-4 border-l-red-500 bg-red-500/5">
+      <div className="overflow-hidden rounded-xl border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5">
         <button
           type="button"
           onClick={() => setExpanded(false)}
@@ -398,7 +398,7 @@ function FailureCard({
         >
           <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={36} />
           <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-destructive dark:text-destructive">
               Task Failed
             </span>
             <p className="text-xs text-muted-foreground">{agentName}</p>
@@ -410,9 +410,9 @@ function FailureCard({
             {title}
           </p>
           {error && (
-            <div className="mt-3 flex items-start gap-2 rounded-lg border border-red-500/10 bg-red-500/5 p-3">
-              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
-              <p className="text-xs leading-relaxed text-red-700 dark:text-red-300">
+            <div className="mt-3 flex items-start gap-2 rounded-lg border border-destructive/10 bg-destructive/5 p-3">
+              <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+              <p className="text-xs leading-relaxed text-destructive dark:text-destructive">
                 {error}
               </p>
             </div>
@@ -477,22 +477,22 @@ function LifecycleCard({
       label: "Task Assigned",
       meta: `Assigned to ${agentName}`,
       Icon: Forward,
-      borderColor: "border-l-blue-500",
-      iconColor: "text-blue-500",
+      borderColor: "border-l-primary",
+      iconColor: "text-primary",
     },
     task_self_assigned: {
       label: "Working on It",
       meta: `${agentName} is on it`,
       Icon: Zap,
-      borderColor: "border-l-orange-500",
-      iconColor: "text-orange-500",
+      borderColor: "border-l-warning",
+      iconColor: "text-warning",
     },
     task_accepted: {
       label: "Task Accepted",
       meta: `Picked up by ${agentName}`,
       Icon: Eye,
-      borderColor: "border-l-blue-500",
-      iconColor: "text-blue-500",
+      borderColor: "border-l-primary",
+      iconColor: "text-primary",
     },
   };
 
@@ -606,13 +606,13 @@ export function StatusUpdateMessage({ message }: { message: Message }) {
 
   const iconColor =
     lifecycle === "task_complete"
-      ? "text-green-500"
+      ? "text-success"
       : lifecycle === "task_failed"
-      ? "text-red-500"
+      ? "text-destructive"
       : lifecycle === "task_cancelled"
       ? "text-muted-foreground"
       : lifecycle === "task_in_progress"
-      ? "text-orange-500"
+      ? "text-warning"
       : "text-muted-foreground";
 
   return (

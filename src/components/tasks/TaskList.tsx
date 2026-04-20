@@ -44,13 +44,13 @@ const FILTERS: { value: Filter; label: string; matches: (s: TaskStatus) => boole
 ];
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: "bg-amber-500/10 text-amber-500 border-amber-500/30",
-  accepted: "bg-blue-500/10 text-blue-500 border-blue-500/30",
-  in_progress: "bg-orange-500/10 text-orange-500 border-orange-500/30",
-  blocked: "bg-rose-500/10 text-rose-500 border-rose-500/30",
-  complete: "bg-emerald-500/10 text-emerald-500 border-emerald-500/30",
+  pending: "bg-warning/10 text-warning border-warning/30",
+  accepted: "bg-primary/10 text-primary border-primary/30",
+  in_progress: "bg-warning/10 text-warning border-warning/30",
+  blocked: "bg-destructive/10 text-destructive border-destructive/30",
+  complete: "bg-success/10 text-success border-success/30",
   cancelled: "bg-muted text-muted-foreground border-border",
-  rejected: "bg-rose-500/10 text-rose-500 border-rose-500/30",
+  rejected: "bg-destructive/10 text-destructive border-destructive/30",
   exhausted: "bg-muted text-muted-foreground border-border",
 };
 

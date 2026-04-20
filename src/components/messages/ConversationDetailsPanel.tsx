@@ -394,7 +394,7 @@ function MemberRow({
           <span className="truncate text-sm font-medium">{name}</span>
           {isSelf && <span className="text-[10px] text-muted-foreground">(You)</span>}
           {isConversationCreator && (
-            <Crown className="h-3 w-3 text-amber-500 shrink-0" />
+            <Crown className="h-3 w-3 text-warning shrink-0" />
           )}
         </div>
         <p className="text-[11px] text-muted-foreground">
@@ -405,7 +405,7 @@ function MemberRow({
       {isAdmin && !isSelf && (
         <button
           onClick={onRemove}
-          className="rounded p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 transition-opacity"
+          className="rounded p-1 text-muted-foreground opacity-0 hover:bg-destructive/10 hover:text-destructive/90 group-hover:opacity-100 transition-opacity"
           title="Remove member"
         >
           <UserMinus className="h-3.5 w-3.5" />

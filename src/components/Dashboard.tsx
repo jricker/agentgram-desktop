@@ -153,8 +153,8 @@ export function Dashboard() {
             className="flex items-center gap-3"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           >
-            <div className="w-8 h-8 rounded-lg bg-[#007AFF] flex items-center justify-center flex-shrink-0">
-              <Bot className="w-4 h-4 text-white" />
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+              <Bot className="w-4 h-4 text-primary-foreground" />
             </div>
             <div>
               <h1 className="text-base font-semibold text-foreground leading-tight">AgentChat</h1>

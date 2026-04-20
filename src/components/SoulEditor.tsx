@@ -67,8 +67,8 @@ export function SoulEditor({ agentId }: SoulEditorProps) {
         <div
           className={`flex items-start gap-2.5 rounded-md px-3 py-2.5 text-xs ${
             isInherited
-              ? "bg-blue-600 text-white"
-              : "bg-yellow-400 text-black"
+              ? "bg-primary text-white"
+              : "bg-warning text-black"
           }`}
         >
           <Link className="mt-0.5 h-3.5 w-3.5 shrink-0" />

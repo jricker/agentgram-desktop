@@ -567,7 +567,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     <Button
                       variant="outline"
                       size="sm"
-                      className="mt-2 text-warning border-warning/30 hover:bg-warning/10 hover:text-warning"
+                      className="mt-2 text-warning border-warning/30 hover:bg-warning/10 hover:text-warning/90"
                       onClick={handleRegenerate}
                       disabled={regenerating}
                     >
@@ -623,7 +623,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-6 w-6 flex-shrink-0 text-muted-foreground hover:text-destructive"
+                        className="h-6 w-6 flex-shrink-0 text-muted-foreground hover:text-destructive/90"
                         onClick={() => {
                           const updated = config.addDirs.filter((_, j) => j !== i);
                           updateConfig(agent.id, { addDirs: updated });
@@ -1124,7 +1124,7 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-6 px-2 text-xs text-destructive hover:text-destructive"
+                    className="h-6 px-2 text-xs text-destructive hover:text-destructive/90"
                     disabled={actionLoading !== null}
                     onClick={() =>
                       handleAction(`kill-${ex.id}`, () => killExecutor(managed.agent.id, ex.id))
@@ -1550,7 +1550,7 @@ function DangerZone({
           <Button
             variant="outline"
             size="sm"
-            className="w-full justify-start text-warning hover:text-warning"
+            className="w-full justify-start text-warning hover:text-warning/90"
             onClick={handleDeactivate}
             disabled={deactivating}
           >
@@ -1561,7 +1561,7 @@ function DangerZone({
           <Button
             variant="outline"
             size="sm"
-            className="w-full justify-start text-destructive hover:text-destructive"
+            className="w-full justify-start text-destructive hover:text-destructive/90"
             onClick={() => setShowDelete(true)}
           >
             <Trash2 className="w-3.5 h-3.5 mr-2" />
@@ -1637,7 +1637,7 @@ function DangerZone({
                   <Button
                     size="sm"
                     variant="outline"
-                    className="text-destructive hover:text-destructive"
+                    className="text-destructive hover:text-destructive/90"
                     disabled={revokingId === conn.id}
                     onClick={() => handleRevoke(conn.id)}
                   >

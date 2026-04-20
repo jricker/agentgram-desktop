@@ -147,12 +147,12 @@ function statusVariant(status: string): "default" | "secondary" | "outline" | "d
 function statusColor(status: string): string {
   switch (status) {
     case "active":
-      return "bg-green-600";
+      return "bg-success";
     case "paused":
-      return "bg-amber-500";
+      return "bg-warning";
     case "expired":
     case "disabled":
-      return "bg-red-500";
+      return "bg-destructive";
     default:
       return "";
   }
@@ -320,7 +320,7 @@ export function AgentRoutines({ agentId }: AgentRoutinesProps) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      className="h-7 w-7 text-destructive hover:text-destructive"
+                      className="h-7 w-7 text-destructive hover:text-destructive/90"
                       onClick={() => setConfirmDelete(routine.id)}
                       title="Delete"
                     >

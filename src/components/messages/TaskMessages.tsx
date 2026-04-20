@@ -60,7 +60,7 @@ function LiveSteps({ taskId }: { taskId: string }) {
         </div>
       ))}
       <div className="flex items-center gap-2">
-        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
         <span className="text-[11px] font-medium">{currentStep}</span>
       </div>
     </div>
@@ -136,7 +136,7 @@ export function TaskRequestMessage({ message }: { message: Message }) {
           "overflow-hidden rounded-xl border border-l-4 bg-card",
           status === "pending"
             ? "border-muted-foreground/20 border-l-muted-foreground"
-            : "border-blue-500/20 border-l-blue-500"
+            : "border-primary/20 border-l-primary"
         )}
       >
         <div className="p-3">
@@ -144,7 +144,7 @@ export function TaskRequestMessage({ message }: { message: Message }) {
             <div className="relative">
               <AgentAvatar name={agentName} avatarUrl={avatarUrl} />
               {status !== "pending" && (
-                <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-card bg-blue-500" />
+                <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 animate-pulse rounded-full border-2 border-card bg-primary" />
               )}
             </div>
             <div className="min-w-0 flex-1">
@@ -156,7 +156,7 @@ export function TaskRequestMessage({ message }: { message: Message }) {
               </p>
             </div>
             {status !== "pending" && (
-              <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+              <Loader2 className="h-4 w-4 animate-spin text-primary" />
             )}
           </div>
           <p className="mt-2 text-sm font-semibold leading-snug">{title}</p>
@@ -169,16 +169,16 @@ export function TaskRequestMessage({ message }: { message: Message }) {
 
   if (isComplete) {
     return (
-      <div className="overflow-hidden rounded-xl border border-green-500/20 border-l-4 border-l-green-500 bg-green-500/5">
+      <div className="overflow-hidden rounded-xl border border-success/20 border-l-4 border-l-success bg-success/5">
         <div className="flex items-center gap-2.5 p-3">
           <AgentAvatar name={agentName} avatarUrl={avatarUrl} />
           <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-green-600 dark:text-green-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-success dark:text-success">
               Task Complete
             </span>
             <p className="mt-0.5 truncate text-sm font-semibold">{title}</p>
           </div>
-          <CheckCircle className="h-5 w-5 shrink-0 text-green-500" />
+          <CheckCircle className="h-5 w-5 shrink-0 text-success" />
         </div>
       </div>
     );
@@ -186,16 +186,16 @@ export function TaskRequestMessage({ message }: { message: Message }) {
 
   if (isFailed) {
     return (
-      <div className="overflow-hidden rounded-xl border border-red-500/20 border-l-4 border-l-red-500 bg-red-500/5">
+      <div className="overflow-hidden rounded-xl border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5">
         <div className="flex items-center gap-2.5 p-3">
           <AgentAvatar name={agentName} avatarUrl={avatarUrl} />
           <div className="min-w-0 flex-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-red-600 dark:text-red-400">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-destructive dark:text-destructive">
               {status === "declined" ? "Task Declined" : "Task Failed"}
             </span>
             <p className="mt-0.5 truncate text-sm font-semibold">{title}</p>
           </div>
-          <XCircle className="h-5 w-5 shrink-0 text-red-500" />
+          <XCircle className="h-5 w-5 shrink-0 text-destructive" />
         </div>
       </div>
     );
@@ -228,9 +228,9 @@ export function TaskDecisionMessage({ message }: { message: Message }) {
   return (
     <div className="flex items-start gap-2">
       {isAccept ? (
-        <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-green-500" />
+        <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-success" />
       ) : (
-        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-500" />
+        <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
       )}
       <div className="text-sm">
         <span className="font-medium">{isAccept ? "Accepted" : "Declined"}</span>
@@ -292,7 +292,7 @@ export function TaskProgressMessage({ message }: { message: Message }) {
         <div className="relative mt-1 space-y-1">
           {currentStep && (
             <div className="flex items-start gap-2.5">
-              <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-blue-500 animate-pulse" />
+              <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse" />
               <span className="text-xs font-medium">{currentStep}</span>
             </div>
           )}
@@ -371,7 +371,7 @@ function TaskCompleteCard({
     p.duration_seconds != null;
 
   return (
-    <div className="rounded-lg border border-green-500/20 overflow-hidden">
+    <div className="rounded-lg border border-success/20 overflow-hidden">
       <button
         type="button"
         className={cn(
@@ -380,8 +380,8 @@ function TaskCompleteCard({
         )}
         onClick={() => hasDetails && setExpanded(!expanded)}
       >
-        <CheckCircle className="h-4 w-4 shrink-0 text-green-500" />
-        <span className="text-sm font-medium text-green-600 dark:text-green-400">
+        <CheckCircle className="h-4 w-4 shrink-0 text-success" />
+        <span className="text-sm font-medium text-success dark:text-success">
           Completed
         </span>
         <span className="flex-1 truncate text-xs text-muted-foreground">
@@ -396,7 +396,7 @@ function TaskCompleteCard({
       </button>
 
       {expanded && (
-        <div className="border-t border-green-500/10 px-3 py-2.5 space-y-3">
+        <div className="border-t border-success/10 px-3 py-2.5 space-y-3">
           <MarkdownContent content={summary} />
 
           {p.duration_seconds != null && (
@@ -414,9 +414,9 @@ function TaskCompleteCard({
               {Object.entries(criteriaMet).map(([key, met]) => (
                 <div key={key} className="flex items-center gap-2 text-xs">
                   {met ? (
-                    <Check className="h-3.5 w-3.5 text-green-500" />
+                    <Check className="h-3.5 w-3.5 text-success" />
                   ) : (
-                    <X className="h-3.5 w-3.5 text-red-500" />
+                    <X className="h-3.5 w-3.5 text-destructive" />
                   )}
                   <span className="text-muted-foreground">{key}</span>
                 </div>
@@ -465,7 +465,7 @@ function TaskFailCard({
   const hasDetails = Boolean(partial) || p.duration_seconds != null || Boolean(p.error?.code);
 
   return (
-    <div className="rounded-lg border border-red-500/20 overflow-hidden">
+    <div className="rounded-lg border border-destructive/20 overflow-hidden">
       <button
         type="button"
         className={cn(
@@ -474,8 +474,8 @@ function TaskFailCard({
         )}
         onClick={() => hasDetails && setExpanded(!expanded)}
       >
-        <XCircle className="h-4 w-4 shrink-0 text-red-500" />
-        <span className="text-sm font-medium text-red-600 dark:text-red-400">
+        <XCircle className="h-4 w-4 shrink-0 text-destructive" />
+        <span className="text-sm font-medium text-destructive dark:text-destructive">
           Failed
         </span>
         <span className="flex-1 truncate text-xs text-muted-foreground">
@@ -490,7 +490,7 @@ function TaskFailCard({
       </button>
 
       {expanded && (
-        <div className="border-t border-red-500/10 px-3 py-2.5 space-y-2">
+        <div className="border-t border-destructive/10 px-3 py-2.5 space-y-2">
           {p.error?.code && (
             <p className="text-[11px] font-mono text-muted-foreground">
               {p.error.code}

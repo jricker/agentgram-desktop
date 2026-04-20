@@ -200,7 +200,7 @@ function RailButton({
 }) {
   const badgeClass =
     badgeColor === "orange"
-      ? "bg-orange-500 text-white"
+      ? "bg-warning text-white"
       : "bg-primary text-primary-foreground";
   return (
     <button

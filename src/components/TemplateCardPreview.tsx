@@ -37,12 +37,12 @@ const ICON_MAP: Record<string, LucideIcon> = {
 
 function resolveColor(color?: string): string {
   switch (color) {
-    case "success": return "text-green-600 dark:text-green-400";
-    case "warning": return "text-amber-600 dark:text-amber-400";
+    case "success": return "text-success dark:text-success";
+    case "warning": return "text-warning dark:text-warning";
     case "error":
-    case "destructive": return "text-red-600 dark:text-red-400";
-    case "primary": return "text-blue-600 dark:text-blue-400";
-    default: return "text-green-600 dark:text-green-400";
+    case "destructive": return "text-destructive dark:text-destructive";
+    case "primary": return "text-primary dark:text-primary";
+    default: return "text-success dark:text-success";
   }
 }
 
@@ -59,9 +59,9 @@ function ChangeIndicatorWeb({ value }: { value: string }) {
   const dir = isNaN(num) || num === 0 ? "flat" : num > 0 ? "up" : "down";
   const Icon = dir === "up" ? TrendingUp : dir === "down" ? TrendingDown : Minus;
   const colors = dir === "up"
-    ? "bg-green-500/10 text-green-600 dark:text-green-400"
+    ? "bg-success/10 text-success dark:text-success"
     : dir === "down"
-    ? "bg-red-500/10 text-red-600 dark:text-red-400"
+    ? "bg-destructive/10 text-destructive dark:text-destructive"
     : "bg-muted text-muted-foreground";
 
   return (
@@ -88,7 +88,10 @@ function SparklineWeb({ data }: { data: number[] }) {
   }).join(" ");
 
   const trending = data[data.length - 1] >= data[0];
-  const color = trending ? "#22C55E" : "#EF4444";
+  // Use CSS variables so these follow the design-system tokens + debug mode.
+  const color = trending
+    ? "var(--color-success)"
+    : "var(--color-destructive)";
 
   return (
     <svg width={w} height={h} className="mt-1">
@@ -140,7 +143,7 @@ export function TemplateCardPreview({ template, data: overrideData }: Props) {
         )}
         {rating != null && (
           <div className="flex items-center gap-1 mt-1">
-            <span className="text-amber-500">{"★".repeat(Math.round(rating))}</span>
+            <span className="text-warning">{"★".repeat(Math.round(rating))}</span>
             <span className="text-xs text-muted-foreground">{rating}</span>
           </div>
         )}

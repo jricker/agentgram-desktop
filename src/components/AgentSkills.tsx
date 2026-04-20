@@ -223,7 +223,7 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
                 {viewSkill.category && <Badge variant="outline">{viewSkill.category}</Badge>}
                 {viewSkill.alwaysInject && <Badge>always loaded</Badge>}
                 {viewSkill.visibility === "public" && (
-                  <Badge variant="default" className="bg-green-600">public</Badge>
+                  <Badge variant="default" className="bg-success">public</Badge>
                 )}
                 {viewSkill.visibility === "unlisted" && (
                   <Badge variant="secondary">unlisted</Badge>
@@ -284,7 +284,7 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
                 <Button
                   size="sm"
                   variant="outline"
-                  className="w-full text-destructive hover:text-destructive"
+                  className="w-full text-destructive hover:text-destructive/90"
                   onClick={() => setConfirmingDelete(true)}
                 >
                   <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Skill
@@ -304,7 +304,7 @@ export function AgentSkills({ agentId }: AgentSkillsProps) {
                   }}
                 >
                   {copied ? (
-                    <><Check className="w-3.5 h-3.5 mr-1.5 text-green-500" /> Copied!</>
+                    <><Check className="w-3.5 h-3.5 mr-1.5 text-success" /> Copied!</>
                   ) : (
                     <><Copy className="w-3.5 h-3.5 mr-1.5" /> Copy Skill ID to Share</>
                   )}
@@ -928,7 +928,7 @@ function InstallSharedDialog({
           </div>
 
           {error && <p className="text-xs text-destructive">{error}</p>}
-          {success && <p className="text-xs text-green-600">{success}</p>}
+          {success && <p className="text-xs text-success">{success}</p>}
 
           <Button
             onClick={handleInstall}

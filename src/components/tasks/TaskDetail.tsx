@@ -27,13 +27,13 @@ const ACTIVE_STATUSES = new Set<TaskStatus>([
 ]);
 
 const STATUS_CHIP_CLASS: Record<string, string> = {
-  pending: "bg-amber-500/10 text-amber-500 border-amber-500/30",
-  accepted: "bg-blue-500/10 text-blue-500 border-blue-500/30",
-  in_progress: "bg-orange-500/10 text-orange-500 border-orange-500/30",
-  blocked: "bg-rose-500/10 text-rose-500 border-rose-500/30",
-  complete: "bg-emerald-500/10 text-emerald-500 border-emerald-500/30",
+  pending: "bg-warning/10 text-warning border-warning/30",
+  accepted: "bg-primary/10 text-primary border-primary/30",
+  in_progress: "bg-warning/10 text-warning border-warning/30",
+  blocked: "bg-destructive/10 text-destructive border-destructive/30",
+  complete: "bg-success/10 text-success border-success/30",
   cancelled: "bg-muted text-muted-foreground border-border",
-  rejected: "bg-rose-500/10 text-rose-500 border-rose-500/30",
+  rejected: "bg-destructive/10 text-destructive border-destructive/30",
   exhausted: "bg-muted text-muted-foreground border-border",
 };
 
@@ -157,9 +157,9 @@ export function TaskDetail({
       <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
         {/* Live progress (active tasks only) */}
         {isActive && recentSteps.length > 0 && (
-          <section className="rounded-xl border border-blue-500/20 border-l-4 border-l-blue-500 bg-card p-4">
+          <section className="rounded-xl border border-primary/20 border-l-4 border-l-primary bg-card p-4">
             <div className="flex items-center gap-2 mb-3 text-xs font-medium text-muted-foreground">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
               <span>Live activity</span>
             </div>
             <div className="space-y-1.5">
@@ -170,7 +170,7 @@ export function TaskDetail({
                 </div>
               ))}
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-blue-500" />
+                <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-primary" />
                 <span className="text-xs font-medium">
                   {recentSteps[recentSteps.length - 1]}
                 </span>
@@ -193,8 +193,8 @@ export function TaskDetail({
 
         {/* Completion summary */}
         {isComplete && summary && (
-          <section className="rounded-xl border border-emerald-500/20 border-l-4 border-l-emerald-500 bg-emerald-500/5 p-4">
-            <div className="flex items-center gap-2 mb-2 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+          <section className="rounded-xl border border-success/20 border-l-4 border-l-success bg-success/5 p-4">
+            <div className="flex items-center gap-2 mb-2 text-xs font-medium text-success dark:text-success">
               <CheckCircle2 className="w-3.5 h-3.5" />
               <span>Summary</span>
             </div>
@@ -222,12 +222,12 @@ export function TaskDetail({
 
         {/* Failure error */}
         {effectiveStatus === "rejected" && liveMeta?.error && (
-          <section className="rounded-xl border border-rose-500/20 border-l-4 border-l-rose-500 bg-rose-500/5 p-4">
-            <div className="flex items-center gap-2 mb-2 text-xs font-medium text-rose-600 dark:text-rose-400">
+          <section className="rounded-xl border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 p-4">
+            <div className="flex items-center gap-2 mb-2 text-xs font-medium text-destructive dark:text-destructive">
               <XCircle className="w-3.5 h-3.5" />
               <span>Failure</span>
             </div>
-            <p className="text-sm text-rose-700 dark:text-rose-300 whitespace-pre-wrap">
+            <p className="text-sm text-destructive dark:text-destructive whitespace-pre-wrap">
               {liveMeta.error}
             </p>
           </section>
@@ -334,7 +334,7 @@ export function TaskDetail({
             variant="outline"
             onClick={handleCancel}
             disabled={submitting}
-            className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+            className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive/90"
           >
             <Ban className="w-3.5 h-3.5" />
             Cancel task

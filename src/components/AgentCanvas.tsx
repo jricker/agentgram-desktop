@@ -148,7 +148,7 @@ export function AgentCanvas({ managed }: AgentCanvasProps) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive/90"
                   onClick={handleRemove}
                   title="Remove canvas"
                 >

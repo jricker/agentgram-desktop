@@ -501,7 +501,7 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                           variant="secondary"
                           className="text-xs py-0.5 gap-1"
                         >
-                          <Check className="w-3 h-3 text-green-500" />
+                          <Check className="w-3 h-3 text-success" />
                           {s.displayName}
                         </Badge>
                       ))}

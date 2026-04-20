@@ -9,8 +9,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const ACTIVITY_COLORS = {
   idle: "",
-  thinking: "text-amber-500",
-  streaming: "text-emerald-500",
+  thinking: "text-warning",
+  streaming: "text-success",
   tool: "text-violet-500",
   sending: "text-cyan-500",
   error: "text-destructive",
@@ -18,8 +18,8 @@ const ACTIVITY_COLORS = {
 
 const ACTIVITY_DOT_COLORS = {
   idle: "",
-  thinking: "bg-amber-500",
-  streaming: "bg-emerald-500",
+  thinking: "bg-warning",
+  streaming: "bg-success",
   tool: "bg-violet-500",
   sending: "bg-cyan-500",
   error: "bg-destructive",
@@ -50,8 +50,8 @@ function StatusBadge({
   }
   if (status === "stalled") {
     return (
-      <Badge variant="outline" className="border-orange-500/30 text-orange-500 bg-orange-500/10 gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+      <Badge variant="outline" className="border-warning/30 text-warning bg-warning/10 gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" />
         Stalled
       </Badge>
     );
@@ -79,7 +79,7 @@ function HealthBadge({ health }: { health: ManagedAgent["health"] }) {
   const colors: Record<string, string> = {
     healthy: "text-success",
     degraded: "text-warning",
-    stuck: "text-orange-500",
+    stuck: "text-warning",
     offline: "text-muted-foreground",
   };
   return (
@@ -152,14 +152,14 @@ export function AgentRow({
                 {managed.agent.displayName}
               </p>
               {managed.agent.agentType === "orchestrator" && (
-                <Crown className="h-3 w-3 text-[#007AFF] flex-shrink-0" />
+                <Crown className="h-3 w-3 text-primary flex-shrink-0" />
               )}
               {managed.agent.agentType && !["worker", "orchestrator"].includes(managed.agent.agentType) && (
                 <Badge
                   variant="secondary"
                   className={cn(
                     "text-[10px] px-1.5 py-0 flex-shrink-0",
-                    managed.agent.agentType === "reviewer" && "bg-amber-500/10 text-amber-500 border-amber-500/20",
+                    managed.agent.agentType === "reviewer" && "bg-warning/10 text-warning border-warning/20",
                     managed.agent.agentType === "observer" && "bg-cyan-500/10 text-cyan-500 border-cyan-500/20"
                   )}
                 >
@@ -232,15 +232,15 @@ export function AgentRow({
         {/* Actions */}
         <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
           {managed.processStatus === "crashed" ? (
-            <Button variant="ghost" size="icon-sm" className="text-warning hover:text-warning" onClick={handleToggle} title="Restart">
+            <Button variant="ghost" size="icon-sm" className="text-warning hover:text-warning/90" onClick={handleToggle} title="Restart">
               <RotateCcw className="w-4 h-4" />
             </Button>
           ) : isRunning ? (
-            <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive" onClick={handleToggle} title="Stop">
+            <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive/90" onClick={handleToggle} title="Stop">
               <Square className="w-3.5 h-3.5" />
             </Button>
           ) : (
-            <Button variant="ghost" size="icon-sm" className="text-success hover:text-success" onClick={handleToggle} disabled={!canStart} title={canStart ? "Start" : "Configure first"}>
+            <Button variant="ghost" size="icon-sm" className="text-success hover:text-success/90" onClick={handleToggle} disabled={!canStart} title={canStart ? "Start" : "Configure first"}>
               <Play className="w-4 h-4" />
             </Button>
           )}
