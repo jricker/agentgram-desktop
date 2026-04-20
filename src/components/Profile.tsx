@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useAuthStore } from "../stores/authStore";
 import { useThemeStore, type ThemePreference } from "../stores/themeStore";
+import { isDesignSystemDebugOn, setDesignSystemDebug } from "../lib/designSystemDebug";
 import * as api from "../lib/api";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -983,6 +984,13 @@ function AppearanceSection() {
   const preference = useThemeStore((s) => s.preference);
   const resolved = useThemeStore((s) => s.resolved);
   const setPreference = useThemeStore((s) => s.setPreference);
+  const [dsDebug, setDsDebug] = useState(() => isDesignSystemDebugOn());
+
+  const toggleDsDebug = () => {
+    const next = !dsDebug;
+    setDesignSystemDebug(next);
+    setDsDebug(next);
+  };
 
   return (
     <div className="space-y-4">
@@ -1019,6 +1027,35 @@ function AppearanceSection() {
           );
         })}
       </div>
+
+      {/* Design-system debug — flips every tokenized color/radius/shadow to
+       *  a garish override so hardcoded values visually stand out. */}
+      <button
+        type="button"
+        onClick={toggleDsDebug}
+        className={cn(
+          "flex w-full items-center justify-between rounded-lg border px-3 py-2.5 text-xs transition-colors",
+          "hover:bg-muted/50",
+          dsDebug ? "border-primary bg-primary/10" : "border-border"
+        )}
+        aria-pressed={dsDebug}
+      >
+        <span className="flex items-center gap-2">
+          <Palette className="h-4 w-4 text-muted-foreground" />
+          <span className="flex flex-col items-start">
+            <span className="font-medium text-foreground">Design-system debug</span>
+            <span className="text-[10px] text-muted-foreground">Also toggles with ⌘⇧D</span>
+          </span>
+        </span>
+        <span
+          className={cn(
+            "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+            dsDebug ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+          )}
+        >
+          {dsDebug ? "ON" : "OFF"}
+        </span>
+      </button>
     </div>
   );
 }
