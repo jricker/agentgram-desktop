@@ -4,6 +4,7 @@ import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useStreamingStore } from "../../stores/streamingStore";
+import { useTaskStore } from "../../stores/taskStore";
 import { MessageBubble } from "./MessageBubble";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { StreamingBubble } from "./StreamingBubble";
@@ -74,6 +75,19 @@ const BARE_STATUS_TO_LIFECYCLE: Record<string, string> = {
   declined: "task_failed",
   blocked: "task_in_progress",
   cancelled: "task_cancelled",
+};
+
+// Monotonic status rank — prevents an older/earlier lifecycle update from
+// overwriting a newer one during hydration. Matches web's STATUS_RANK.
+const STATUS_RANK: Record<string, number> = {
+  pending: 0,
+  in_progress: 1,
+  accepted: 1,
+  blocked: 1,
+  complete: 2,
+  failed: 2,
+  declined: 2,
+  cancelled: 2,
 };
 
 function extractTaskId(msg: Message): string | undefined {
@@ -171,6 +185,64 @@ function consolidate(messages: Message[]): Message[] {
 export function ChatThread({ conversationId }: { conversationId: string }) {
   const messagesRaw = useChatStore((s) => s.messages[conversationId]);
   const rawMessages = messagesRaw ?? EMPTY_MESSAGES;
+
+  // Hydrate taskLifecycleMeta from StatusUpdate messages before we filter
+  // them. Pulls summary / error / agentName / agentAvatarUrl out of each
+  // lifecycle payload into the task store so the expanded Completion /
+  // Failure cards have rich data to render. Mirrors web's hydration pass
+  // in ChatView.tsx:187-220. Without this desktop's expanded cards only
+  // ever saw the in-message payload, missing the summary and agent info
+  // that StatusUpdate carries.
+  useMemo(() => {
+    const update = useTaskStore.getState().updateTaskLifecycleMeta;
+    for (const msg of rawMessages) {
+      const type = msg.messageType || msg.contentType || "";
+      const isStatusUpdate = type === "StatusUpdate" || type === "status_update";
+      if (!isStatusUpdate) continue;
+      try {
+        const data = JSON.parse(msg.content) as Record<string, unknown>;
+        const taskId = data.task_id as string | undefined;
+        const rawType = (data.lifecycle_type ?? data.type ?? data.status) as
+          | string
+          | undefined;
+        if (!taskId || !rawType) continue;
+        const lifecycle = BARE_STATUS_TO_LIFECYCLE[rawType] ?? rawType;
+        const newStatus = LIFECYCLE_TO_STATUS[lifecycle];
+        if (!newStatus) continue;
+
+        // Only overwrite if the new status rank is >= current — otherwise
+        // an early "pending" StatusUpdate could clobber a later "complete".
+        const current = useTaskStore.getState().taskLifecycleMeta[taskId]
+          ?.effectiveStatus;
+        const currentRank = current ? STATUS_RANK[current] ?? -1 : -1;
+        const newRank = STATUS_RANK[newStatus] ?? 0;
+        if (newRank < currentRank) continue;
+
+        const meta: Partial<{
+          effectiveStatus: string;
+          summary: string;
+          error: string;
+          agentName: string;
+          agentAvatarUrl: string;
+        }> = { effectiveStatus: newStatus };
+        if (typeof data.summary === "string") meta.summary = data.summary;
+        if (typeof data.error === "string") meta.error = data.error;
+        const name = (data.agent_name ??
+          data.assignee_name ??
+          msg.sender?.displayName) as string | undefined;
+        const avatar = (data.agent_avatar_url ??
+          data.assignee_avatar_url ??
+          msg.sender?.avatarUrl) as string | undefined;
+        if (name) meta.agentName = name;
+        if (avatar) meta.agentAvatarUrl = avatar;
+
+        update(taskId, meta);
+      } catch {
+        // payload wasn't JSON — skip
+      }
+    }
+  }, [rawMessages]);
+
   // Roll task lifecycle / status-update messages into the TaskRequest card
   // so a single task_id renders as one live card, not a stack of three.
   const messages = useMemo(() => consolidate(rawMessages), [rawMessages]);

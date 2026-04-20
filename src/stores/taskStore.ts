@@ -22,8 +22,16 @@ export interface TaskLifecycleMeta {
   /** Live status derived from the latest `task_*` event; supersedes the
    * static `taskSnapshot.status` on the message when present. */
   effectiveStatus?: string;
+  /** Completion summary (markdown) — pulled from the terminal StatusUpdate
+   * message's payload during thread hydration. Consumed by CompletionCard
+   * when the user expands a completed-task card. */
   summary?: string;
   error?: string;
+  /** Assignee's display name + avatar — seeded from StatusUpdate payloads
+   * (`agent_name` or `assignee_name`) so cards can show the right agent
+   * even when the message sender is the delegator. */
+  agentName?: string;
+  agentAvatarUrl?: string;
 }
 
 const ACTIVE_STATUSES = new Set<TaskStatus>([
@@ -44,6 +52,13 @@ interface TaskState {
   selectTask: (id: string | null) => void;
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
   requestRevision: (taskId: string, feedback: string) => Promise<void>;
+  /** Merge extra fields (summary, error, agentName, etc.) into a task's
+   *  lifecycle meta. Used by the thread hydration pass when walking
+   *  StatusUpdate payloads; preserves any existing fields not supplied. */
+  updateTaskLifecycleMeta: (
+    taskId: string,
+    meta: Partial<TaskLifecycleMeta>
+  ) => void;
 
   initWsListeners: () => () => void;
 }
@@ -116,6 +131,15 @@ export const useTaskStore = create<TaskState>((set) => ({
           ...(s.taskLifecycleMeta[taskId] ?? {}),
           effectiveStatus: updated.status,
         },
+      },
+    }));
+  },
+
+  updateTaskLifecycleMeta: (taskId, meta) => {
+    set((s) => ({
+      taskLifecycleMeta: {
+        ...s.taskLifecycleMeta,
+        [taskId]: { ...(s.taskLifecycleMeta[taskId] ?? {}), ...meta },
       },
     }));
   },

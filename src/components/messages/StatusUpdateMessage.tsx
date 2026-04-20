@@ -558,6 +558,8 @@ export function StatusUpdateMessage({ message }: { message: Message }) {
   const enriched: StatusPayload = { ...payload };
   if (liveMeta?.summary) enriched.summary = liveMeta.summary;
   if (liveMeta?.error) enriched.error = liveMeta.error;
+  if (liveMeta?.agentName) enriched.agent_name = liveMeta.agentName;
+  if (liveMeta?.agentAvatarUrl) enriched.agent_avatar_url = liveMeta.agentAvatarUrl;
 
   const isLifecycle =
     LIFECYCLE_TYPES.has(lifecycle) || LIFECYCLE_TYPES.has(effectiveType);
