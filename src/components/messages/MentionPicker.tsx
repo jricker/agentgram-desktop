@@ -138,7 +138,7 @@ export function MentionPicker({
           }}
           className={cn(
             "flex w-full items-center gap-2 px-3 py-2 text-left transition-colors",
-            i === selectedIndex ? "bg-muted" : "hover:bg-muted/50"
+            i === selectedIndex ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"
           )}
         >
           <Avatar className="h-6 w-6">

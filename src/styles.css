@@ -35,6 +35,11 @@
   --color-accent: var(--color-accent);
   --color-accent-foreground: var(--color-accent-foreground);
   --color-destructive: var(--color-destructive);
+  --color-destructive-foreground: var(--color-destructive-foreground);
+  --color-info: var(--color-info);
+  --color-surface-elevated: var(--color-surface-elevated);
+  --color-text-tertiary: var(--color-text-tertiary);
+  --color-overlay: var(--color-overlay);
   --color-border: var(--color-border);
   --color-input: var(--color-input);
   --color-ring: var(--color-ring);
