@@ -1,7 +1,10 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { initDesignSystemDebug } from "./lib/designSystemDebug";
 import "./styles.css";
+
+initDesignSystemDebug();
 
 // Catch unhandled promise rejections (async errors outside React)
 window.addEventListener("unhandledrejection", (event) => {
