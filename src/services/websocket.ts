@@ -3,6 +3,13 @@ import { getApiUrl } from "../lib/api";
 
 type EventHandler = (payload: Record<string, unknown>) => void;
 
+/** Flip to `true` while diagnosing real-time-sync issues — logs every
+ *  connect/disconnect/channel-join/event-receive with timestamps. Left as
+ *  a const so it's easy to toggle without touching call sites. */
+const DEBUG = true;
+const log = (...args: unknown[]) =>
+  DEBUG && console.log(`[ws ${new Date().toISOString().slice(11, 23)}]`, ...args);
+
 /**
  * Ported from web/src/services/websocket.ts with one desktop-specific change:
  * the socket URL is derived from the configured API URL (DEFAULT_API_URL or
@@ -16,18 +23,31 @@ class WebSocketService {
   private globalHandlers = new Map<string, Set<EventHandler>>();
 
   connect(token: string) {
-    if (this.socket?.isConnected()) return;
+    if (this.socket?.isConnected()) {
+      log("connect() skipped — already connected");
+      return;
+    }
 
     const apiUrl = getApiUrl();
     const wsUrl = apiUrl.replace(/^http/, "ws") + "/socket";
+    log("connect() →", wsUrl);
 
     this.socket = new Socket(wsUrl, {
       params: { token },
     });
 
-    this.socket.onOpen(() => this.emit("connection_change", { connected: true }));
-    this.socket.onClose(() => this.emit("connection_change", { connected: false }));
-    this.socket.onError(() => this.emit("connection_change", { connected: false }));
+    this.socket.onOpen(() => {
+      log("socket open");
+      this.emit("connection_change", { connected: true });
+    });
+    this.socket.onClose(() => {
+      log("socket close");
+      this.emit("connection_change", { connected: false });
+    });
+    this.socket.onError((e) => {
+      log("socket error", e);
+      this.emit("connection_change", { connected: false });
+    });
 
     this.socket.connect();
   }
@@ -45,7 +65,15 @@ class WebSocketService {
   // --- User channel ---
 
   joinUserChannel(participantId: string) {
-    if (!this.socket || this.userChannel) return;
+    if (!this.socket) {
+      log("joinUserChannel skipped — no socket");
+      return;
+    }
+    if (this.userChannel) {
+      log("joinUserChannel skipped — already joined");
+      return;
+    }
+    log("joinUserChannel →", participantId);
 
     const channel = this.socket.channel(`user:${participantId}`, {});
     this.userChannel = channel;
@@ -72,15 +100,28 @@ class WebSocketService {
       });
     }
 
-    channel.join().receive("ok", () => {
-      this.emit("user_channel_joined", {});
-    });
+    channel
+      .join()
+      .receive("ok", () => {
+        log("user channel joined ok");
+        this.emit("user_channel_joined", {});
+      })
+      .receive("error", (resp) => log("user channel join error", resp))
+      .receive("timeout", () => log("user channel join timeout"));
   }
 
   // --- Conversation channels ---
 
   joinConversation(conversationId: string) {
-    if (!this.socket || this.conversationChannels.has(conversationId)) return;
+    if (!this.socket) {
+      log("joinConversation skipped — no socket", conversationId);
+      return;
+    }
+    if (this.conversationChannels.has(conversationId)) {
+      log("joinConversation skipped — already joined", conversationId);
+      return;
+    }
+    log("joinConversation →", conversationId);
 
     const channel = this.socket.channel(`conversation:${conversationId}`, {});
     this.conversationChannels.set(conversationId, channel);
@@ -102,6 +143,7 @@ class WebSocketService {
 
     for (const event of convEvents) {
       channel.on(event, (payload: Record<string, unknown>) => {
+        log(`conv:${conversationId.slice(0, 8)} ← ${event}`, payload);
         this.emit(`conv:${event}`, { ...payload, _conversationId: conversationId });
       });
     }
@@ -109,12 +151,25 @@ class WebSocketService {
     channel
       .join()
       .receive("ok", () => {
+        log(`conv channel joined ok → ${conversationId.slice(0, 8)}`);
         this.emit("conversation_joined", { conversationId });
       })
       .receive("error", (resp: Record<string, unknown>) => {
         console.warn(`[ws] Failed to join conversation:${conversationId}`, resp);
+        // Retry once after a short delay — a failed initial join often means
+        // the socket wasn't quite ready. Dropping the map entry ensures the
+        // retry is treated as a fresh join.
         this.conversationChannels.delete(conversationId);
-      });
+        setTimeout(() => {
+          if (this.socket?.isConnected()) {
+            log(`retry joinConversation → ${conversationId.slice(0, 8)}`);
+            this.joinConversation(conversationId);
+          }
+        }, 1000);
+      })
+      .receive("timeout", () =>
+        log(`conv channel join timeout → ${conversationId.slice(0, 8)}`)
+      );
   }
 
   leaveConversation(conversationId: string) {

@@ -45,8 +45,27 @@ export function useWebSocket() {
       if (activeId) ws.joinConversation(activeId);
     };
     joinActiveIfAny();
+
+    // Resync on every reconnect. WS has an auto-rejoin under the hood, but
+    // any events the server pushed during the gap (while the socket was
+    // closed or before the channel's onJoin fired) are gone. A REST refetch
+    // of the active conversation's recent messages + the conversation list
+    // + unread counts makes state converge to the server's truth.
+    let firstConnect = true;
     const unsubReconnect = ws.on("connection_change", (payload) => {
-      if (payload.connected) joinActiveIfAny();
+      if (!payload.connected) return;
+      joinActiveIfAny();
+      if (firstConnect) {
+        // Skip resync on the very first connect — we just loaded everything
+        // from REST above. Only run it on subsequent connects (true reconnects).
+        firstConnect = false;
+        return;
+      }
+      console.log("[ws] reconnected → resyncing");
+      useChatStore.getState().fetchConversations();
+      useChatStore.getState().fetchUnreadCounts();
+      const activeId = useChatStore.getState().activeConversationId;
+      if (activeId) useChatStore.getState().fetchMessages(activeId);
     });
 
     // Fire initial loads — UI renders loading states from the store

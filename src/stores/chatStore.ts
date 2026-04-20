@@ -552,6 +552,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ws.on("conv:new_message", (payload) => {
         const msg = payload as unknown as Message & { _conversationId: string };
         const convId = msg._conversationId ?? msg.conversationId;
+        console.log("[chat] conv:new_message", {
+          convId: convId?.slice(0, 8),
+          msgId: msg.id?.slice(0, 8),
+          senderId: msg.senderId?.slice(0, 8),
+          active: get().activeConversationId?.slice(0, 8),
+        });
         get().addMessage(convId, msg);
 
         // Clear any active streaming bubble for this sender/stream — the
@@ -607,6 +613,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       ws.on("conversation_updated", (payload) => {
         const convId = payload.conversationId as string;
         const lastMessage = payload.lastMessage as Message;
+        console.log("[chat] conversation_updated", {
+          convId: convId?.slice(0, 8),
+          hasLast: Boolean(lastMessage),
+        });
         if (lastMessage) {
           get().updateConversationFromEvent(convId, lastMessage);
         }
