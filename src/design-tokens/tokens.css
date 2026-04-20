@@ -298,6 +298,9 @@ html.debug-tokens {
   --shadow-2xl: 0 0 0 6px #FF8800 !important;
 }
 
+/* Flatten Tailwind rounded-* utilities that don't consume --radius-* vars. */
+html.debug-tokens [class*="rounded"] { border-radius: 0 !important; }
+
 /* Short aliases — map to legacy CSS var names still referenced in the apps. */
 :root, .dark, html.debug-tokens {
   --background: var(--color-background);
