@@ -11,6 +11,7 @@ import { ChatThread } from "./ChatThread";
 import { MessageComposer } from "./MessageComposer";
 import { ConversationDetailsPanel } from "./ConversationDetailsPanel";
 import { NewConversationDialog } from "./NewConversationDialog";
+import { ChatHeaderMenu } from "./ChatHeaderMenu";
 
 const DETAILS_KEY = "agentchat:showDetails";
 const ACTIVE_TAB_KEY = "agentchat:messagesTab";
@@ -268,6 +269,16 @@ function ActiveConversation({
         >
           <Info className="h-4 w-4" />
         </button>
+
+        {conversation && (
+          <ChatHeaderMenu
+            conversation={conversation}
+            onAfterDangerAction={() => {
+              // Details panel clings to the deleted conversation id —
+              // close it so the thread column shows the EmptyState.
+            }}
+          />
+        )}
       </header>
 
       <ChatThread conversationId={conversationId} />

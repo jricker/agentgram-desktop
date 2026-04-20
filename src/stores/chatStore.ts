@@ -75,6 +75,10 @@ interface ChatState {
   removeMember: (conversationId: string, participantId: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
   leaveConversation: (conversationId: string, participantId: string) => Promise<void>;
+  /** Halt any in-flight agent turns in a conversation — POST to the
+   *  backend's stop-agents endpoint. No optimistic local state change;
+   *  the server emits the usual WS events as work actually stops. */
+  stopAgents: (conversationId: string) => Promise<void>;
 
   // Actions — messages
   fetchMessages: (conversationId: string, before?: string) => Promise<void>;
@@ -263,6 +267,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
     });
     ws.leaveConversation(conversationId);
+  },
+
+  stopAgents: async (conversationId) => {
+    await api.stopConversationAgents(conversationId);
   },
 
   leaveConversation: async (conversationId, participantId) => {

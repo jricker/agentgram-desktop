@@ -878,6 +878,14 @@ export async function deleteConversationRest(conversationId: string): Promise<vo
   await request(`/api/conversations/${conversationId}`, { method: "DELETE" });
 }
 
+/** Halt any in-flight agent turns in this conversation. Used by the chat
+ *  header menu's "Stop Agents" action. */
+export async function stopConversationAgents(conversationId: string): Promise<void> {
+  await request(`/api/conversations/${conversationId}/stop-agents`, {
+    method: "POST",
+  });
+}
+
 export async function createConversationRest(attrs: {
   type: "direct" | "group" | "channel";
   title?: string;
