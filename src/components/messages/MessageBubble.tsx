@@ -2,7 +2,8 @@ import { useAuthStore } from "../../stores/authStore";
 import { useChatStore } from "../../stores/chatStore";
 import { cn, formatClockTime } from "../../lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Reply as ReplyIcon } from "lucide-react";
+import { Bot, Reply as ReplyIcon } from "lucide-react";
+import { formatModelLabel } from "../../lib/models";
 import { MarkdownContent } from "./MarkdownContent";
 import { isTaskMessage, TaskMessage } from "./TaskMessages";
 import { isToolMessage, ToolMessage } from "./ToolMessages";
@@ -34,6 +35,19 @@ export function MessageBubble({
   const avatarUrl = message.sender?.avatarUrl;
   const isTask = isTaskMessage(message);
   const isStatusUpdate = isStatusUpdateMessage(message);
+
+  // Model + backend label for agent messages — same resolution order as web:
+  // message.metadata.{model,backend} is the primary source (populated on
+  // server broadcast); falls back to the sender-context struct if present.
+  const rawModel =
+    (message.metadata?.model as string | undefined) ||
+    ((message.contentStructured?.data as Record<string, unknown> | undefined)
+      ?.sender_context as Record<string, unknown> | undefined)?.model as
+      | string
+      | undefined;
+  const rawBackend =
+    (message.metadata?.backend as string | undefined) || undefined;
+  const modelLabel = isAgent ? formatModelLabel(rawModel, rawBackend) : null;
 
   // Find the message we're replying to so we can render the preview
   const conversationId = message.conversationId;
@@ -80,23 +94,37 @@ export function MessageBubble({
       }}
     >
       {!isOwn && (
-        <div className="w-8 shrink-0">
-          <Avatar className="h-8 w-8">
-            {avatarUrl ? <AvatarImage src={avatarUrl} alt={senderName} /> : null}
-            <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-semibold">
-              {senderName.charAt(0).toUpperCase() || "?"}
-            </AvatarFallback>
-          </Avatar>
+        // Avatar column: `justify-end` pins the avatar to the bottom of the
+        // bubble wrapper (matches web + mobile) so it sits next to the most
+        // recent bubble of a run rather than floating at the top. Empty
+        // spacer when showAvatar is false keeps the message indented.
+        <div className="w-8 shrink-0 flex flex-col justify-end">
+          {showAvatar ? (
+            <Avatar className="h-8 w-8">
+              {avatarUrl ? <AvatarImage src={avatarUrl} alt={senderName} /> : null}
+              <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-semibold">
+                {senderName.charAt(0).toUpperCase() || "?"}
+              </AvatarFallback>
+            </Avatar>
+          ) : null}
         </div>
       )}
 
       <div className={cn("flex flex-col max-w-[72%]", isOwn ? "items-end" : "items-start")}>
         {!isOwn && showSenderName && (
-          <div className="flex items-center gap-1.5 mb-0.5 text-[11px] text-muted-foreground">
-            <span className="font-medium text-foreground">{senderName}</span>
-            {isAgent && (
-              <span className="px-1.5 py-[1px] rounded bg-bubble-agent-accent/10 text-bubble-agent-accent text-[9px] font-semibold uppercase tracking-wide">
-                agent
+          <div className="mb-0.5">
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="font-medium text-foreground">{senderName}</span>
+              {isAgent && (
+                <span className="inline-flex items-center gap-1 rounded bg-bubble-agent-accent/10 px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide text-bubble-agent-accent">
+                  <Bot className="h-2.5 w-2.5" />
+                  Agent
+                </span>
+              )}
+            </span>
+            {modelLabel && (
+              <span className="block font-mono text-[10px] text-muted-foreground/70">
+                {modelLabel}
               </span>
             )}
           </div>

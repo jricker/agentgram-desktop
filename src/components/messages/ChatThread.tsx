@@ -15,9 +15,165 @@ const SCROLL_BOTTOM_THRESHOLD = 120;
 
 const EMPTY_MESSAGES: Message[] = [];
 
+// --- Task-message consolidation (ported from web/src/components/ChatView.tsx)
+//
+// The server emits a sequence of messages per task_id (TaskRequest →
+// TaskProgress → TaskComplete/TaskFail), plus StatusUpdate messages for
+// the same lifecycle. Rendering each as its own card stacks the thread
+// with duplicates. Instead:
+//   1. Compute latest status per task_id across the thread.
+//   2. Hide TaskProgress / TaskComplete / TaskFail / TaskAccept / TaskReject
+//      — their info lives on the TaskRequest card.
+//   3. Keep only the first StatusUpdate per task_id.
+//   4. Mutate TaskRequest.taskSnapshot.status to the latest so the
+//      request card flips to "complete" / "failed" in place.
+// Web + mobile + desktop all share this rule so a task renders as a
+// single live card per task_id.
+
+const HIDDEN_MSG_TYPES = new Set([
+  "TaskReassign",
+  "TaskDeclined",
+  "EndTurn",
+  "TurnDirective",
+  "CapabilityUpdate",
+  "capability_negotiation",
+]);
+const TYPED_LIFECYCLE_TYPES = new Set([
+  "TaskProgress",
+  "TaskComplete",
+  "TaskFail",
+  "TaskAccept",
+  "TaskReject",
+]);
+const STATUS_LIFECYCLE_TYPES = new Set([
+  "task_delegated",
+  "task_self_assigned",
+  "task_accepted",
+  "task_in_progress",
+  "task_complete",
+  "task_complete_summary",
+  "task_failed",
+  "task_cancelled",
+]);
+const LIFECYCLE_TO_STATUS: Record<string, string> = {
+  task_delegated: "in_progress",
+  task_self_assigned: "in_progress",
+  task_accepted: "in_progress",
+  task_in_progress: "in_progress",
+  task_complete: "complete",
+  task_complete_summary: "complete",
+  task_failed: "failed",
+  task_cancelled: "cancelled",
+};
+const BARE_STATUS_TO_LIFECYCLE: Record<string, string> = {
+  pending: "task_delegated",
+  in_progress: "task_in_progress",
+  accepted: "task_accepted",
+  complete: "task_complete",
+  failed: "task_failed",
+  declined: "task_failed",
+  blocked: "task_in_progress",
+  cancelled: "task_cancelled",
+};
+
+function extractTaskId(msg: Message): string | undefined {
+  return (
+    msg.taskSnapshot?.id ??
+    ((msg.metadata as Record<string, unknown> | undefined)?.task_id as
+      | string
+      | undefined)
+  );
+}
+
+function consolidate(messages: Message[]): Message[] {
+  // Pass 1: latest status per task_id.
+  const latestByTaskId = new Map<string, string>();
+  for (const msg of messages) {
+    const type = msg.messageType || msg.contentType || "";
+
+    if (type === "StatusUpdate" || type === "status_update") {
+      try {
+        const data = JSON.parse(msg.content) as Record<string, unknown>;
+        const taskId = data.task_id as string | undefined;
+        const raw = (data.lifecycle_type ?? data.type ?? data.status) as
+          | string
+          | undefined;
+        if (!taskId || !raw) continue;
+        const lifecycle = BARE_STATUS_TO_LIFECYCLE[raw] ?? raw;
+        const status = LIFECYCLE_TO_STATUS[lifecycle];
+        if (status) latestByTaskId.set(taskId, status);
+      } catch {
+        // not JSON payload — skip
+      }
+    }
+
+    const taskId = extractTaskId(msg);
+    if (taskId && TYPED_LIFECYCLE_TYPES.has(type)) {
+      const next: Record<string, string> = {
+        TaskAccept: "in_progress",
+        TaskProgress: "in_progress",
+        TaskComplete: "complete",
+        TaskFail: "failed",
+        TaskReject: "declined",
+      };
+      if (next[type]) latestByTaskId.set(taskId, next[type]!);
+    }
+  }
+
+  // Pass 2: filter + enrich.
+  const seenStatusUpdateForTask = new Set<string>();
+  return messages
+    .filter((msg) => {
+      const type = msg.messageType || msg.contentType || "";
+      if (HIDDEN_MSG_TYPES.has(type)) return false;
+
+      const taskId = extractTaskId(msg);
+
+      // Strip lifecycle bubbles — they roll into the TaskRequest card.
+      if (taskId && TYPED_LIFECYCLE_TYPES.has(type)) return false;
+
+      // Dedupe StatusUpdate cards: one per task_id.
+      if (type === "StatusUpdate" || type === "status_update") {
+        try {
+          const data = JSON.parse(msg.content) as Record<string, unknown>;
+          const suTaskId = data.task_id as string | undefined;
+          const raw = (data.lifecycle_type ?? data.type ?? data.status) as
+            | string
+            | undefined;
+          if (!suTaskId || !raw) return true;
+          const lifecycle = BARE_STATUS_TO_LIFECYCLE[raw] ?? raw;
+          if (!STATUS_LIFECYCLE_TYPES.has(lifecycle)) return true;
+          if (seenStatusUpdateForTask.has(suTaskId)) return false;
+          seenStatusUpdateForTask.add(suTaskId);
+          return true;
+        } catch {
+          return true;
+        }
+      }
+      return true;
+    })
+    .map((msg) => {
+      const type = msg.messageType || msg.contentType || "";
+      if (type !== "TaskRequest") return msg;
+      const taskId = extractTaskId(msg);
+      if (!taskId || !latestByTaskId.has(taskId)) return msg;
+      return {
+        ...msg,
+        taskSnapshot: {
+          ...(msg.taskSnapshot ?? {}),
+          id: taskId,
+          status: latestByTaskId.get(taskId),
+        },
+      };
+    });
+}
+
 export function ChatThread({ conversationId }: { conversationId: string }) {
   const messagesRaw = useChatStore((s) => s.messages[conversationId]);
-  const messages = messagesRaw ?? EMPTY_MESSAGES;
+  const rawMessages = messagesRaw ?? EMPTY_MESSAGES;
+  // Roll task lifecycle / status-update messages into the TaskRequest card
+  // so a single task_id renders as one live card, not a stack of three.
+  const messages = useMemo(() => consolidate(rawMessages), [rawMessages]);
   const loading = useChatStore((s) => s.messagesLoading[conversationId] ?? false);
   const hasMore = useChatStore((s) => s.hasMore[conversationId] ?? false);
   const fetchMessages = useChatStore((s) => s.fetchMessages);
@@ -68,7 +224,9 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     setNearBottom(distanceFromBottom < SCROLL_BOTTOM_THRESHOLD);
 
     if (hasMore && !loading && el.scrollTop < 80) {
-      const oldest = messages[0];
+      // Use the raw oldest (not the consolidated one) as the pagination
+      // anchor — a filtered TaskProgress could have been the earliest record.
+      const oldest = rawMessages[0];
       if (oldest) fetchMessages(conversationId, oldest.id);
     }
   };
