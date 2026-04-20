@@ -112,12 +112,16 @@ export function MessageBubble({
 
       <div className={cn("flex flex-col max-w-[72%]", isOwn ? "items-end" : "items-start")}>
         {!isOwn && showSenderName && (
-          <div className="mb-0.5">
-            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-              <span className="font-medium text-foreground">{senderName}</span>
+          <div className="mb-0.5 px-1">
+            {/* Sender name inherits text-muted-foreground from the outer
+             * span — matches web's token (web/src/components/MessageBubble.tsx
+             * line 132). The "Agent" pill overrides to text-bubble-agent-
+             * accent for its own contrast. */}
+            <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              {senderName}
               {isAgent && (
-                <span className="inline-flex items-center gap-1 rounded bg-bubble-agent-accent/10 px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide text-bubble-agent-accent">
-                  <Bot className="h-2.5 w-2.5" />
+                <span className="inline-flex items-center gap-1 rounded bg-bubble-agent-accent/10 px-1.5 py-0.5 text-[10px] font-bold text-bubble-agent-accent">
+                  <Bot className="h-3 w-3" />
                   Agent
                 </span>
               )}

@@ -68,9 +68,16 @@ export function useWebSocket() {
       if (activeId) useChatStore.getState().fetchMessages(activeId);
     });
 
-    // Fire initial loads — UI renders loading states from the store
+    // Fire initial loads — UI renders loading states from the store.
+    // fetchTasks() also seeds taskLifecycleMeta[id].effectiveStatus from
+    // the server's authoritative task list, which is critical for task
+    // cards to render the correct status when the completion message is
+    // outside the conversation's recent_messages window. Without this
+    // a completed task still appears as "assigned" until the user visits
+    // the Tasks tab for the first time.
     useChatStore.getState().fetchConversations();
     useChatStore.getState().fetchUnreadCounts();
+    useTaskStore.getState().fetchTasks();
 
     return () => {
       unsubReconnect();
