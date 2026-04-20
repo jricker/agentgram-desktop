@@ -1,11 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MessageSquare, Bot, User, Zap } from "lucide-react";
+import {
+  MessageSquare,
+  Bot,
+  User,
+  Zap,
+  FileText,
+  LayoutDashboard,
+  Sun,
+  Moon,
+  Monitor,
+  BookOpen,
+  Code,
+  LogOut,
+} from "lucide-react";
+import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { cn } from "../lib/utils";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useChatStore } from "../stores/chatStore";
 import { useAuthStore } from "../stores/authStore";
 import { useAgentStore } from "../stores/agentStore";
 import { useTaskStore, countActiveTasks } from "../stores/taskStore";
+import { usePresenceStore } from "../stores/presenceStore";
+import { useThemeStore } from "../stores/themeStore";
+import { getApiUrl } from "../lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dashboard } from "./Dashboard";
 import { MessagesView } from "./messages/MessagesView";
@@ -13,6 +30,14 @@ import { TasksView } from "./tasks/TasksView";
 import { Profile } from "./Profile";
 
 type View = "chat" | "tasks" | "agents";
+
+const DOCS_URL = "https://github.com/jricker/AgentGram";
+
+/** Open a URL in the system browser via Tauri's shell plugin, falling back
+ *  to window.open if the plugin isn't available (dev/preview). */
+function openExternal(url: string) {
+  tauriOpen(url).catch(() => window.open(url, "_blank"));
+}
 
 export function AppShell() {
   const [view, setView] = useState<View>("chat");
@@ -101,6 +126,8 @@ function LeftRail({
   const tasks = useTaskStore((s) => s.tasks);
   const activeTaskCount = countActiveTasks(tasks);
   const participant = useAuthStore((s) => s.participant);
+  const logout = useAuthStore((s) => s.logout);
+  const connected = usePresenceStore((s) => s.connected);
 
   // Agent online/total — "running" is the only fully-up state; "starting"
   // and "stalled" keep a process alive but it's not actually serving, so
@@ -113,11 +140,33 @@ function LeftRail({
     return { online, total: all.length };
   }, [agentsMap]);
 
+  // Theme quick-toggle. Cycles system → light → dark → system so the
+  // rail matches web's three-state ThemeToggle.
+  const themePreference = useThemeStore((s) => s.preference);
+  const resolvedTheme = useThemeStore((s) => s.resolved);
+  const setPreference = useThemeStore((s) => s.setPreference);
+  const ThemeIcon =
+    themePreference === "system" ? Monitor : themePreference === "dark" ? Moon : Sun;
+  const cycleTheme = () => {
+    if (themePreference === "system") setPreference("light");
+    else if (themePreference === "light") setPreference("dark");
+    else setPreference("system");
+  };
+
+  // Templates and Canvas aren't native views in desktop yet — open the web
+  // equivalent in the system browser for now. Same base URL as the API.
+  const webBase = getApiUrl();
+
+  const handleLogout = () => {
+    if (confirm("Sign out?")) logout();
+  };
+
   return (
     <nav
       className="flex flex-col w-14 shrink-0 border-r border-border bg-card py-3 items-center justify-between"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
+      {/* Top: main nav */}
       <div
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         className="flex flex-col gap-1 items-center"
@@ -156,24 +205,82 @@ function LeftRail({
             ) : undefined
           }
         />
+        <RailButton
+          icon={FileText}
+          label="Templates — opens in browser"
+          active={false}
+          onClick={() => openExternal(`${webBase}/templates`)}
+        />
+        <RailButton
+          icon={LayoutDashboard}
+          label="Canvas — opens in browser"
+          active={false}
+          onClick={() => openExternal(`${webBase}/canvas`)}
+        />
       </div>
 
-      <button
-        type="button"
-        onClick={onOpenProfile}
-        title="Profile & Settings"
-        className="flex items-center justify-center w-10 h-10 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      {/* Bottom: connectivity + utilities + profile + logout */}
+      <div
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+        className="flex flex-col gap-1 items-center"
       >
-        <Avatar className="h-7 w-7">
-          {participant?.avatarUrl ? (
-            <AvatarImage src={participant.avatarUrl} alt={participant.displayName} />
-          ) : null}
-          <AvatarFallback>
-            <User className="w-3.5 h-3.5" />
-          </AvatarFallback>
-        </Avatar>
-      </button>
+        {/* Online/offline dot */}
+        <div
+          className={cn(
+            "h-2 w-2 rounded-full my-1",
+            connected ? "bg-success" : "bg-muted-foreground/50"
+          )}
+          title={connected ? "Connected" : "Disconnected"}
+          aria-label={connected ? "Connected" : "Disconnected"}
+        />
+
+        <RailButton
+          icon={ThemeIcon}
+          label={`Theme: ${themePreference} (now ${resolvedTheme})`}
+          active={false}
+          onClick={cycleTheme}
+        />
+        <RailButton
+          icon={BookOpen}
+          label="Documentation — opens in browser"
+          active={false}
+          onClick={() => openExternal(DOCS_URL)}
+        />
+        <RailButton
+          icon={Code}
+          label="Backend API — opens in browser"
+          active={false}
+          onClick={() => openExternal(webBase)}
+        />
+
+        {/* Profile avatar */}
+        <button
+          type="button"
+          onClick={onOpenProfile}
+          title="Profile & Settings"
+          className="flex items-center justify-center w-10 h-10 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <Avatar className="h-7 w-7">
+            {participant?.avatarUrl ? (
+              <AvatarImage src={participant.avatarUrl} alt={participant.displayName} />
+            ) : null}
+            <AvatarFallback>
+              <User className="w-3.5 h-3.5" />
+            </AvatarFallback>
+          </Avatar>
+        </button>
+
+        {/* Logout */}
+        <button
+          type="button"
+          onClick={handleLogout}
+          title="Sign out"
+          aria-label="Sign out"
+          className="flex items-center justify-center w-10 h-10 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
+      </div>
     </nav>
   );
 }
