@@ -4,20 +4,18 @@ import {
   Lock,
   Search,
   BookOpen,
-  Code,
-  Copy,
-  Check,
   Loader2,
-  ExternalLink,
+  Plus,
+  AlertCircle,
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { cn, formatRelativeShort } from "../../lib/utils";
-import { getApiUrl } from "../../lib/api";
+import { cn } from "../../lib/utils";
 import type { CanvasDefinitionSummary } from "../../lib/api";
 import { useCanvasStore } from "../../stores/canvasStore";
+import { CanvasEditor } from "./CanvasEditor";
 
 const DOCS_URL = "https://github.com/jricker/AgentGram";
 
@@ -29,6 +27,7 @@ export function CanvasView() {
   const definitions = useCanvasStore((s) => s.definitions);
   const loading = useCanvasStore((s) => s.loading);
   const loadedAt = useCanvasStore((s) => s.loadedAt);
+  const error = useCanvasStore((s) => s.error);
   const selectedId = useCanvasStore((s) => s.selectedId);
   const details = useCanvasStore((s) => s.details);
   const detailLoading = useCanvasStore((s) => s.detailLoading);
@@ -55,13 +54,26 @@ export function CanvasView() {
     };
   }, [definitions, search]);
 
-  const selectedSummary = selectedId
-    ? definitions.find((d) => d.id === selectedId)
-    : null;
-  const selectedDetail = selectedId ? details[selectedId] : undefined;
-  const selectedLoading = selectedId ? detailLoading[selectedId] : false;
+  const isNew = selectedId === "new";
+  const selectedSummary = useMemo(
+    () =>
+      selectedId && selectedId !== "new"
+        ? definitions.find((d) => d.id === selectedId) ?? null
+        : null,
+    [definitions, selectedId]
+  );
+  const selectedDetail =
+    selectedId && selectedId !== "new" ? details[selectedId] : undefined;
+  const selectedLoading =
+    selectedId && selectedId !== "new" ? detailLoading[selectedId] : false;
 
-  const apiBase = getApiUrl();
+  // The editor needs the full `definition` JSON — once the detail has been
+  // fetched, merge it over the summary so the editor has both metadata + body.
+  const selectedForEditor: CanvasDefinitionSummary | null = useMemo(() => {
+    if (!selectedSummary) return null;
+    if (selectedDetail?.definition) return selectedDetail;
+    return selectedSummary;
+  }, [selectedSummary, selectedDetail]);
 
   return (
     <div className="flex-1 flex h-full overflow-hidden">
@@ -74,12 +86,16 @@ export function CanvasView() {
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >
           <h2 className="text-sm font-semibold text-foreground">Canvases</h2>
-          <span
-            className="text-[11px] text-muted-foreground"
+          <button
+            type="button"
+            onClick={() => selectCanvas("new")}
+            title="New canvas"
+            aria-label="New canvas"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           >
-            {definitions.length}
-          </span>
+            <Plus className="h-4 w-4" />
+          </button>
         </div>
 
         <div
@@ -97,6 +113,25 @@ export function CanvasView() {
           </div>
         </div>
 
+        {error && definitions.length === 0 && (
+          <div
+            className="flex items-start gap-2 border-b border-destructive/20 bg-destructive/5 px-3 py-2"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-destructive">{error}</p>
+              <button
+                type="button"
+                onClick={() => fetchDefinitions()}
+                className="mt-1 text-[11px] text-destructive underline hover:no-underline"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        )}
+
         <div
           className="flex-1 overflow-y-auto"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
@@ -106,7 +141,7 @@ export function CanvasView() {
               <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
             </div>
           ) : definitions.length === 0 ? (
-            <EmptyList />
+            <EmptyList onCreate={() => selectCanvas("new")} />
           ) : (
             <>
               {owned.length > 0 && (
@@ -147,34 +182,24 @@ export function CanvasView() {
             <BookOpen className="w-3.5 h-3.5" />
             Docs
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => openExternal(`${apiBase}/api/canvas-definitions`)}
-            title="Open the raw API endpoint"
-          >
-            <Code className="w-3.5 h-3.5" />
-            API
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => openExternal(`${apiBase}/canvas`)}
-            title="Open the web editor"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            Edit on web
-          </Button>
         </header>
 
-        {selectedSummary ? (
-          <CanvasDetail
-            summary={selectedSummary}
-            detail={selectedDetail}
-            loading={selectedLoading ?? false}
-          />
+        {isNew ? (
+          <CanvasEditor key="new" canvas={null} isNew />
+        ) : selectedForEditor ? (
+          selectedLoading && !selectedDetail ? (
+            <div className="flex flex-1 items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <CanvasEditor
+              key={selectedForEditor.id}
+              canvas={selectedForEditor}
+              isNew={false}
+            />
+          )
         ) : (
-          <EmptyDetail />
+          <EmptyDetail onCreate={() => selectCanvas("new")} />
         )}
       </section>
     </div>
@@ -243,201 +268,31 @@ function CanvasRow({
   );
 }
 
-interface CanvasJsonDefinition {
-  layout?: { zones?: string[] };
-  widgets?: Array<{ id?: string; type?: string; zone?: string; props?: Record<string, unknown> }>;
-  theme?: Record<string, unknown>;
-}
-
-function CanvasDetail({
-  summary,
-  detail,
-  loading,
-}: {
-  summary: CanvasDefinitionSummary;
-  detail?: CanvasDefinitionSummary;
-  loading: boolean;
-}) {
-  const [copied, setCopied] = useState(false);
-  const handleCopy = () => {
-    navigator.clipboard?.writeText(summary.id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
-  };
-
-  const definition = (detail?.definition as CanvasJsonDefinition | undefined) ?? undefined;
-  const zones = definition?.layout?.zones ?? [];
-  const widgets = definition?.widgets ?? [];
-
-  return (
-    <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
-      {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 mb-1.5">
-          <Badge
-            variant="secondary"
-            className={cn(
-              "text-[10px]",
-              summary.isPublished && !summary.isBuiltin
-                ? "bg-success/10 text-success border-success/30"
-                : ""
-            )}
-          >
-            {summary.isBuiltin
-              ? "Built-in"
-              : summary.isPublished
-              ? "Published"
-              : "Draft"}
-          </Badge>
-          <Badge variant="outline" className="text-[10px]">
-            v{summary.version}
-          </Badge>
-          <button
-            type="button"
-            onClick={handleCopy}
-            className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-            title="Copy canvas ID"
-          >
-            <span className="font-mono">{summary.id.slice(0, 8)}…</span>
-            {copied ? (
-              <Check className="h-3 w-3 text-success" />
-            ) : (
-              <Copy className="h-3 w-3" />
-            )}
-          </button>
-        </div>
-        <h1 className="text-lg font-semibold leading-tight">{summary.name}</h1>
-        {summary.description && (
-          <p className="mt-1 text-sm text-muted-foreground">
-            {summary.description}
-          </p>
-        )}
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Updated {formatRelativeShort(summary.updatedAt)} ago
-        </p>
-      </div>
-
-      {/* Loading the full definition */}
-      {loading && !definition && (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          Loading definition…
-        </div>
-      )}
-
-      {/* Structure overview */}
-      {definition && (
-        <section>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-            Structure
-          </h3>
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <Stat label="Zones" value={String(zones.length)} />
-            <Stat label="Widgets" value={String(widgets.length)} />
-          </div>
-        </section>
-      )}
-
-      {/* Zones & widgets preview */}
-      {definition && zones.length > 0 && (
-        <section>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-            Preview
-          </h3>
-          <div className="rounded-xl border border-border bg-card overflow-hidden">
-            {zones.map((zone) => {
-              const zoneWidgets = widgets.filter((w) => w.zone === zone);
-              return (
-                <div
-                  key={zone}
-                  className="border-b border-border last:border-b-0 p-3"
-                >
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-                    {zone}
-                  </div>
-                  {zoneWidgets.length === 0 ? (
-                    <div className="rounded-md border border-dashed border-border/60 p-3 text-[11px] text-muted-foreground/60">
-                      No widgets
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {zoneWidgets.map((w, i) => (
-                        <WidgetPreview key={w.id ?? i} widget={w} />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      )}
-
-      {/* Raw JSON */}
-      {definition && (
-        <section>
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2">
-            Definition JSON
-          </h3>
-          <pre className="rounded-lg border border-border bg-muted/30 p-3 text-[11px] overflow-x-auto max-h-[500px]">
-            {JSON.stringify(definition, null, 2)}
-          </pre>
-        </section>
-      )}
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-border bg-card p-3">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-0.5 text-sm font-semibold">{value}</p>
-    </div>
-  );
-}
-
-function WidgetPreview({
-  widget,
-}: {
-  widget: { type?: string; props?: Record<string, unknown> };
-}) {
-  const type = widget.type ?? "unknown";
-  const props = widget.props ?? {};
-  const text = (props.text ?? props.label ?? props.title) as string | undefined;
-
-  return (
-    <div className="rounded-md border border-border/60 bg-background p-2 flex items-center gap-2 text-xs">
-      <Badge variant="secondary" className="text-[9px] px-1 py-0 font-mono">
-        {type}
-      </Badge>
-      {text && <span className="truncate text-muted-foreground">{text}</span>}
-    </div>
-  );
-}
-
-function EmptyDetail() {
+function EmptyDetail({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
       <LayoutDashboard className="w-12 h-12 text-muted-foreground/40 mb-3" />
       <p className="text-sm font-medium text-foreground">Select a canvas</p>
       <p className="text-xs text-muted-foreground mt-1 max-w-xs">
-        Pick one from the left to see its zones, widgets, and raw definition.
+        Pick one from the left, or start a new one.
       </p>
+      <Button size="sm" onClick={onCreate} className="mt-4">
+        <Plus className="mr-1.5 h-3 w-3" />
+        Create Canvas
+      </Button>
     </div>
   );
 }
 
-function EmptyList() {
+function EmptyList({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
       <LayoutDashboard className="w-10 h-10 text-muted-foreground/40 mb-3" />
       <p className="text-sm text-muted-foreground">No canvases yet</p>
-      <p className="text-xs text-muted-foreground mt-1">
-        Create one on the web app — it will show up here.
-      </p>
+      <Button size="sm" onClick={onCreate} className="mt-3">
+        <Plus className="mr-1.5 h-3 w-3" />
+        Create Canvas
+      </Button>
     </div>
   );
 }

@@ -554,13 +554,91 @@ export async function listResponseTemplates(): Promise<{ templates: ResponseTemp
   return request("/api/response-templates");
 }
 
+export async function createResponseTemplate(
+  attrs: Partial<ResponseTemplate>
+): Promise<{ template: ResponseTemplate }> {
+  return request("/api/response-templates", {
+    method: "POST",
+    body: JSON.stringify(attrs),
+  });
+}
+
+export async function updateResponseTemplate(
+  id: string,
+  attrs: Partial<ResponseTemplate>
+): Promise<{ template: ResponseTemplate }> {
+  return request(`/api/response-templates/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(attrs),
+  });
+}
+
+export async function deleteResponseTemplate(id: string): Promise<void> {
+  await request(`/api/response-templates/${id}`, { method: "DELETE" });
+}
+
+export async function previewResponseTemplate(
+  attrs: Partial<ResponseTemplate>
+): Promise<{ html: string; css: string; valid: boolean; errors: string[] }> {
+  return request("/api/response-templates/preview", {
+    method: "POST",
+    body: JSON.stringify(attrs),
+  });
+}
+
 // Canvas Definitions
 export async function listCanvasDefinitions(): Promise<{ definitions: CanvasDefinitionSummary[] }> {
   return request("/api/canvas-definitions");
 }
 
 export async function getCanvasDefinition(id: string): Promise<CanvasDefinitionSummary> {
-  return request(`/api/canvas-definitions/${id}`);
+  // Backend wraps the record as `{ definition: <record> }` — unwrap here so
+  // callers get the same shape as entries in `listCanvasDefinitions()`, with
+  // the inner JSON body reachable as `.definition`.
+  const { definition } = await request<{ definition: CanvasDefinitionSummary }>(
+    `/api/canvas-definitions/${id}`
+  );
+  return definition;
+}
+
+export async function createCanvasDefinition(attrs: {
+  name: string;
+  description?: string;
+  definition: Record<string, unknown>;
+  isPublished?: boolean;
+}): Promise<{ definition: CanvasDefinitionSummary }> {
+  return request("/api/canvas-definitions", {
+    method: "POST",
+    body: JSON.stringify(attrs),
+  });
+}
+
+export async function updateCanvasDefinition(
+  id: string,
+  attrs: Partial<{
+    name: string;
+    description: string;
+    definition: Record<string, unknown>;
+    isPublished: boolean;
+  }>
+): Promise<{ definition: CanvasDefinitionSummary }> {
+  return request(`/api/canvas-definitions/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(attrs),
+  });
+}
+
+export async function deleteCanvasDefinition(id: string): Promise<void> {
+  await request(`/api/canvas-definitions/${id}`, { method: "DELETE" });
+}
+
+export async function validateCanvasDefinition(
+  definition: Record<string, unknown>
+): Promise<{ valid: boolean; errors: string[] }> {
+  return request("/api/canvas-definitions/validate", {
+    method: "POST",
+    body: JSON.stringify({ definition }),
+  });
 }
 
 // Types
@@ -940,12 +1018,25 @@ export async function getFileDownloadUrl(
   return request(`/api/files/${attachmentId}/download-url`);
 }
 
+export type DisplayType = "row" | "chip" | "highlight" | "body" | "change" | "sparkline";
+export type HighlightColor = "success" | "warning" | "destructive" | "primary";
+export type ResultType =
+  | "hotel"
+  | "flight"
+  | "restaurant"
+  | "event"
+  | "product"
+  | "email"
+  | "finance"
+  | "contact"
+  | "generic";
+
 export interface DetailField {
   key: string;
   label?: string;
-  display: "row" | "chip" | "highlight" | "body" | "sparkline" | "change";
+  display: DisplayType;
   icon?: string;
-  color?: string;
+  color?: HighlightColor | string;
   format?: string;
   hidden?: boolean;
 }
@@ -955,7 +1046,7 @@ export interface ResponseTemplate {
   ownerId?: string;
   name: string;
   description?: string;
-  resultType: string;
+  resultType: ResultType;
   fields: DetailField[];
   sampleData?: Record<string, unknown>;
   flowTemplate?: Record<string, unknown>;
