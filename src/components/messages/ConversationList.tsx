@@ -102,7 +102,7 @@ export function ConversationList({
           <div key={section.label}>
             <button
               onClick={() => toggle(section.label)}
-              className="flex w-full items-center gap-1.5 px-2 pb-1 pt-3 first:pt-1 hover:bg-muted/40 rounded-md transition-colors"
+              className="flex w-full items-center gap-1.5 px-2 pb-1 pt-3 first:pt-1 hover:bg-sidebar-accent/60 rounded-md transition-colors"
             >
               <ChevronRight
                 className={cn(
@@ -190,8 +190,8 @@ const ConversationItem = memo(function ConversationItem({
       className={cn(
         "group flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors",
         isActive
-          ? "bg-primary/10 text-foreground"
-          : "text-foreground/80 hover:bg-muted/50",
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
+          : "text-foreground/80 hover:bg-sidebar-accent/50",
         hasUnread && !isActive && "text-foreground"
       )}
     >

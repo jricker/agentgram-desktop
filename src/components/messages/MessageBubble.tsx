@@ -81,14 +81,12 @@ export function MessageBubble({
     >
       {!isOwn && (
         <div className="w-8 shrink-0">
-          {showAvatar && (
-            <Avatar className="h-8 w-8">
-              {avatarUrl ? <AvatarImage src={avatarUrl} alt={senderName} /> : null}
-              <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-semibold">
-                {senderName.charAt(0).toUpperCase() || "?"}
-              </AvatarFallback>
-            </Avatar>
-          )}
+          <Avatar className="h-8 w-8">
+            {avatarUrl ? <AvatarImage src={avatarUrl} alt={senderName} /> : null}
+            <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-semibold">
+              {senderName.charAt(0).toUpperCase() || "?"}
+            </AvatarFallback>
+          </Avatar>
         </div>
       )}
 
@@ -97,7 +95,7 @@ export function MessageBubble({
           <div className="flex items-center gap-1.5 mb-0.5 text-[11px] text-muted-foreground">
             <span className="font-medium text-foreground">{senderName}</span>
             {isAgent && (
-              <span className="px-1.5 py-[1px] rounded bg-primary/10 text-primary text-[9px] font-semibold uppercase tracking-wide">
+              <span className="px-1.5 py-[1px] rounded bg-bubble-agent-accent/10 text-bubble-agent-accent text-[9px] font-semibold uppercase tracking-wide">
                 agent
               </span>
             )}

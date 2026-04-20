@@ -153,7 +153,7 @@ function LeftRail({
 
   return (
     <nav
-      className="flex flex-col w-14 shrink-0 border-r border-border bg-card py-3 items-center justify-between"
+      className="flex flex-col w-14 shrink-0 border-r border-sidebar-border bg-sidebar py-3 items-center justify-between"
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       {/* Top: main nav */}
@@ -297,8 +297,8 @@ function RailButton({
       className={cn(
         "relative flex items-center justify-center w-10 h-10 rounded-lg transition-colors",
         active
-          ? "bg-primary/15 text-primary"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+          ? "bg-sidebar-accent text-sidebar-primary"
+          : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
       )}
     >
       <Icon className="w-5 h-5" />

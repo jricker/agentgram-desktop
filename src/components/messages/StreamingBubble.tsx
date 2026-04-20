@@ -43,7 +43,7 @@ export function StreamingBubble({ stream }: { stream: ActiveStream }) {
           </span>
         </div>
 
-        <div className="rounded-2xl rounded-bl-sm bg-muted px-3.5 py-2 text-sm text-foreground">
+        <div className="rounded-2xl rounded-bl-sm bg-bubble-agent text-bubble-agent-foreground ring-1 ring-bubble-agent-accent/20 px-3.5 py-2 text-sm">
           <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Icon className={cn("h-3 w-3", animated && "animate-pulse")} />
             <span>{label}</span>
