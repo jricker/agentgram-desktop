@@ -9,8 +9,6 @@ import {
   Sun,
   Moon,
   Monitor,
-  BookOpen,
-  Code,
   LogOut,
 } from "lucide-react";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
@@ -31,10 +29,9 @@ import { Profile } from "./Profile";
 
 type View = "chat" | "tasks" | "agents";
 
-const DOCS_URL = "https://github.com/jricker/AgentGram";
-
 /** Open a URL in the system browser via Tauri's shell plugin, falling back
- *  to window.open if the plugin isn't available (dev/preview). */
+ *  to window.open if the plugin isn't available (dev/preview). Used by the
+ *  Templates + Canvas rail buttons which point at the web equivalents. */
 function openExternal(url: string) {
   tauriOpen(url).catch(() => window.open(url, "_blank"));
 }
@@ -239,18 +236,6 @@ function LeftRail({
           label={`Theme: ${themePreference} (now ${resolvedTheme})`}
           active={false}
           onClick={cycleTheme}
-        />
-        <RailButton
-          icon={BookOpen}
-          label="Documentation — opens in browser"
-          active={false}
-          onClick={() => openExternal(DOCS_URL)}
-        />
-        <RailButton
-          icon={Code}
-          label="Backend API — opens in browser"
-          active={false}
-          onClick={() => openExternal(webBase)}
         />
 
         {/* Profile avatar */}
