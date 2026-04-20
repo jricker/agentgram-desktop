@@ -4,6 +4,7 @@ import { useChatStore } from "../stores/chatStore";
 import { usePresenceStore } from "../stores/presenceStore";
 import { useStreamingStore } from "../stores/streamingStore";
 import { useTaskStore } from "../stores/taskStore";
+import { useAgentStore } from "../stores/agentStore";
 import { ws } from "../services/websocket";
 
 /**
@@ -78,6 +79,10 @@ export function useWebSocket() {
     useChatStore.getState().fetchConversations();
     useChatStore.getState().fetchUnreadCounts();
     useTaskStore.getState().fetchTasks();
+    // fetchAgents seeds the rail's N/M online chip so the Agents button
+    // shows its count from first paint instead of only after the user
+    // visits the Agents tab. Matches web's useWebSocket behaviour.
+    useAgentStore.getState().fetchAgents();
 
     return () => {
       unsubReconnect();
