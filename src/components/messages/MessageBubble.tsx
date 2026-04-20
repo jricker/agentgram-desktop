@@ -58,24 +58,65 @@ export function MessageBubble({
     );
   });
 
-  // Full-width card messages (tasks + status lifecycle updates) render
-  // outside a chat bubble so the card styling (coloured border, expandable
-  // sections) stays visible. Still support right-click.
+  // Card messages (tasks + status lifecycle updates) reuse the same
+  // avatar + sender header scaffold as regular bubbles but drop the
+  // bubble background — the card supplies its own coloured border and
+  // background. Width-capped at 70% so these don't bleed edge-to-edge
+  // like they used to (matches web/src/components/MessageBubble.tsx:77).
   if (isTask || isStatusUpdate) {
     return (
       <div
-        className={cn("px-4", showAvatar ? "mt-3" : "mt-0.5")}
+        className={cn(
+          "flex gap-2 px-4",
+          isOwn ? "justify-end" : "justify-start",
+          showAvatar ? "mt-3" : "mt-0.5"
+        )}
         onContextMenu={(e) => {
           if (!onContextMenu) return;
           e.preventDefault();
           onContextMenu(message, e);
         }}
       >
-        {isTask ? (
-          <TaskMessage message={message} />
-        ) : (
-          <StatusUpdateMessage message={message} />
+        {!isOwn && (
+          <div className="w-8 shrink-0 flex flex-col justify-end">
+            {showAvatar ? (
+              <Avatar className="h-8 w-8">
+                {avatarUrl ? <AvatarImage src={avatarUrl} alt={senderName} /> : null}
+                <AvatarFallback className="bg-primary/10 text-primary text-[11px] font-semibold">
+                  {senderName.charAt(0).toUpperCase() || "?"}
+                </AvatarFallback>
+              </Avatar>
+            ) : null}
+          </div>
         )}
+        <div className={cn("min-w-0 max-w-[70%]", isOwn ? "items-end" : "items-start")}>
+          {!isOwn && showSenderName && (
+            <div className="mb-0.5 px-1">
+              <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                {senderName}
+                {isAgent && (
+                  <span className="inline-flex items-center gap-1 rounded bg-bubble-agent-accent/10 px-1.5 py-0.5 text-[10px] font-bold text-bubble-agent-accent">
+                    <Bot className="h-3 w-3" />
+                    Agent
+                  </span>
+                )}
+              </span>
+              {modelLabel && (
+                <span className="block font-mono text-[10px] text-muted-foreground/70">
+                  {modelLabel}
+                </span>
+              )}
+            </div>
+          )}
+          {isTask ? (
+            <TaskMessage message={message} />
+          ) : (
+            <StatusUpdateMessage message={message} />
+          )}
+          <span className="mt-0.5 block px-1 text-[10px] text-muted-foreground">
+            {formatClockTime(message.insertedAt)}
+          </span>
+        </div>
       </div>
     );
   }
