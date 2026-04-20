@@ -575,6 +575,9 @@ export interface CanvasDefinitionSummary {
   isPublished: boolean;
   insertedAt: string;
   updatedAt: string;
+  /** Full JSON definition — only populated on `getCanvasDefinition(id)`,
+   *  omitted from the list endpoint's payload. */
+  definition?: Record<string, unknown>;
 }
 export interface Skill {
   id: string;

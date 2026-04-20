@@ -59,6 +59,16 @@
   --color-danger: var(--color-danger);
   --color-danger-light: var(--color-danger-light);
 
+  /* Chat bubble tokens (own / other-human / agent) — previously not exposed
+   * to Tailwind here, so `bg-bubble-agent` etc. silently fell through. */
+  --color-bubble-own: var(--color-bubble-own);
+  --color-bubble-own-foreground: var(--color-bubble-own-foreground);
+  --color-bubble-other: var(--color-bubble-other);
+  --color-bubble-other-foreground: var(--color-bubble-other-foreground);
+  --color-bubble-agent: var(--color-bubble-agent);
+  --color-bubble-agent-foreground: var(--color-bubble-agent-foreground);
+  --color-bubble-agent-accent: var(--color-bubble-agent-accent);
+
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);

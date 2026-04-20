@@ -11,7 +11,6 @@ import {
   Monitor,
   LogOut,
 } from "lucide-react";
-import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { cn } from "../lib/utils";
 import { useWebSocket } from "../hooks/useWebSocket";
 import { useChatStore } from "../stores/chatStore";
@@ -20,21 +19,15 @@ import { useAgentStore } from "../stores/agentStore";
 import { useTaskStore, countActiveTasks } from "../stores/taskStore";
 import { usePresenceStore } from "../stores/presenceStore";
 import { useThemeStore } from "../stores/themeStore";
-import { getApiUrl } from "../lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dashboard } from "./Dashboard";
 import { MessagesView } from "./messages/MessagesView";
 import { TasksView } from "./tasks/TasksView";
+import { TemplatesView } from "./templates/TemplatesView";
+import { CanvasView } from "./canvas/CanvasView";
 import { Profile } from "./Profile";
 
-type View = "chat" | "tasks" | "agents";
-
-/** Open a URL in the system browser via Tauri's shell plugin, falling back
- *  to window.open if the plugin isn't available (dev/preview). Used by the
- *  Templates + Canvas rail buttons which point at the web equivalents. */
-function openExternal(url: string) {
-  tauriOpen(url).catch(() => window.open(url, "_blank"));
-}
+type View = "chat" | "tasks" | "agents" | "templates" | "canvas";
 
 export function AppShell() {
   const [view, setView] = useState<View>("chat");
@@ -72,6 +65,10 @@ export function AppShell() {
         <MessagesView />
       ) : view === "tasks" ? (
         <TasksView onOpenConversation={handleOpenConversation} />
+      ) : view === "templates" ? (
+        <TemplatesView />
+      ) : view === "canvas" ? (
+        <CanvasView />
       ) : (
         <Dashboard />
       )}
@@ -150,10 +147,6 @@ function LeftRail({
     else setPreference("system");
   };
 
-  // Templates and Canvas aren't native views in desktop yet — open the web
-  // equivalent in the system browser for now. Same base URL as the API.
-  const webBase = getApiUrl();
-
   const handleLogout = () => {
     if (confirm("Sign out?")) logout();
   };
@@ -204,15 +197,15 @@ function LeftRail({
         />
         <RailButton
           icon={FileText}
-          label="Templates — opens in browser"
-          active={false}
-          onClick={() => openExternal(`${webBase}/templates`)}
+          label="Templates"
+          active={view === "templates"}
+          onClick={() => onChange("templates")}
         />
         <RailButton
           icon={LayoutDashboard}
-          label="Canvas — opens in browser"
-          active={false}
-          onClick={() => openExternal(`${webBase}/canvas`)}
+          label="Canvas"
+          active={view === "canvas"}
+          onClick={() => onChange("canvas")}
         />
       </div>
 

@@ -127,8 +127,10 @@ export function MessageBubble({
           className={cn(
             "rounded-2xl px-3.5 py-2 text-sm break-words",
             isOwn
-              ? "bg-primary text-primary-foreground rounded-br-sm"
-              : "bg-muted text-foreground rounded-bl-sm",
+              ? "bg-bubble-own text-bubble-own-foreground rounded-br-sm"
+              : isAgent
+                ? "bg-bubble-agent text-bubble-agent-foreground ring-1 ring-bubble-agent-accent/20 rounded-bl-sm"
+                : "bg-bubble-other text-bubble-other-foreground rounded-bl-sm",
             message.pending && "opacity-60"
           )}
         >
