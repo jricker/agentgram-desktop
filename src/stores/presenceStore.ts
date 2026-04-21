@@ -108,6 +108,25 @@ export const usePresenceStore = create<PresenceState>((set) => {
         })
       );
 
+      // Agents go online/offline via the user channel — they never show up in
+       // a conversation's presence roster (bridge processes aren't Phoenix
+       // sockets). Without this handler the Chats presence dot is frozen at
+       // whatever state the conversation load initially reported.
+      unsubs.push(
+        ws.on("agent_status_changed", (payload) => {
+          const agentId = payload.agentId as string | undefined;
+          if (!agentId) return;
+          const isOnline = Boolean(payload.online);
+          set((s) => {
+            if (isOnline === s.online.has(agentId)) return s;
+            const next = new Set(s.online);
+            if (isOnline) next.add(agentId);
+            else next.delete(agentId);
+            return { online: next };
+          });
+        })
+      );
+
       unsubs.push(
         ws.on("conv:typing_indicator", (payload) => {
           const convId = payload._conversationId as string;

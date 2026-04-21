@@ -4,6 +4,30 @@ import type { Conversation, Message } from "../lib/api";
 import { ws } from "../services/websocket";
 import { useAuthStore } from "./authStore";
 import { useStreamingStore } from "./streamingStore";
+import { usePresenceStore } from "./presenceStore";
+
+// Seed the shared online-set from `conversation.members[].participant.online`
+// — but only for *humans*. Human presence is tracked through a live Phoenix
+// socket, so the flag is trustworthy. Agent "online" on the REST payload
+// comes from the ExecutorRegistry and can be stale for ~60-90s after a
+// bridge crash / desktop quit; trusting it paints a green dot for an agent
+// that isn't actually running. Agents get their online state exclusively
+// from the `agent_status_changed` WS event stream in the presence store.
+function seedOnlineFromConversations(convos: Conversation[]) {
+  const ids: string[] = [];
+  for (const c of convos) {
+    for (const m of c.members ?? []) {
+      if (m.participant?.type === "agent") continue;
+      if (m.participant?.online) ids.push(m.participantId);
+    }
+  }
+  if (ids.length === 0) return;
+  usePresenceStore.setState((s) => {
+    const next = new Set(s.online);
+    ids.forEach((id) => next.add(id));
+    return { online: next };
+  });
+}
 
 const PENDING_PREFIX = "pending-";
 
@@ -134,6 +158,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const convos = await api.listConversations("personal");
       set({ conversations: sortConversations(convos) });
+      seedOnlineFromConversations(convos);
     } finally {
       set({ conversationsLoading: false });
     }
@@ -147,6 +172,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agentConversations: sortConversations(convos),
         agentConversationsLoaded: true,
       });
+      seedOnlineFromConversations(convos);
     } finally {
       set({ agentConversationsLoading: false });
     }
@@ -163,6 +189,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         pendingConversation:
           s.pendingConversation?.id === id ? { ...s.pendingConversation, ...conv } : s.pendingConversation,
       }));
+      seedOnlineFromConversations([conv]);
     } catch (e) {
       console.warn(`[chat] refreshConversation(${id}) failed`, e);
     }

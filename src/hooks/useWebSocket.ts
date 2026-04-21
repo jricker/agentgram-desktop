@@ -34,6 +34,7 @@ export function useWebSocket() {
     const unsubPresence = usePresenceStore.getState().initWsListeners();
     const unsubStreaming = useStreamingStore.getState().initWsListeners();
     const unsubTasks = useTaskStore.getState().initWsListeners();
+    const unsubAgents = useAgentStore.getState().initWsListeners();
 
     // Re-join whichever conversation is currently open whenever the socket
     // comes up. Fixes a missed-message bug where `disconnect()` clears the
@@ -79,10 +80,23 @@ export function useWebSocket() {
     useChatStore.getState().fetchConversations();
     useChatStore.getState().fetchUnreadCounts();
     useTaskStore.getState().fetchTasks();
-    // fetchAgents seeds the rail's N/M online chip so the Agents button
-    // shows its count from first paint instead of only after the user
-    // visits the Agents tab. Matches web's useWebSocket behaviour.
-    useAgentStore.getState().fetchAgents();
+    // Agents bootstrap sequence:
+    //   1. refreshProcessStatuses — populate local `processStatus` from Rust
+    //      so we know which bridges are actually running on this machine.
+    //   2. fetchAgents — pull the backend's view (may include stale
+    //      `online: true` from last session's ExecutorRegistry entries).
+    //   3. reconcileStaleExecutors — any agent the server thinks is online
+    //      that has no local bridge is stale; call markAgentOffline. The
+    //      backend then broadcasts `agent_status_changed online: false`,
+    //      which the presence store applies to clear any leftover green dots.
+    const agentStore = useAgentStore.getState();
+    agentStore
+      .refreshProcessStatuses()
+      .then(() => agentStore.fetchAgents())
+      .then(() => agentStore.reconcileStaleExecutors())
+      .catch((e) =>
+        console.warn("[useWebSocket] agent bootstrap failed", e)
+      );
 
     return () => {
       unsubReconnect();
@@ -90,6 +104,7 @@ export function useWebSocket() {
       unsubPresence();
       unsubStreaming();
       unsubTasks();
+      unsubAgents();
       ws.disconnect();
     };
   }, [token, participantId]);

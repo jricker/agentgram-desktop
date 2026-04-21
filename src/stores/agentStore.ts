@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import * as api from "../lib/api";
 import { providerRequiresLlmKey } from "../lib/models";
 import { useLlmKeyStore } from "./llmKeyStore";
+import { ws } from "../services/websocket";
 
 interface AgentConfig {
   backend: string;
@@ -197,6 +198,13 @@ interface AgentState {
   }) => Promise<string>;
   regenerateKey: (id: string) => Promise<string>;
   refreshProcessStatuses: () => Promise<void>;
+  /** Subscribe to WS events that mutate agent state (online toggle,
+   *  health updates). Returns an unsub. */
+  initWsListeners: () => () => void;
+  /** On fresh desktop boot, mark any own-agent offline whose bridge isn't
+   *  running locally but which the backend still thinks is online — a
+   *  stale executor entry from a prior session. */
+  reconcileStaleExecutors: () => Promise<void>;
 }
 
 const DEFAULT_CONFIG: AgentConfig = {
@@ -286,6 +294,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
 
       set({ agents: updated, loading: false });
+
+      // Don't seed presenceStore from `agent.online` here — that flag comes
+      // from the backend's ExecutorRegistry, which can carry stale state
+      // for ~60-90s after a bridge crash / ungraceful desktop quit. Let
+      // the `agent_status_changed` WS stream drive the green dots. For our
+      // *own* agents where the backend claims online=true but we know we
+      // have no local bridge running, reconcileStaleExecutors (called from
+      // useWebSocket after refreshProcessStatuses) proactively clears it.
     } catch (e) {
       console.error("fetchAgents failed:", e);
       set({
@@ -698,6 +714,61 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       saveApiKey(id, result.apiKey);
     }
     return result.apiKey;
+  },
+
+  initWsListeners: () => {
+    const unsubs: Array<() => void> = [];
+
+    // Backend pushes `agent_status_changed` on the user channel whenever an
+    // agent's WS executor presence flips. Mirror it into `agent.online` so
+    // the Agents rail chip + per-agent dots reflect reality in real time.
+    unsubs.push(
+      ws.on("agent_status_changed", (payload) => {
+        const agentId = payload.agentId as string | undefined;
+        if (!agentId) return;
+        const isOnline = Boolean(payload.online);
+        set((s) => {
+          const managed = s.agents[agentId];
+          if (!managed || managed.agent.online === isOnline) return s;
+          return {
+            agents: {
+              ...s.agents,
+              [agentId]: {
+                ...managed,
+                agent: { ...managed.agent, online: isOnline },
+              },
+            },
+          };
+        });
+      })
+    );
+
+    return () => unsubs.forEach((u) => u());
+  },
+
+  reconcileStaleExecutors: async () => {
+    const managed = Object.values(get().agents);
+    const stale = managed.filter(
+      (m) => m.agent.online === true && m.processStatus === "stopped"
+    );
+    if (stale.length === 0) return;
+    console.log(
+      `[agentStore] Reconciling ${stale.length} stale executor(s): ${stale
+        .map((m) => m.agent.displayName)
+        .join(", ")}`
+    );
+    await Promise.all(
+      stale.map((m) =>
+        api
+          .markAgentOffline(m.agent.id)
+          .catch((e) =>
+            console.warn(
+              `[agentStore] markAgentOffline(${m.agent.id}) failed`,
+              e
+            )
+          )
+      )
+    );
   },
 
   refreshProcessStatuses: async () => {
