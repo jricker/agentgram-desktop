@@ -298,7 +298,7 @@ function RailButton({
         "relative flex items-center justify-center w-10 h-10 rounded-lg transition-colors",
         active
           ? "bg-sidebar-accent text-sidebar-primary"
-          : "text-sidebar-foreground/60 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          : "text-foreground/80 hover:bg-sidebar-accent/60 hover:text-foreground"
       )}
     >
       <Icon className="w-5 h-5" />
