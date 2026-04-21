@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  MessageSquare,
+  MessageCircle,
   Bot,
   User,
   Zap,
@@ -162,7 +162,7 @@ function LeftRail({
         className="flex flex-col gap-1 items-center"
       >
         <RailButton
-          icon={MessageSquare}
+          icon={MessageCircle}
           label="Chat"
           active={view === "chat"}
           onClick={() => onChange("chat")}
