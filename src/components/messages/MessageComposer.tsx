@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Paperclip, Send, X, Image as ImageIcon, FileIcon, Loader2 } from "lucide-react";
+import {
+  COMPOSER_PLACEHOLDER,
+  COMPOSER_PLACEHOLDER_IMAGE,
+  COMPOSER_PLACEHOLDER_FILE,
+} from "../../lib/uiStrings";
 import { useChatStore } from "../../stores/chatStore";
 import { useAgentStore } from "../../stores/agentStore";
 import { useAuthStore } from "../../stores/authStore";
@@ -319,6 +324,7 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
             disabled={uploading || attachment != null}
             title="Attach file"
             type="button"
+            className="text-muted-foreground"
           >
             <Paperclip className="w-4 h-4" />
           </Button>
@@ -331,7 +337,13 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
             onKeyUp={handleSelectionChange}
             onClick={handleSelectionChange}
             onPaste={handlePaste}
-            placeholder={attachment ? "Add a caption…" : "Message…"}
+            placeholder={
+              attachment
+                ? attachment.isImage
+                  ? COMPOSER_PLACEHOLDER_IMAGE
+                  : COMPOSER_PLACEHOLDER_FILE
+                : COMPOSER_PLACEHOLDER
+            }
             rows={1}
             className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
             style={{ maxHeight: MAX_HEIGHT }}

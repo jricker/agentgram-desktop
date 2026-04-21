@@ -276,19 +276,28 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  // Autoscroll: always on conversation switch; on new messages only if the
-  // user was already near the bottom (don't yank them away from history).
+  // Autoscroll — matches web's ChatView behavior:
+  //   - Conversation switch: always jump to bottom (instant).
+  //   - New message while pinned to bottom: smooth scroll down.
+  //   - Streaming chunk while pinned to bottom: smooth scroll down so the
+  //     in-progress bubble stays visible as content grows. Without this,
+  //     the bubble renders off-screen and feels "late" until the final
+  //     message arrives and the messages-length effect fires.
+  // Both branches respect `nearBottom` so a user who scrolled up to read
+  // history isn't yanked back down.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     const convChanged = prevConvIdRef.current !== conversationId;
     const newMessages = messages.length > prevLengthRef.current;
-    if (convChanged || (newMessages && nearBottom)) {
+    if (convChanged) {
       el.scrollTop = el.scrollHeight;
+    } else if ((newMessages || stream) && nearBottom) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
     prevLengthRef.current = messages.length;
     prevConvIdRef.current = conversationId;
-  }, [conversationId, messages.length, nearBottom]);
+  }, [conversationId, messages.length, nearBottom, stream]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;

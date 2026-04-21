@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, Info, SquarePen, Bot } from "lucide-react";
+import { MessageSquare, ChevronRight, SquarePen, Bot } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
@@ -12,6 +12,7 @@ import { MessageComposer } from "./MessageComposer";
 import { ConversationDetailsPanel } from "./ConversationDetailsPanel";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { ChatHeaderMenu } from "./ChatHeaderMenu";
+import { GroupAvatar } from "./GroupAvatar";
 
 const DETAILS_KEY = "agentchat:showDetails";
 const ACTIVE_TAB_KEY = "agentchat:messagesTab";
@@ -97,7 +98,7 @@ export function MessagesView() {
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
         <div
-          className="px-4 py-3 border-b border-border flex items-center justify-between"
+          className="h-14 shrink-0 px-4 border-b border-border flex items-center justify-between"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >
           <h2 className="text-sm font-semibold text-foreground">Messages</h2>
@@ -183,12 +184,16 @@ function ActiveConversation({
 
   const online = usePresenceStore((s) => s.online);
 
-  const otherParticipant = useMemo(
+  // Match web's ChatView header — show a stacked GroupAvatar for group
+  // conversations or whenever there's more than one other participant.
+  const otherMembers = useMemo(
     () =>
-      (conversation?.members ?? []).find((m) => m.participantId !== myId)
-        ?.participant,
+      (conversation?.members ?? []).filter((m) => m.participantId !== myId),
     [conversation, myId]
   );
+  const showGroupAvatar =
+    conversation?.type === "group" || otherMembers.length >= 2;
+  const otherParticipant = otherMembers[0]?.participant;
 
   const headerTitle =
     conversation?.title ||
@@ -223,25 +228,30 @@ function ActiveConversation({
   return (
     <>
       <header
-        className="px-4 py-3 border-b border-border bg-card flex items-center gap-3"
+        className="h-14 shrink-0 px-4 border-b border-border bg-card flex items-center gap-3"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
         <button
           type="button"
           onClick={onToggleDetails}
-          title="Conversation details"
-          className="flex items-center gap-3 min-w-0 flex-1 rounded-md px-1 py-0.5 hover:bg-muted/50 text-left transition-colors"
+          aria-pressed={showDetails}
+          title={showDetails ? "Hide details" : "Show conversation details"}
+          className="group/header flex items-center gap-3 min-w-0 flex-1 rounded-md px-1 py-1 -ml-1 hover:bg-accent/50 text-left transition-colors"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          <Avatar className="h-8 w-8 shrink-0">
-            {otherParticipant?.avatarUrl ? (
-              <AvatarImage src={otherParticipant.avatarUrl} alt={headerTitle} />
-            ) : null}
-            <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-              {headerTitle.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
+          {showGroupAvatar && otherMembers.length > 0 ? (
+            <GroupAvatar members={otherMembers} size={36} />
+          ) : (
+            <Avatar className="h-9 w-9 shrink-0">
+              {otherParticipant?.avatarUrl ? (
+                <AvatarImage src={otherParticipant.avatarUrl} alt={headerTitle} />
+              ) : null}
+              <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                {headerTitle.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          )}
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold truncate">{headerTitle}</p>
             {presenceLine && (
               <p className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -252,22 +262,7 @@ function ActiveConversation({
               </p>
             )}
           </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={onToggleDetails}
-          title={showDetails ? "Hide details" : "Show details"}
-          aria-pressed={showDetails}
-          className={cn(
-            "rounded-md p-1.5 transition-colors shrink-0",
-            showDetails
-              ? "bg-primary/10 text-primary"
-              : "text-muted-foreground hover:bg-muted hover:text-foreground"
-          )}
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <Info className="h-4 w-4" />
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover/header:text-muted-foreground group-hover/header:translate-x-0.5" />
         </button>
 
         {conversation && (

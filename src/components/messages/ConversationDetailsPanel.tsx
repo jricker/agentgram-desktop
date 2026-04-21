@@ -50,7 +50,26 @@ export function ConversationDetailsPanel({
   );
 
   const isAdmin = conversation.createdBy === currentUserId;
-  const members = conversation.members ?? [];
+  const rawMembers = conversation.members ?? [];
+
+  // Match web's ConversationDetailsPanel: current user first, then humans
+  // (alphabetical by displayName), then agents (alphabetical). Without this
+  // the panel renders whatever order the backend returned, which can differ
+  // between platforms whenever members are added in different sequences.
+  const members = useMemo(() => {
+    const score = (m: ConversationMember): number => {
+      if (m.participantId === currentUserId) return 0;
+      return m.participant?.type === "agent" ? 2 : 1;
+    };
+    return [...rawMembers].sort((a, b) => {
+      const sa = score(a);
+      const sb = score(b);
+      if (sa !== sb) return sa - sb;
+      const na = a.participant?.displayName ?? "";
+      const nb = b.participant?.displayName ?? "";
+      return na.localeCompare(nb);
+    });
+  }, [rawMembers, currentUserId]);
 
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(conversation.title ?? "");
@@ -137,8 +156,9 @@ export function ConversationDetailsPanel({
 
   return (
     <aside className="flex h-full w-80 shrink-0 flex-col border-l border-border bg-card">
-      {/* Header */}
-      <div className="flex h-12 items-center justify-between border-b border-border px-4 shrink-0">
+      {/* Header — h-14 to line up with the sidebar's Messages header and the
+          conversation header across the three vertical columns. */}
+      <div className="flex h-14 items-center justify-between border-b border-border px-4 shrink-0">
         <h3 className="text-sm font-semibold">Details</h3>
         <button
           onClick={onClose}
