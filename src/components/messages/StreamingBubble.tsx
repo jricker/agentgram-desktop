@@ -38,7 +38,7 @@ export function StreamingBubble({ stream }: { stream: ActiveStream }) {
       <div className="flex max-w-[72%] flex-col">
         <div className="mb-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
           <span className="font-medium text-foreground">{stream.senderName}</span>
-          <span className="px-1.5 py-[1px] rounded bg-primary/10 text-primary text-[9px] font-semibold uppercase tracking-wide">
+          <span className="px-1.5 py-[1px] rounded bg-bubble-agent-accent/10 text-bubble-agent-accent text-[9px] font-semibold uppercase tracking-wide">
             agent
           </span>
         </div>
