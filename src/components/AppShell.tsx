@@ -174,7 +174,7 @@ function LeftRail({
           active={view === "tasks"}
           onClick={() => onChange("tasks")}
           badge={activeTaskCount > 0 ? activeTaskCount : undefined}
-          badgeColor="orange"
+          badgeColor="destructive"
         />
         <RailButton
           icon={Bot}
@@ -277,15 +277,15 @@ function RailButton({
   active: boolean;
   onClick: () => void;
   badge?: number;
-  badgeColor?: "primary" | "orange";
+  badgeColor?: "primary" | "destructive";
   /** Free-form badge content (e.g. coloured "3/10" for agent online count).
    *  Ignored when `badge` is set. Rendered as a small chip pinned to the
    *  bottom-center of the icon so vertical rhythm of the rail is preserved. */
   textBadge?: React.ReactNode;
 }) {
   const badgeClass =
-    badgeColor === "orange"
-      ? "bg-warning text-white"
+    badgeColor === "destructive"
+      ? "bg-destructive text-destructive-foreground"
       : "bg-primary text-primary-foreground";
   return (
     <button
