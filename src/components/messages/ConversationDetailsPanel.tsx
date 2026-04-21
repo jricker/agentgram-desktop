@@ -52,14 +52,17 @@ export function ConversationDetailsPanel({
   const isAdmin = conversation.createdBy === currentUserId;
   const rawMembers = conversation.members ?? [];
 
-  // Match web's ConversationDetailsPanel: current user first, then humans
-  // (alphabetical by displayName), then agents (alphabetical). Without this
-  // the panel renders whatever order the backend returned, which can differ
-  // between platforms whenever members are added in different sequences.
+  // Stable, predictable member order, matched across web/desktop/mobile:
+  //   self → online humans → online agents → offline humans → offline agents
+  // Alphabetical by displayName within each tier. Keeps offline members
+  // from hogging the top of long lists.
   const members = useMemo(() => {
     const score = (m: ConversationMember): number => {
       if (m.participantId === currentUserId) return 0;
-      return m.participant?.type === "agent" ? 2 : 1;
+      const isOnline = online.has(m.participantId);
+      const isAgent = m.participant?.type === "agent";
+      // 1-2: online (human=1, agent=2); 3-4: offline (human=3, agent=4)
+      return (isOnline ? 0 : 2) + (isAgent ? 2 : 1);
     };
     return [...rawMembers].sort((a, b) => {
       const sa = score(a);
@@ -69,7 +72,7 @@ export function ConversationDetailsPanel({
       const nb = b.participant?.displayName ?? "";
       return na.localeCompare(nb);
     });
-  }, [rawMembers, currentUserId]);
+  }, [rawMembers, currentUserId, online]);
 
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(conversation.title ?? "");
