@@ -836,12 +836,15 @@ function AvatarBlock({
               onClick={() => avatarInputRef.current?.click()}
               disabled={uploading}
               title={hasCustomAvatar ? "Change photo" : "Upload photo"}
-              className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow ring-2 ring-background hover:bg-primary/90 disabled:opacity-60"
+              // Poke outside the avatar bounding box so the GroupAvatar's
+              // bottom-right member tile can't cover the camera control.
+              // z-10 keeps it above any stacked tiles.
+              className="absolute -bottom-1 -right-1 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background hover:bg-primary/90 disabled:opacity-60"
             >
               {uploading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <Camera className="h-3.5 w-3.5" />
+                <Camera className="h-4 w-4" />
               )}
             </button>
           </>
