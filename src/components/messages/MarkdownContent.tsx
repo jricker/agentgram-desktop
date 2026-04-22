@@ -14,7 +14,11 @@ const components: Components = {
       {children}
     </a>
   ),
-  p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+  // Paragraph margin roughly matches one line of body text so a `\n\n`
+  // (user hitting shift+enter twice, or an agent's natural paragraph
+  // break) renders as a visible blank line. Smaller margins like `mb-1`
+  // collapse `\n\n` to look like a single `\n`.
+  p: ({ children }) => <p className="mb-[1.25em] last:mb-0">{children}</p>,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   blockquote: ({ children }) => (
     <blockquote className="border-l-2 border-current/30 pl-2 opacity-85">
