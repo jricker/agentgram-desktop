@@ -836,10 +836,10 @@ function AvatarBlock({
               onClick={() => avatarInputRef.current?.click()}
               disabled={uploading}
               title={hasCustomAvatar ? "Change photo" : "Upload photo"}
-              // Poke outside the avatar bounding box so the GroupAvatar's
-              // bottom-right member tile can't cover the camera control.
-              // z-10 keeps it above any stacked tiles.
-              className="absolute -bottom-1 -right-1 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background hover:bg-primary/90 disabled:opacity-60"
+              // Poke outside the avatar bounding box and stack above the
+              // GroupAvatar's overflow tile (which uses z-30 on web +
+              // desktop). z-40 on the camera is enough to beat it.
+              className="absolute -bottom-1 -right-1 z-40 flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md ring-2 ring-background hover:bg-primary/90 disabled:opacity-60"
             >
               {uploading ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
