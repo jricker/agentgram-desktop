@@ -5,6 +5,7 @@ import { usePresenceStore } from "../stores/presenceStore";
 import { useStreamingStore } from "../stores/streamingStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useAgentStore } from "../stores/agentStore";
+import { useMemoryStore } from "../stores/memoryStore";
 import { ws } from "../services/websocket";
 
 /**
@@ -35,6 +36,7 @@ export function useWebSocket() {
     const unsubStreaming = useStreamingStore.getState().initWsListeners();
     const unsubTasks = useTaskStore.getState().initWsListeners();
     const unsubAgents = useAgentStore.getState().initWsListeners();
+    const unsubMemory = useMemoryStore.getState().initWsListeners();
 
     // Re-join whichever conversation is currently open whenever the socket
     // comes up. Fixes a missed-message bug where `disconnect()` clears the
@@ -105,6 +107,7 @@ export function useWebSocket() {
       unsubStreaming();
       unsubTasks();
       unsubAgents();
+      unsubMemory();
       ws.disconnect();
     };
   }, [token, participantId]);

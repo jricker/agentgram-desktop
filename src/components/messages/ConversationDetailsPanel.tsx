@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useAgentStore } from "../../stores/agentStore";
+import { useMemoryStore } from "../../stores/memoryStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,9 +16,23 @@ import {
   Trash2,
   LogOut,
   Eraser,
+  Brain,
+  FileText,
+  Info,
+  CheckSquare,
+  HelpCircle,
+  Users,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
 } from "lucide-react";
 import { cn, getInitials } from "../../lib/utils";
-import type { Conversation, ConversationMember } from "../../lib/api";
+import type {
+  Conversation,
+  ConversationMember,
+  ConversationMemory,
+  ParticipantContextEntry,
+} from "../../lib/api";
 
 interface Props {
   conversation: Conversation;
@@ -39,6 +54,18 @@ export function ConversationDetailsPanel({
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const leaveConversation = useChatStore((s) => s.leaveConversation);
   const clearChatLocal = useChatStore((s) => s.clearChatLocal);
+
+  // Conversation memory — the summary agents see on entry + the periodic
+  // MemoryAutoSummaryWorker output. Fetched on open; WS `memory_updated`
+  // keeps it live afterwards (wired in memoryStore.initWsListeners).
+  const memoryEntry = useMemoryStore((s) => s.memories[conversation.id]);
+  const memoryLoading = useMemoryStore(
+    (s) => s.loading[conversation.id] ?? false
+  );
+  const fetchMemory = useMemoryStore((s) => s.fetchMemory);
+  useEffect(() => {
+    if (!memoryEntry) fetchMemory(conversation.id);
+  }, [conversation.id, memoryEntry, fetchMemory]);
 
   // Desktop's agent store is a Record<id, ManagedAgent>. Memoize the
   // flattened list so the selector returns a stable reference until the
@@ -219,12 +246,14 @@ export function ConversationDetailsPanel({
           </p>
         </div>
 
-        {/* Members */}
+        {/* Members — capped to ~5 rows so a long roster doesn't push Memory
+            and the danger-zone buttons off-screen. Scrolls internally when
+            overflowing. */}
         <div className="px-4 py-3">
           <h4 className="mb-2 text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
             Members
           </h4>
-          <ul className="space-y-0.5">
+          <ul className="max-h-60 overflow-y-auto space-y-0.5 pr-1">
             {members.map((m) => (
               <MemberRow
                 key={m.participantId}
@@ -306,6 +335,13 @@ export function ConversationDetailsPanel({
             </div>
           )}
         </div>
+
+        {/* Memory — same summary agents see on entry; auto-refreshed by the
+            MemoryAutoSummaryWorker on the backend. */}
+        <MemorySection
+          entry={memoryEntry}
+          loading={memoryLoading}
+        />
 
         {/* Clear chat — local-only (server history stays) */}
         <div className="border-t border-border px-4 py-3">
@@ -435,5 +471,239 @@ function MemberRow({
         </button>
       )}
     </li>
+  );
+}
+
+function MemorySection({
+  entry,
+  loading,
+}: {
+  entry: { memory: ConversationMemory; version: number } | undefined;
+  loading: boolean;
+}) {
+  const memory = entry?.memory;
+  const hasAnything =
+    !!memory &&
+    (!!memory.summary ||
+      !!memory.currentState ||
+      (memory.keyDecisions?.length ?? 0) > 0 ||
+      (memory.openQuestions?.length ?? 0) > 0 ||
+      (memory.completedWork?.length ?? 0) > 0 ||
+      Object.keys(memory.participantsContext ?? {}).length > 0);
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex items-center gap-2 px-4 pt-3 pb-2">
+        <Brain className="h-3.5 w-3.5 text-primary" />
+        <h4 className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+          Memory
+        </h4>
+      </div>
+
+      {loading && !memory ? (
+        <div className="flex items-center justify-center py-6">
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        </div>
+      ) : !hasAnything ? (
+        <p className="px-4 pb-4 text-xs text-muted-foreground">
+          No memory yet. The summary builds as agents and humans exchange
+          messages; it'll appear here once the first pass runs.
+        </p>
+      ) : (
+        <div>
+          {memory!.summary && (
+            <MemorySubsection title="Summary" icon={FileText} defaultOpen>
+              <p className="leading-relaxed">{memory!.summary}</p>
+            </MemorySubsection>
+          )}
+          {memory!.currentState && (
+            <MemorySubsection title="Current State" icon={Info}>
+              <p className="leading-relaxed">{memory!.currentState}</p>
+            </MemorySubsection>
+          )}
+          {memory!.keyDecisions && memory!.keyDecisions.length > 0 && (
+            <MemorySubsection
+              title="Key Decisions"
+              icon={CheckSquare}
+              count={memory!.keyDecisions.length}
+            >
+              <ul className="space-y-2">
+                {memory!.keyDecisions.map((d, i) => (
+                  <li key={i}>
+                    <p className="font-medium text-foreground">{d.decision}</p>
+                    {d.context && (
+                      <p className="mt-0.5 text-muted-foreground">{d.context}</p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </MemorySubsection>
+          )}
+          {memory!.openQuestions && memory!.openQuestions.length > 0 && (
+            <MemorySubsection
+              title="Open Questions"
+              icon={HelpCircle}
+              count={memory!.openQuestions.length}
+            >
+              <ul className="list-disc space-y-1 pl-4">
+                {memory!.openQuestions.map((q, i) => (
+                  <li key={i}>{q}</li>
+                ))}
+              </ul>
+            </MemorySubsection>
+          )}
+          {memory!.completedWork && memory!.completedWork.length > 0 && (
+            <MemorySubsection
+              title="Completed Work"
+              icon={CheckSquare}
+              count={memory!.completedWork.length}
+            >
+              <ul className="list-disc space-y-1 pl-4">
+                {memory!.completedWork.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </MemorySubsection>
+          )}
+          {memory!.participantsContext &&
+            Object.keys(memory!.participantsContext).length > 0 && (
+              <MemorySubsection
+                title="Participants"
+                icon={Users}
+                count={Object.keys(memory!.participantsContext).length}
+              >
+                <dl className="space-y-3">
+                  {Object.entries(memory!.participantsContext).map(
+                    ([id, entry]) => (
+                      <ParticipantContextRow
+                        key={id}
+                        participantId={id}
+                        entry={entry}
+                      />
+                    )
+                  )}
+                </dl>
+              </MemorySubsection>
+            )}
+          {memory!.updatedAt && (
+            <p className="px-4 py-2 text-[10px] text-muted-foreground">
+              Updated {new Date(memory!.updatedAt).toLocaleString()}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MemorySubsection({
+  title,
+  icon: Icon,
+  count,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  icon: typeof Brain;
+  count?: number;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-t border-border/50">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-2 text-left hover:bg-accent/50"
+      >
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="flex-1 text-xs font-medium">{title}</span>
+        {count !== undefined && (
+          <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {count}
+          </span>
+        )}
+        {open ? (
+          <ChevronDown className="h-3 w-3 text-muted-foreground" />
+        ) : (
+          <ChevronRight className="h-3 w-3 text-muted-foreground" />
+        )}
+      </button>
+      {open && (
+        <div className="px-4 pb-3 text-xs text-muted-foreground">
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Render a single entry from `memory.participantsContext`. The backend packs
+ * this as a rich object per participant (name, type, role, message_count,
+ * plus agent-only fields like capabilities / model / tools / trust_level),
+ * so we can't just `{entry}` — React would blow up. Lay out as a titled
+ * block with a meta line and a pill row for the list-valued fields.
+ */
+function ParticipantContextRow({
+  participantId,
+  entry,
+}: {
+  participantId: string;
+  entry: ParticipantContextEntry;
+}) {
+  const isAgent = entry.type === "agent";
+  const meta = [
+    entry.role,
+    entry.message_count != null
+      ? `${entry.message_count} msg${entry.message_count === 1 ? "" : "s"}`
+      : null,
+    isAgent && entry.model ? entry.model : null,
+    isAgent && entry.trust_level ? `trust: ${entry.trust_level}` : null,
+  ].filter(Boolean) as string[];
+
+  const pillGroups: Array<{ label: string; items: string[] }> = [];
+  if (entry.capabilities?.length)
+    pillGroups.push({ label: "Capabilities", items: entry.capabilities });
+  if (entry.roles?.length) pillGroups.push({ label: "Roles", items: entry.roles });
+  if (entry.tools?.length) pillGroups.push({ label: "Tools", items: entry.tools });
+
+  return (
+    <div>
+      <dt className="flex items-center gap-1.5 text-foreground">
+        <span className="font-medium">{entry.name ?? participantId}</span>
+        {isAgent && (
+          <span className="rounded bg-bubble-agent-accent/10 px-1 py-0.5 text-[9px] font-semibold text-bubble-agent-accent">
+            AGENT
+          </span>
+        )}
+      </dt>
+      {meta.length > 0 && (
+        <dd className="mt-0.5 text-[11px] text-muted-foreground">
+          {meta.join(" · ")}
+        </dd>
+      )}
+      {entry.description && (
+        <dd className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+          {entry.description}
+        </dd>
+      )}
+      {pillGroups.map((g) => (
+        <dd key={g.label} className="mt-1 flex flex-wrap gap-1">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70">
+            {g.label}:
+          </span>
+          {g.items.map((item) => (
+            <span
+              key={item}
+              className="rounded-full border border-border bg-background px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            >
+              {item}
+            </span>
+          ))}
+        </dd>
+      ))}
+    </div>
   );
 }

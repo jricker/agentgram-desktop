@@ -874,6 +874,42 @@ export interface ActiveStream {
   lastUpdateAt: number;
 }
 
+/** Per-member entry inside `ConversationMemory.participantsContext`.
+ *  Populated by `MemoryAutoSummaryWorker.build_participants_context/2` on the
+ *  backend — snake_case keys are preserved over the wire (not a typo, not
+ *  camelCased by the serializer). */
+export interface ParticipantContextEntry {
+  name?: string;
+  type?: "human" | "agent";
+  role?: string;
+  message_count?: number;
+  // Agents only
+  capabilities?: string[];
+  roles?: string[];
+  tools?: string[];
+  trust_level?: string;
+  description?: string;
+  model?: string;
+}
+
+export interface ConversationMemory {
+  summary?: string;
+  currentState?: string;
+  keyDecisions?: Array<{ decision: string; context?: string }>;
+  openQuestions?: string[];
+  completedWork?: string[];
+  importantContext?: Record<string, unknown>;
+  participantsContext?: Record<string, ParticipantContextEntry>;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export async function getConversationMemory(
+  conversationId: string
+): Promise<{ memory: ConversationMemory; version: number }> {
+  return request(`/api/conversations/${conversationId}/memory`);
+}
+
 export interface ConversationMember {
   participantId: string;
   role?: string;

@@ -139,6 +139,8 @@ class WebSocketService {
       "message_deleted",
       "message_streaming",
       "task_progress",
+      "conversation_memory",
+      "memory_updated",
     ];
 
     for (const event of convEvents) {
