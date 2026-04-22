@@ -196,7 +196,13 @@ const ConversationItem = memo(function ConversationItem({
       )}
     >
       <div className="flex h-7 w-7 shrink-0 items-center justify-center">
-        {isChannel ? (
+        {conversation.avatarUrl ? (
+          <img
+            src={conversation.avatarUrl}
+            alt=""
+            className="h-7 w-7 rounded-full object-cover"
+          />
+        ) : isChannel ? (
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted">
             <Hash className="h-3.5 w-3.5 text-muted-foreground" />
           </div>

@@ -156,11 +156,12 @@ export interface Connection {
 
 export async function presignAvatarUpload(
   filename: string,
-  contentType: string
+  contentType: string,
+  fileSize?: number
 ): Promise<{ url: string; publicUrl: string }> {
   return request("/api/storage/presign", {
     method: "POST",
-    body: JSON.stringify({ filename, contentType }),
+    body: JSON.stringify({ filename, contentType, fileSize }),
   });
 }
 
@@ -919,6 +920,9 @@ export interface ConversationMember {
 export interface Conversation {
   id: string;
   title?: string;
+  /** Custom group photo URL; when set, overrides GroupAvatar in list +
+   *  header. `null` / missing falls back to the composed avatar. */
+  avatarUrl?: string | null;
   type: "direct" | "group" | "task" | "channel";
   createdBy?: string;
   insertedAt: string;
@@ -966,6 +970,19 @@ export async function updateConversationTitleRest(
   return request(`/api/conversations/${conversationId}`, {
     method: "PATCH",
     body: JSON.stringify({ title }),
+  });
+}
+
+/** Set or clear the custom group photo. `null` removes the photo and the
+ *  UI falls back to the composed GroupAvatar. Server-side admin check
+ *  lives in `Messaging.update_conversation/3`. */
+export async function updateConversationAvatarRest(
+  conversationId: string,
+  avatarUrl: string | null
+): Promise<Conversation> {
+  return request(`/api/conversations/${conversationId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ avatarUrl }),
   });
 }
 

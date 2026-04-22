@@ -95,6 +95,7 @@ interface ChatState {
     memberIds: string[];
   }) => Promise<Conversation>;
   updateConversationTitle: (id: string, title: string) => Promise<void>;
+  updateConversationAvatar: (id: string, avatarUrl: string | null) => Promise<void>;
   addMember: (conversationId: string, participantId: string) => Promise<void>;
   removeMember: (conversationId: string, participantId: string) => Promise<void>;
   deleteConversation: (conversationId: string) => Promise<void>;
@@ -262,6 +263,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     await api.updateConversationTitleRest(id, title);
     const update = (convos: Conversation[]) =>
       convos.map((c) => (c.id === id ? { ...c, title } : c));
+    set((s) => ({
+      conversations: update(s.conversations),
+      agentConversations: update(s.agentConversations),
+    }));
+  },
+
+  updateConversationAvatar: async (id, avatarUrl) => {
+    await api.updateConversationAvatarRest(id, avatarUrl);
+    const update = (convos: Conversation[]) =>
+      convos.map((c) =>
+        c.id === id ? { ...c, avatarUrl: avatarUrl ?? undefined } : c
+      );
     set((s) => ({
       conversations: update(s.conversations),
       agentConversations: update(s.agentConversations),
@@ -636,11 +649,55 @@ export const useChatStore = create<ChatState>((set, get) => ({
           (payload._conversationId as string) ?? (payload.conversationId as string);
         const title = payload.title as string;
         if (!convId || !title) return;
+        const update = (list: Conversation[]) =>
+          list.map((c) => (c.id === convId ? { ...c, title } : c));
         set((s) => ({
-          conversations: s.conversations.map((c) =>
-            c.id === convId ? { ...c, title } : c
-          ),
+          conversations: update(s.conversations),
+          agentConversations: update(s.agentConversations),
         }));
+      })
+    );
+
+    // User-channel mirror for title changes — catches conversations we
+    // haven't joined the conv channel for (e.g. inactive list rows).
+    unsubs.push(
+      ws.on("conversation_title_changed", (payload) => {
+        const convId = payload.conversationId as string;
+        const title = payload.title as string;
+        if (!convId || !title) return;
+        const update = (list: Conversation[]) =>
+          list.map((c) => (c.id === convId ? { ...c, title } : c));
+        set((s) => ({
+          conversations: update(s.conversations),
+          agentConversations: update(s.agentConversations),
+        }));
+      })
+    );
+
+    // Avatar changes — conv + user channel, same shape.
+    const applyAvatar = (convId: string, avatarUrl: string | null) => {
+      const update = (list: Conversation[]) =>
+        list.map((c) =>
+          c.id === convId ? { ...c, avatarUrl: avatarUrl ?? undefined } : c
+        );
+      set((s) => ({
+        conversations: update(s.conversations),
+        agentConversations: update(s.agentConversations),
+      }));
+    };
+    unsubs.push(
+      ws.on("conv:conversation_avatar_changed", (payload) => {
+        const convId =
+          (payload._conversationId as string) ?? (payload.conversationId as string);
+        if (!convId) return;
+        applyAvatar(convId, (payload.avatarUrl as string | null) ?? null);
+      })
+    );
+    unsubs.push(
+      ws.on("conversation_avatar_changed", (payload) => {
+        const convId = payload.conversationId as string;
+        if (!convId) return;
+        applyAvatar(convId, (payload.avatarUrl as string | null) ?? null);
       })
     );
 

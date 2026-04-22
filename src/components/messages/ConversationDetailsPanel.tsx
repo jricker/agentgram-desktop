@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useAgentStore } from "../../stores/agentStore";
 import { useMemoryStore } from "../../stores/memoryStore";
+import * as api from "../../lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,7 +26,9 @@ import {
   ChevronDown,
   ChevronRight,
   Loader2,
+  Camera,
 } from "lucide-react";
+import { GroupAvatar } from "./GroupAvatar";
 import { cn, getInitials } from "../../lib/utils";
 import type {
   Conversation,
@@ -49,11 +52,68 @@ export function ConversationDetailsPanel({
 }: Props) {
   const online = usePresenceStore((s) => s.online);
   const updateTitle = useChatStore((s) => s.updateConversationTitle);
+  const updateAvatar = useChatStore((s) => s.updateConversationAvatar);
   const addMember = useChatStore((s) => s.addMember);
   const removeMember = useChatStore((s) => s.removeMember);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
   const leaveConversation = useChatStore((s) => s.leaveConversation);
   const clearChatLocal = useChatStore((s) => s.clearChatLocal);
+
+  // Avatar upload — same /api/storage/presign flow the Profile page uses.
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  const handleAvatarFile = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        setAvatarError("Image must be under 2 MB");
+        return;
+      }
+      setAvatarError(null);
+      setUploadingAvatar(true);
+      try {
+        const contentType = file.type || "image/jpeg";
+        const ext = contentType.split("/")[1]?.split("+")[0] ?? "jpg";
+        const presigned = await api.presignAvatarUpload(
+          `conversations/${conversation.id}.${ext}`,
+          contentType,
+          file.size
+        );
+        const uploadRes = await fetch(presigned.url, {
+          method: "PUT",
+          headers: { "Content-Type": contentType },
+          body: file,
+        });
+        if (!uploadRes.ok) throw new Error("Upload failed");
+        await updateAvatar(
+          conversation.id,
+          `${presigned.publicUrl}?t=${Date.now()}`
+        );
+      } catch (err) {
+        setAvatarError(
+          err instanceof Error ? err.message : "Failed to upload photo"
+        );
+      } finally {
+        setUploadingAvatar(false);
+      }
+    },
+    [conversation.id, updateAvatar]
+  );
+
+  const handleAvatarRemove = useCallback(async () => {
+    setAvatarError(null);
+    try {
+      await updateAvatar(conversation.id, null);
+    } catch (err) {
+      setAvatarError(
+        err instanceof Error ? err.message : "Failed to remove photo"
+      );
+    }
+  }, [conversation.id, updateAvatar]);
 
   // Conversation memory — the summary agents see on entry + the periodic
   // MemoryAutoSummaryWorker output. Fetched on open; WS `memory_updated`
@@ -200,6 +260,24 @@ export function ConversationDetailsPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto">
+        {/* Avatar block — group / channel only; admins can change or
+            remove the custom photo. Falls back to GroupAvatar when there
+            isn't one set. Matches web + mobile treatments. */}
+        {conversation.type !== "direct" && (
+          <AvatarBlock
+            conversation={conversation}
+            otherMembers={members.filter(
+              (m) => m.participantId !== currentUserId
+            )}
+            canEdit={isAdmin}
+            uploading={uploadingAvatar}
+            avatarError={avatarError}
+            avatarInputRef={avatarInputRef}
+            onFile={handleAvatarFile}
+            onRemove={handleAvatarRemove}
+          />
+        )}
+
         {/* Title section */}
         <div className="border-b border-border px-4 py-4">
           {editing ? (
@@ -704,6 +782,83 @@ function ParticipantContextRow({
           ))}
         </dd>
       ))}
+    </div>
+  );
+}
+
+/** Large avatar + upload control for the top of the details panel.
+ *  Falls back to the composed GroupAvatar when there's no custom photo;
+ *  admins get a camera button + remove-photo affordance. */
+function AvatarBlock({
+  conversation,
+  otherMembers,
+  canEdit,
+  uploading,
+  avatarError,
+  avatarInputRef,
+  onFile,
+  onRemove,
+}: {
+  conversation: Conversation;
+  otherMembers: ConversationMember[];
+  canEdit: boolean;
+  uploading: boolean;
+  avatarError: string | null;
+  avatarInputRef: React.RefObject<HTMLInputElement | null>;
+  onFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: () => void;
+}) {
+  const hasCustomAvatar = !!conversation.avatarUrl;
+  const title = conversation.title || "Group";
+
+  return (
+    <div className="flex flex-col items-center border-b border-border py-5">
+      <div className="relative">
+        {hasCustomAvatar ? (
+          <Avatar className="h-20 w-20">
+            <AvatarImage src={conversation.avatarUrl ?? undefined} alt={title} />
+            <AvatarFallback>{getInitials(title)}</AvatarFallback>
+          </Avatar>
+        ) : (
+          <GroupAvatar members={otherMembers} size={80} />
+        )}
+        {canEdit && (
+          <>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/*"
+              onChange={onFile}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploading}
+              title={hasCustomAvatar ? "Change photo" : "Upload photo"}
+              className="absolute -bottom-0.5 -right-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground shadow ring-2 ring-background hover:bg-primary/90 disabled:opacity-60"
+            >
+              {uploading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Camera className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </>
+        )}
+      </div>
+      {canEdit && hasCustomAvatar && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="mt-3 text-[11px] text-muted-foreground hover:text-destructive"
+        >
+          Remove photo
+        </button>
+      )}
+      {avatarError && (
+        <p className="mt-2 text-[11px] text-destructive">{avatarError}</p>
+      )}
     </div>
   );
 }

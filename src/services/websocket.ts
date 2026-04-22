@@ -81,6 +81,8 @@ class WebSocketService {
     const userEvents = [
       "conversation_updated",
       "conversation_type_changed",
+      "conversation_title_changed",
+      "conversation_avatar_changed",
       "new_conversation",
       "new_message",
       "typing_indicator",
@@ -136,6 +138,7 @@ class WebSocketService {
       "member_added",
       "member_removed",
       "conversation_title_changed",
+      "conversation_avatar_changed",
       "message_deleted",
       "message_streaming",
       "task_progress",

@@ -239,7 +239,14 @@ function ActiveConversation({
           className="group/header flex items-center gap-3 min-w-0 flex-1 rounded-md px-1 py-1 -ml-1 hover:bg-accent/50 text-left transition-colors"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          {showGroupAvatar && otherMembers.length > 0 ? (
+          {conversation?.avatarUrl ? (
+            <Avatar className="h-9 w-9 shrink-0">
+              <AvatarImage src={conversation.avatarUrl} alt={headerTitle} />
+              <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
+                {headerTitle.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+          ) : showGroupAvatar && otherMembers.length > 0 ? (
             <GroupAvatar members={otherMembers} size={36} />
           ) : (
             <Avatar className="h-9 w-9 shrink-0">
