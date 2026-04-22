@@ -138,12 +138,17 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
     [mentionQuery, members, agents, currentUserId]
   );
 
-  // Auto-resize textarea to fit content, capped at MAX_HEIGHT
+  // Auto-resize textarea to fit content, capped at MAX_HEIGHT.
+  // Keep `overflow-y: hidden` while content still fits — prevents WebKit from
+  // reserving a scrollbar gutter on a single-line composer. Only flip to
+  // `auto` once the textarea hits its cap and actual scrolling is needed.
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, MAX_HEIGHT)}px`;
+    const next = Math.min(el.scrollHeight, MAX_HEIGHT);
+    el.style.height = `${next}px`;
+    el.style.overflowY = next >= MAX_HEIGHT ? "auto" : "hidden";
   }, [draft]);
 
   // Refocus when switching conversations or starting a reply
@@ -345,7 +350,7 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
                 : COMPOSER_PLACEHOLDER
             }
             rows={1}
-            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground"
+            className="flex-1 resize-none rounded-lg border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring placeholder:text-muted-foreground scrollbar-autohide"
             style={{ maxHeight: MAX_HEIGHT }}
           />
           <Button

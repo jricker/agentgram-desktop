@@ -1,5 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import type { Components } from "react-markdown";
 
 const components: Components = {
@@ -69,9 +70,13 @@ const components: Components = {
 };
 
 export function MarkdownContent({ content }: { content: string }) {
+  // `remark-breaks` converts every single `\n` into a <br>, matching
+  // Slack/Discord-style chat behaviour and mobile's raw-text rendering.
+  // Plain CommonMark/GFM collapses single newlines to a space inside a
+  // paragraph, which made shift+enter line breaks vanish here.
   return (
     <div className="text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
         {content}
       </ReactMarkdown>
     </div>

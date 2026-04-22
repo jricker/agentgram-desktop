@@ -156,9 +156,11 @@
   border-color: var(--color-border-strong);
 }
 
-/* Scrollbar */
+/* Scrollbar — thin and transparent by default. Visible panes (chat thread,
+   composer) opt into the auto-hide treatment below via `.scrollbar-autohide`. */
 ::-webkit-scrollbar {
   width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -171,5 +173,22 @@
 }
 
 ::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Auto-hide scrollbar: thumb is invisible while the pane is idle and reveals
+   only when the user is hovering inside it (the natural proxy for "about to
+   scroll") or when the pane is actively being scrolled. Applied via a class
+   so the default app-wide scrollbar styling above stays unchanged. */
+.scrollbar-autohide::-webkit-scrollbar-thumb {
+  background: transparent;
+  transition: background 0.2s ease;
+}
+.scrollbar-autohide:hover::-webkit-scrollbar-thumb,
+.scrollbar-autohide:focus-within::-webkit-scrollbar-thumb,
+.scrollbar-autohide.is-scrolling::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+}
+.scrollbar-autohide::-webkit-scrollbar-thumb:hover {
   background: var(--muted-foreground);
 }

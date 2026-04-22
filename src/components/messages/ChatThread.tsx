@@ -262,6 +262,10 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const prevLengthRef = useRef(0);
   const prevConvIdRef = useRef<string | null>(null);
   const [nearBottom, setNearBottom] = useState(true);
+  // Pair with `.scrollbar-autohide` CSS: toggled on during active scroll so
+  // the thumb is visible while the user's actually moving content, then
+  // fades out again. CSS :hover covers the "about to scroll" case.
+  const scrollIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [menu, setMenu] = useState<{
     message: Message;
@@ -304,6 +308,13 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     const distanceFromBottom = el.scrollHeight - el.clientHeight - el.scrollTop;
     setNearBottom(distanceFromBottom < SCROLL_BOTTOM_THRESHOLD);
 
+    // Pulse the auto-hide scrollbar on for ~800ms of idle after a scroll event.
+    el.classList.add("is-scrolling");
+    if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
+    scrollIdleTimerRef.current = setTimeout(() => {
+      el.classList.remove("is-scrolling");
+    }, 800);
+
     if (hasMore && !loading && el.scrollTop < 80) {
       // Use the raw oldest (not the consolidated one) as the pagination
       // anchor — a filtered TaskProgress could have been the earliest record.
@@ -340,7 +351,7 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto py-2"
+        className="h-full overflow-y-auto py-2 scrollbar-autohide"
       >
         {loading && messages.length === 0 ? (
           <div className="flex items-center justify-center py-10">
