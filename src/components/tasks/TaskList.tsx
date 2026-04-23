@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Loader2, Search, Zap } from "lucide-react";
+import { Bot, Loader2, Search, Zap } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, formatRelativeShort } from "../../lib/utils";
@@ -85,10 +85,15 @@ export function TaskList() {
       style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
     >
       <div
-        className="px-4 py-3 border-b border-border"
+        className="h-14 shrink-0 px-4 border-b border-border flex items-center"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
-        <h2 className="text-sm font-semibold text-foreground">Tasks</h2>
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+            <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+          </div>
+          <h2 className="text-sm font-semibold text-foreground">Tasks</h2>
+        </div>
       </div>
 
       <div

@@ -101,7 +101,12 @@ export function MessagesView() {
           className="h-14 shrink-0 px-4 border-b border-border flex items-center justify-between"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >
-          <h2 className="text-sm font-semibold text-foreground">Messages</h2>
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0">
+              <Bot className="w-3.5 h-3.5 text-primary-foreground" />
+            </div>
+            <h2 className="text-sm font-semibold text-foreground">AgentChat</h2>
+          </div>
           {activeTab === "chats" && (
             <button
               type="button"

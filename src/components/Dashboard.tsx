@@ -146,18 +146,18 @@ export function Dashboard() {
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <header
-          className="px-6 py-3 flex items-center justify-between border-b border-border bg-card"
+          className="h-14 shrink-0 px-4 flex items-center justify-between border-b border-border bg-card"
           style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
         >
           <div
-            className="flex items-center gap-3"
+            className="flex items-center gap-2"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           >
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
-              <Bot className="w-4 h-4 text-primary-foreground" />
+            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center flex-shrink-0">
+              <Bot className="w-3.5 h-3.5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-base font-semibold text-foreground leading-tight">AgentChat</h1>
+              <h1 className="text-sm font-semibold text-foreground leading-tight">Agents</h1>
               <p className="text-[11px] text-muted-foreground">
                 {totalCount} agent{totalCount !== 1 && "s"}
                 {runningCount > 0 && (
