@@ -81,6 +81,9 @@ export function GroupAvatar({ members, size = 40 }: Props) {
   const cell = Math.round((size - 2) / 2);
   const overflow = count - 3;
   const shown = members.slice(0, 3);
+  // Scale the +N counter to the cell so it stays readable at both list
+  // (size=28, cell≈13) and details-panel (size=80, cell≈39) sizes.
+  const overflowFontPx = Math.max(10, Math.round(cell * 0.45));
 
   return (
     <div className="relative" style={{ width: size, height: size }}>
@@ -131,7 +134,12 @@ export function GroupAvatar({ members, size = 40 }: Props) {
           className="absolute bottom-0 right-0 z-30 flex items-center justify-center rounded-full border border-card bg-muted"
           style={{ width: cell, height: cell }}
         >
-          <span className="text-[8px] font-bold text-muted-foreground">+{overflow}</span>
+          <span
+            className="font-bold text-muted-foreground leading-none"
+            style={{ fontSize: overflowFontPx }}
+          >
+            +{overflow}
+          </span>
         </div>
       )}
     </div>
