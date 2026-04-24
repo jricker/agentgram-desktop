@@ -396,6 +396,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
     });
 
+    // Optimistic "Connecting..." bubble for agent conversations — parity with
+    // mobile. Without this, the first thing the user ever sees is the
+    // backend's "Thinking..." event, which feels premature. A real streaming
+    // event (new streamId) naturally overwrites this one. Use getConversation
+    // so we also cover conversations living in agentConversations / pending.
+    const conversation = get().getConversation(conversationId);
+    const agentMember = conversation?.members?.find(
+      (m) => m.participant?.type === "agent" && m.participantId !== participant?.id
+    );
+    const optimisticStreamId = `optimistic:${nonce}`;
+    if (agentMember) {
+      useStreamingStore.getState().handleStreamEvent(conversationId, {
+        streamId: optimisticStreamId,
+        senderId: agentMember.participantId,
+        senderName: agentMember.participant?.displayName,
+        status: "started",
+        phase: "connecting",
+      });
+    }
+
     try {
       await ws.sendMessage(conversationId, content, {
         metadata: { client_nonce: nonce },
@@ -411,6 +431,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         },
       }));
+      // Clean up the optimistic stream bubble too (otherwise it hangs until
+      // the 110s stale reaper).
+      useStreamingStore.getState().clearStreamByStreamId(optimisticStreamId);
       throw e;
     }
   },
@@ -611,11 +634,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Clear any active streaming bubble for this sender/stream — the
         // real message has landed, so the "is writing" placeholder should
         // disappear immediately rather than waiting for the 3s timeout.
+        // Always run the sender-match fallback too — if no intermediate
+        // streaming event ever fired (short/cached reply), the active stream
+        // is still the `optimistic:${nonce}` placeholder and the by-streamId
+        // clear would miss, leaving the bubble up until the stale reaper.
         const streamId = (msg.metadata as Record<string, unknown> | undefined)
           ?.stream_id as string | undefined;
         if (streamId) {
           useStreamingStore.getState().clearStreamByStreamId(streamId);
-        } else if (msg.senderId) {
+        }
+        if (msg.senderId) {
           useStreamingStore.getState().clearStreamBySender(convId, msg.senderId);
         }
       })
