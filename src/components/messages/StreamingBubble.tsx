@@ -1,16 +1,6 @@
-import { useEffect, useState } from "react";
 import { Bot, Brain, Wrench, Pen, Search, Clock, Users } from "lucide-react";
 import type { ActiveStream, StreamPhase } from "../../lib/api";
 import { cn } from "../../lib/utils";
-
-// Render delay: swallow transient bubbles that are cancelled before this
-// window elapses. In mixed human+agent groups, the backend speculatively
-// signals agents before the turn-queue / intent-check / relevance pipeline
-// decides who actually responds. Without this delay a bubble flashes in and
-// out, which reads as "the agent was going to say something, then ghosted."
-// Long enough that the usual trigger→cancel race never paints a frame; short
-// enough that a real agent's intro doesn't feel laggy.
-const RENDER_DELAY_MS = 500;
 
 const phaseIcons: Record<StreamPhase, typeof Brain> = {
   connecting: Bot,
@@ -36,20 +26,9 @@ const phaseLabels: Record<StreamPhase, string> = {
 };
 
 export function StreamingBubble({ stream }: { stream: ActiveStream }) {
-  // Hold back the first render for RENDER_DELAY_MS. If the stream is
-  // cancelled before the timer fires, the parent unmounts us and the bubble
-  // is never seen.
-  const [visible, setVisible] = useState(false);
-  useEffect(() => {
-    const timer = setTimeout(() => setVisible(true), RENDER_DELAY_MS);
-    return () => clearTimeout(timer);
-  }, []);
-
   const Icon = phaseIcons[stream.phase] ?? Brain;
   const label = stream.phaseDetail ?? phaseLabels[stream.phase] ?? "Working...";
   const animated = stream.phase !== "queued" && stream.phase !== "waiting";
-
-  if (!visible) return null;
 
   return (
     <div className="flex gap-2 px-4 mt-2">
