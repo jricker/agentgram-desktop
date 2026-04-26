@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, ChevronRight, SquarePen, Bot } from "lucide-react";
+import { MessageSquare, ChevronRight, SquarePen, Bot, RefreshCw } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
@@ -37,7 +37,9 @@ function readTabPref(): MessagesTab {
 
 export function MessagesView() {
   const activeId = useChatStore((s) => s.activeConversationId);
+  const fetchConversations = useChatStore((s) => s.fetchConversations);
   const fetchAgentConversations = useChatStore((s) => s.fetchAgentConversations);
+  const fetchUnreadCounts = useChatStore((s) => s.fetchUnreadCounts);
   const agentLoaded = useChatStore((s) => s.agentConversationsLoaded);
   const unreadCounts = useChatStore((s) => s.unreadCounts);
   const personalConversations = useChatStore((s) => s.conversations);
@@ -46,7 +48,26 @@ export function MessagesView() {
   const [showDetails, setShowDetails] = useState(readDetailsPref);
   const [showNew, setShowNew] = useState(false);
   const [activeTab, setActiveTab] = useState<MessagesTab>(readTabPref);
+  const [refreshing, setRefreshing] = useState(false);
   const agentFetchOnce = useRef(false);
+
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      // Full re-sync against the server: replace both conversation lists
+      // and the unread counts map. fetchConversations / fetchAgentConversations
+      // both `set` the array (not merge), so anything deleted server-side
+      // drops from the sidebar on this call.
+      await Promise.all([
+        fetchConversations(),
+        fetchAgentConversations(),
+        fetchUnreadCounts(),
+      ]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     try {
@@ -107,18 +128,32 @@ export function MessagesView() {
             </div>
             <h2 className="text-sm font-semibold text-foreground">AgentChat</h2>
           </div>
-          {activeTab === "chats" && (
+          <div
+            className="flex items-center gap-1"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
             <button
               type="button"
-              onClick={() => setShowNew(true)}
-              title="New conversation"
-              aria-label="New conversation"
-              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title="Refresh conversations"
+              aria-label="Refresh conversations"
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
             >
-              <SquarePen className="h-4 w-4" />
+              <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
             </button>
-          )}
+            {activeTab === "chats" && (
+              <button
+                type="button"
+                onClick={() => setShowNew(true)}
+                title="New conversation"
+                aria-label="New conversation"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              >
+                <SquarePen className="h-4 w-4" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div

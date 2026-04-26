@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
@@ -11,40 +11,13 @@ import {
 import {
   Hash,
   Pin,
-  MessageCircle,
   Users,
   Bot,
-  ChevronRight,
   Loader2,
   MessageSquare,
 } from "lucide-react";
 import { GroupAvatar } from "./GroupAvatar";
 import type { Conversation } from "../../lib/api";
-
-interface Section {
-  label: string;
-  icon: typeof MessageCircle;
-  conversations: Conversation[];
-}
-
-function categorize(conversations: Conversation[]): Section[] {
-  const dms: Conversation[] = [];
-  const channels: Conversation[] = [];
-  const groups: Conversation[] = [];
-
-  for (const conv of conversations) {
-    if (conv.type === "channel") channels.push(conv);
-    else if (conv.type === "group") groups.push(conv);
-    else dms.push(conv);
-  }
-
-  const sections: Section[] = [];
-  if (dms.length > 0) sections.push({ label: "DMs", icon: MessageCircle, conversations: dms });
-  if (channels.length > 0)
-    sections.push({ label: "Channels", icon: Hash, conversations: channels });
-  if (groups.length > 0) sections.push({ label: "Groups", icon: Users, conversations: groups });
-  return sections;
-}
 
 export function ConversationList({
   scope = "personal",
@@ -62,12 +35,6 @@ export function ConversationList({
   const setActive = useChatStore((s) => s.setActiveConversation);
   const online = usePresenceStore((s) => s.online);
   const currentUserId = useAuthStore((s) => s.participant?.id);
-
-  const sections = useMemo(() => categorize(conversations), [conversations]);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const toggle = useCallback((label: string) => {
-    setCollapsed((p) => ({ ...p, [label]: !p[label] }));
-  }, []);
 
   if (loading && conversations.length === 0) {
     return (
@@ -94,63 +61,31 @@ export function ConversationList({
   }
 
   return (
-    <div className="flex flex-col px-2 py-1">
-      {sections.map((section) => {
-        const isCollapsed = collapsed[section.label] ?? false;
-        const Icon = section.icon;
+    <div className="flex flex-col gap-0.5 px-2 py-1">
+      {conversations.map((conv) => {
+        const anyOnline =
+          conv.members?.some(
+            (m) =>
+              m.participantId !== currentUserId &&
+              online.has(m.participantId)
+          ) ?? false;
+        const hasAgent =
+          conv.members?.some(
+            (m) =>
+              m.participantId !== currentUserId &&
+              m.participant?.type === "agent"
+          ) ?? false;
         return (
-          <div key={section.label}>
-            <button
-              onClick={() => toggle(section.label)}
-              className="flex w-full items-center gap-1.5 px-2 pb-1 pt-3 first:pt-1 hover:bg-sidebar-accent/60 rounded-md transition-colors"
-            >
-              <ChevronRight
-                className={cn(
-                  "h-3 w-3 text-muted-foreground transition-transform duration-200",
-                  !isCollapsed && "rotate-90"
-                )}
-              />
-              <Icon className="h-3 w-3 text-muted-foreground" />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                {section.label}
-              </span>
-              <span className="text-[10px] text-muted-foreground/60">
-                {section.conversations.length}
-              </span>
-            </button>
-            {!isCollapsed && (
-              <div className="flex flex-col gap-0.5">
-                {section.conversations.map((conv) => {
-                  const anyOnline =
-                    conv.members?.some(
-                      (m) =>
-                        m.participantId !== currentUserId &&
-                        online.has(m.participantId)
-                    ) ?? false;
-                  const hasAgent =
-                    conv.members?.some(
-                      (m) =>
-                        m.participantId !== currentUserId &&
-                        m.participant?.type === "agent"
-                    ) ?? false;
-                  return (
-                    <ConversationItem
-                      key={conv.id}
-                      conversation={conv}
-                      isActive={conv.id === activeId}
-                      unreadCount={
-                        scope === "agents" ? 0 : unreadCounts[conv.id] ?? 0
-                      }
-                      anyOnline={anyOnline}
-                      hasAgent={hasAgent}
-                      currentUserId={currentUserId}
-                      onClick={() => setActive(conv.id)}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <ConversationItem
+            key={conv.id}
+            conversation={conv}
+            isActive={conv.id === activeId}
+            unreadCount={scope === "agents" ? 0 : unreadCounts[conv.id] ?? 0}
+            anyOnline={anyOnline}
+            hasAgent={hasAgent}
+            currentUserId={currentUserId}
+            onClick={() => setActive(conv.id)}
+          />
         );
       })}
     </div>
