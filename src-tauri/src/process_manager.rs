@@ -54,6 +54,12 @@ struct RunningAgent {
     /// Shared log buffer — written by background reader thread, read by get_agent_logs
     logs: Arc<Mutex<Vec<String>>>,
     crash_reason: Option<String>,
+    /// Used to fire a synchronous offline ping to the backend at shutdown.
+    /// SIGTERM gives the bridge ~2s to deregister itself, but Force Quit /
+    /// SIGKILL / crash would otherwise leave the agent "online" for 90s.
+    agent_id: String,
+    api_key: String,
+    api_url: String,
 }
 
 pub struct ProcessManager {
@@ -72,6 +78,7 @@ impl ProcessManager {
         let ids: Vec<String> = self.agents.keys().cloned().collect();
         for id in ids {
             if let Some(mut agent) = self.agents.remove(&id) {
+                mark_offline_sync(&agent.api_url, &agent.agent_id, &agent.api_key);
                 graceful_kill(&mut agent.child);
             }
         }
@@ -240,6 +247,7 @@ pub fn start_agent(
 
     // Stop existing process if running
     if let Some(mut existing) = manager.agents.remove(&args.agent_id) {
+        mark_offline_sync(&existing.api_url, &existing.agent_id, &existing.api_key);
         graceful_kill(&mut existing.child);
     }
 
@@ -323,12 +331,20 @@ pub fn start_agent(
         spawn_log_reader(stderr, Arc::clone(&logs));
     }
 
+    let api_url = args
+        .api_url
+        .clone()
+        .unwrap_or_else(|| "https://agentchat-backend.fly.dev".to_string());
+
     let running = RunningAgent {
         child,
         started_at: Instant::now(),
         agent_name: args.agent_name.clone(),
         logs,
         crash_reason: None,
+        agent_id: args.agent_id.clone(),
+        api_key: args.api_key.clone(),
+        api_url,
     };
 
     let agent_id = args.agent_id.clone();
@@ -352,6 +368,7 @@ pub fn stop_agent(
     let mut manager = state.lock().map_err(|e| e.to_string())?;
 
     if let Some(mut agent) = manager.agents.remove(&agent_id) {
+        mark_offline_sync(&agent.api_url, &agent.agent_id, &agent.api_key);
         graceful_kill(&mut agent.child);
 
         let name = agent.agent_name.clone();
@@ -453,6 +470,22 @@ pub fn get_agent_logs(
     } else {
         Ok(Vec::new())
     }
+}
+
+/// Tell the backend the agent is offline before killing the bridge.
+///
+/// Belt-and-suspenders for the SDK's own SIGTERM-triggered deregister:
+/// covers Force Quit, SIGKILL, crashes, or any path where Python doesn't
+/// get to run its signal handler. Best-effort — short timeout, errors are
+/// swallowed because we're seconds from killing the process anyway.
+fn mark_offline_sync(api_url: &str, agent_id: &str, api_key: &str) {
+    let url = format!("{}/api/gateway/shutdown", api_url.trim_end_matches('/'));
+    let _ = ureq::post(&url)
+        .timeout(std::time::Duration::from_millis(1500))
+        .send_json(ureq::json!({
+            "agent_id": agent_id,
+            "api_key": api_key,
+        }));
 }
 
 fn graceful_kill(child: &mut Child) {
