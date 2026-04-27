@@ -87,6 +87,8 @@ class WebSocketService {
       "new_message",
       "typing_indicator",
       "agent_status_changed",
+      "human_status_changed",
+      "presence_snapshot",
       "agent_health_updated",
       // Task lifecycle — drives live task card status + progress.
       "task_created",

@@ -128,6 +128,31 @@ export const usePresenceStore = create<PresenceState>((set) => {
       );
 
       unsubs.push(
+        ws.on("human_status_changed", (payload) => {
+          const participantId = payload.participantId as string | undefined;
+          if (!participantId) return;
+          const isOnline = Boolean(payload.online);
+          set((s) => {
+            if (isOnline === s.online.has(participantId)) return s;
+            const next = new Set(s.online);
+            if (isOnline) next.add(participantId);
+            else next.delete(participantId);
+            return { online: next };
+          });
+        })
+      );
+
+      // Authoritative snapshot from server on user-channel join. Resets
+      // the global online set so peers who went offline during our
+      // disconnect are cleared. Subsequent transitions update from there.
+      unsubs.push(
+        ws.on("presence_snapshot", (payload) => {
+          const ids = (payload.onlineParticipantIds as string[] | undefined) ?? [];
+          set({ online: new Set(ids) });
+        })
+      );
+
+      unsubs.push(
         ws.on("conv:typing_indicator", (payload) => {
           const convId = payload._conversationId as string;
           const participantId = payload.participantId as string | undefined;
