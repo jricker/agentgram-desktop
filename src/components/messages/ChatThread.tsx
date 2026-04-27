@@ -357,6 +357,10 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
           <div className="flex items-center justify-center py-10">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
+        ) : messages.length === 0 && !stream && !typingLabel ? (
+          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+            No messages yet
+          </div>
         ) : (
           <>
             {hasMore && (
