@@ -856,7 +856,6 @@ export async function requestTaskRevisionRest(
 // --- Streaming ---
 
 export type StreamPhase =
-  | "connecting"
   | "thinking"
   | "tool_call"
   | "writing"

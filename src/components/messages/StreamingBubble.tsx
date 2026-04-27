@@ -3,7 +3,6 @@ import type { ActiveStream, StreamPhase } from "../../lib/api";
 import { cn } from "../../lib/utils";
 
 const phaseIcons: Record<StreamPhase, typeof Brain> = {
-  connecting: Bot,
   thinking: Brain,
   tool_call: Wrench,
   writing: Pen,
@@ -13,10 +12,6 @@ const phaseIcons: Record<StreamPhase, typeof Brain> = {
 };
 
 const phaseLabels: Record<StreamPhase, string> = {
-  // The optimistic local bubble shows this from send → first real LLM
-  // stream event. "Sending..." is honest: the message is in flight; the
-  // agent isn't doing work yet.
-  connecting: "Sending...",
   thinking: "Thinking...",
   tool_call: "Using tools...",
   writing: "Writing...",

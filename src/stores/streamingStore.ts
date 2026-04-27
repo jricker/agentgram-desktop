@@ -44,7 +44,6 @@ interface StreamingState {
 
 function phaseLabel(phase: StreamPhase, detail?: string): string {
   const labels: Record<StreamPhase, string> = {
-    connecting: "Connecting",
     thinking: "Thinking",
     tool_call: detail ?? "Using tool",
     writing: "Writing",

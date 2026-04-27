@@ -396,26 +396,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
     });
 
-    // Optimistic "Connecting..." bubble for agent conversations — parity with
-    // mobile. Without this, the first thing the user ever sees is the
-    // backend's "Thinking..." event, which feels premature. A real streaming
-    // event (new streamId) naturally overwrites this one. Use getConversation
-    // so we also cover conversations living in agentConversations / pending.
-    const conversation = get().getConversation(conversationId);
-    const agentMember = conversation?.members?.find(
-      (m) => m.participant?.type === "agent" && m.participantId !== participant?.id
-    );
-    const optimisticStreamId = `optimistic:${nonce}`;
-    if (agentMember) {
-      useStreamingStore.getState().handleStreamEvent(conversationId, {
-        streamId: optimisticStreamId,
-        senderId: agentMember.participantId,
-        senderName: agentMember.participant?.displayName,
-        status: "started",
-        phase: "connecting",
-      });
-    }
-
+    // No client-side "Sending..." stream bubble. The real bubble paints when
+    // the server's InstantAgentSignal fires (~50ms, for targeted agents) or
+    // when the bridge emits a real LLM event — which is when the agent is
+    // actually working. The pending message gives instant feedback that the
+    // tap registered.
     try {
       await ws.sendMessage(conversationId, content, {
         metadata: { client_nonce: nonce },
@@ -431,9 +416,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ),
         },
       }));
-      // Clean up the optimistic stream bubble too (otherwise it hangs until
-      // the 110s stale reaper).
-      useStreamingStore.getState().clearStreamByStreamId(optimisticStreamId);
       throw e;
     }
   },
