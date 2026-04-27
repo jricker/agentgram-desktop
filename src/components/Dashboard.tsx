@@ -47,11 +47,14 @@ export function Dashboard() {
     fetchHealth();
     fetchActivities();
 
-    // Health + process status: slow (backend REST)
+    // Health + process status: slow (backend REST). 30s cadence keeps
+    // dashboard responsive without burning Fly bandwidth/compute on a
+    // small fleet — fleet_health is read-only and event-driven UI
+    // updates still come over WebSocket.
     healthIntervalRef.current = setInterval(() => {
       refreshProcessStatuses();
       fetchHealth();
-    }, 10000);
+    }, 30000);
 
     // Bridge log activity: faster (local Tauri invoke, no backend cost).
     // Single shared poll for all components that show activity.
