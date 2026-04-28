@@ -1,6 +1,37 @@
 import { create } from "zustand";
 import * as api from "../lib/api";
 
+// Push the device's IANA tz to the backend if it differs from what's stored.
+// Best-effort. Updates the in-memory participant on success so the profile
+// view reflects the new tz without a reload.
+function syncDeviceTimezone(participant: api.Participant): void {
+  if (participant.type !== "human") return;
+  let tz: string | undefined;
+  try {
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone || undefined;
+  } catch (err) {
+    console.warn("[Tz] Intl.DateTimeFormat unavailable:", err);
+    return;
+  }
+  if (!tz || tz === participant.timezone) return;
+  api
+    .request<{ timezone: string }>("/api/me/timezone", {
+      method: "PUT",
+      body: JSON.stringify({ timezone: tz }),
+    })
+    .then((res) => {
+      const cur = useAuthStore.getState().participant;
+      if (cur && cur.id === participant.id) {
+        const next = { ...cur, timezone: res.timezone };
+        localStorage.setItem("participant", JSON.stringify(next));
+        useAuthStore.setState({ participant: next });
+      }
+    })
+    .catch((err) => {
+      console.warn("[Tz] sync failed:", err?.message || err);
+    });
+}
+
 interface AuthState {
   token: string | null;
   participant: api.Participant | null;
@@ -31,6 +62,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         participant: result.participant,
         loading: false,
       });
+      syncDeviceTimezone(result.participant);
     } catch (e) {
       set({
         loading: false,
@@ -50,6 +82,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         participant: result.participant,
         loading: false,
       });
+      syncDeviceTimezone(result.participant);
     } catch (e) {
       set({
         loading: false,
@@ -85,6 +118,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const participant = await api.getProfile();
       localStorage.setItem("participant", JSON.stringify(participant));
       set({ participant });
+      syncDeviceTimezone(participant);
     } catch {
       // Silently fail — stale data is fine as fallback
     }

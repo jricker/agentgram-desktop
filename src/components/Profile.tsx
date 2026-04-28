@@ -51,11 +51,13 @@ import {
   Info,
   Calendar,
   RefreshCw,
+  Search,
   Sun,
   Moon,
   Monitor,
   Palette,
 } from "lucide-react";
+import { deviceTimezone, filterTimezones, formatTimezoneLabel } from "../lib/timezones";
 import { open as tauriOpen } from "@tauri-apps/plugin-shell";
 import { PROVIDERS } from "../lib/models";
 import { useLlmKeyStore, type LlmApiKey as LlmApiKeyEntry } from "../stores/llmKeyStore";
@@ -116,6 +118,7 @@ const STATUS_CONFIG: Record<
 const SECTIONS = [
   { value: "profile", label: "Profile", icon: User },
   { value: "appearance", label: "Appearance", icon: Palette },
+  { value: "region", label: "Region", icon: Globe },
   { value: "memory", label: "Memory", icon: Brain },
   { value: "llm-keys", label: "LLM Keys", icon: Key },
   { value: "connections", label: "Connections", icon: Link2 },
@@ -586,6 +589,12 @@ export function Profile({ onClose }: { onClose: () => void }) {
           </div>
         )}
 
+        {activeSection === "region" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <TimezoneSection />
+          </div>
+        )}
+
         {activeSection === "memory" && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             {loadingIntegrations ? (
@@ -979,6 +988,114 @@ const THEME_OPTIONS: {
   { value: "dark", label: "Dark", description: "Always dark", icon: Moon },
   { value: "system", label: "System", description: "Match OS setting", icon: Monitor },
 ];
+
+function TimezoneSection() {
+  const participant = useAuthStore((s) => s.participant);
+  const current = participant?.timezone || "Etc/UTC";
+  const browserTz = deviceTimezone();
+  const [query, setQuery] = useState("");
+  const [saving, setSaving] = useState<string | null>(null);
+
+  const items = filterTimezones(query);
+
+  const apply = useCallback(async (tz: string) => {
+    setSaving(tz);
+    try {
+      const res = await api.request<{ timezone: string }>("/api/me/timezone", {
+        method: "PUT",
+        body: JSON.stringify({ timezone: tz }),
+      });
+      const cur = useAuthStore.getState().participant;
+      if (cur) {
+        const next = { ...cur, timezone: res.timezone };
+        localStorage.setItem("participant", JSON.stringify(next));
+        useAuthStore.setState({ participant: next });
+      }
+      setQuery("");
+    } catch (err) {
+      console.warn("[Tz] update failed:", err);
+    } finally {
+      setSaving(null);
+    }
+  }, []);
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label className="text-xs">Current timezone</Label>
+        <p className="mt-1 text-sm font-medium">{formatTimezoneLabel(current)}</p>
+        <p className="text-[11px] text-muted-foreground">{current}</p>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          Drives how agents interpret &ldquo;today&rdquo; and &ldquo;tomorrow&rdquo;, and the
+          local time used by routine schedules. Auto-detected from your device on
+          login — change it here if it&rsquo;s wrong or you&rsquo;re traveling.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-border bg-card">
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+          <Search className="h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search timezones (e.g. New York, Tokyo)"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+
+        {!query && browserTz && browserTz !== current && (
+          <button
+            type="button"
+            onClick={() => apply(browserTz)}
+            disabled={!!saving}
+            className="flex w-full items-center gap-3 border-b border-border bg-primary/5 px-3 py-2.5 text-left transition-colors hover:bg-primary/10"
+          >
+            <Monitor className="h-4 w-4 text-primary" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-primary">Use device timezone</p>
+              <p className="text-[11px] text-muted-foreground">{browserTz}</p>
+            </div>
+            {saving === browserTz && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          </button>
+        )}
+
+        <div className="max-h-80 overflow-y-auto">
+          {items.length === 0 ? (
+            <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+              No timezones match &ldquo;{query}&rdquo;
+            </p>
+          ) : (
+            items.slice(0, 200).map((tz) => {
+              const selected = tz === current;
+              return (
+                <button
+                  key={tz}
+                  type="button"
+                  onClick={() => apply(tz)}
+                  disabled={!!saving}
+                  className={cn(
+                    "flex w-full items-center justify-between border-b border-border/40 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-muted/50",
+                    selected && "bg-muted/30"
+                  )}
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm">{formatTimezoneLabel(tz)}</p>
+                    <p className="truncate text-[11px] text-muted-foreground">{tz}</p>
+                  </div>
+                  {selected ? (
+                    <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  ) : saving === tz ? (
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+                  ) : null}
+                </button>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AppearanceSection() {
   const preference = useThemeStore((s) => s.preference);

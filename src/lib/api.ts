@@ -732,6 +732,7 @@ export interface Participant {
   type: "human" | "agent";
   avatarUrl?: string;
   online?: boolean;
+  timezone?: string;
 }
 
 // --- Messaging types + endpoints ---
