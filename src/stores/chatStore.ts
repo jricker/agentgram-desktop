@@ -627,6 +627,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         if (msg.senderId) {
           useStreamingStore.getState().clearStreamBySender(convId, msg.senderId);
+          // Their message has landed — drop their typing indicator now
+          // instead of letting the 3s/30s presence TTL run out.
+          usePresenceStore.getState().clearTyping(convId, msg.senderId);
         }
       })
     );

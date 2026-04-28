@@ -12,6 +12,10 @@ interface PresenceState {
   /** participantId → display name (for rendering "X is typing...") */
   typingNames: Record<string, string>;
 
+  /** Drop a participant's typing indicator immediately (e.g. when their
+   * message arrives — don't wait for the per-participant TTL). */
+  clearTyping: (convId: string, participantId: string) => void;
+
   initWsListeners: () => () => void;
 }
 
@@ -71,6 +75,8 @@ export const usePresenceStore = create<PresenceState>((set) => {
     online: new Set(),
     typing: {},
     typingNames: {},
+
+    clearTyping,
 
     initWsListeners: () => {
       const unsubs: (() => void)[] = [];
