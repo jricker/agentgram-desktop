@@ -347,11 +347,11 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   };
 
   return (
-    <div className="relative flex-1 overflow-hidden">
+    <div className="relative flex-1 flex flex-col overflow-hidden">
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="h-full overflow-y-auto py-2 scrollbar-autohide"
+        className="flex-1 min-h-0 overflow-y-auto py-2 scrollbar-autohide"
       >
         {loading && messages.length === 0 ? (
           <div className="flex items-center justify-center py-10">
@@ -397,14 +397,18 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
               );
             })}
             {stream && <StreamingBubble stream={stream} />}
-            {typingLabel && (
-              <div className="px-4 pt-2 pb-1 text-[11px] text-muted-foreground italic">
-                {typingLabel}
-              </div>
-            )}
           </>
         )}
       </div>
+
+      {/* Pinned just below the scroll area — always visible regardless
+          of scroll position. Was inside the scrollable div, so typing
+          fired while the user was scrolled up was hidden below the fold. */}
+      {typingLabel && (
+        <div className="border-t border-border bg-card/80 backdrop-blur px-4 py-1 text-[11px] text-muted-foreground italic">
+          {typingLabel}
+        </div>
+      )}
 
       {!nearBottom && (
         <button
