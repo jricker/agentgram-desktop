@@ -158,16 +158,36 @@ export const usePresenceStore = create<PresenceState>((set) => {
         })
       );
 
+      // In-conversation typing: backend broadcasts "typing" (snake_case
+      // payload) on the conversation channel; the websocket service forwards
+      // it as "conv:typing". This is what fires while the user is viewing
+      // the conversation. There is no explicit "stopped typing" event —
+      // the per-participant TTL inside setTyping clears it (and chatStore
+      // also clears it the moment the sender's message arrives).
       unsubs.push(
-        ws.on("conv:typing_indicator", (payload) => {
+        ws.on("conv:typing", (payload) => {
           const convId = payload._conversationId as string;
+          const participantId = payload.participant_id as string | undefined;
+          const displayName = payload.display_name as string | undefined;
+          const participantType = payload.participant_type as string | undefined;
+          if (!convId || !participantId) return;
+          setTyping(convId, participantId, displayName, participantType === "agent");
+        })
+      );
+
+      // Cross-conversation typing: backend pushes "typing_indicator"
+      // (camelCase payload) on the user channel — drives typing markers
+      // in the conversation list for conversations the user isn't open in.
+      unsubs.push(
+        ws.on("typing_indicator", (payload) => {
+          const convId = payload.conversationId as string | undefined;
           const participantId = payload.participantId as string | undefined;
-          const displayName = payload.displayName as string | undefined;
-          const isAgent = Boolean(payload.isAgent);
+          const displayName = payload.participantName as string | undefined;
+          const participantType = payload.participantType as string | undefined;
           const isTyping = Boolean(payload.isTyping);
           if (!convId || !participantId) return;
           if (isTyping) {
-            setTyping(convId, participantId, displayName, isAgent);
+            setTyping(convId, participantId, displayName, participantType === "agent");
           } else {
             clearTyping(convId, participantId);
           }
