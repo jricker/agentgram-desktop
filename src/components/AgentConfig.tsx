@@ -98,7 +98,7 @@ import { AgentRoutines } from "./AgentRoutines";
 import { AvatarCropDialog } from "./AvatarCropDialog";
 
 export function AgentConfig({ managed }: { managed: ManagedAgent }) {
-  const { updateConfig, regenerateKey, selectAgent } = useAgentStore();
+  const { updateConfig, regenerateKey, selectAgent, fetchAgents } = useAgentStore();
   const [showApiKey, setShowApiKey] = useState(false);
   const [showLlmKey, setShowLlmKey] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -507,6 +507,24 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     onCheckedChange={(v) =>
                       updateConfig(agent.id, { autoStart: v })
                     }
+                  />
+                </div>
+
+                <div className="flex items-start justify-between gap-3 pt-1">
+                  <div className="flex-1">
+                    <Label className="text-sm">Auto-inject API documentation</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Attach relevant API doc snippets from Context Hub to every task this agent receives. Off by default — enable if your agent calls external APIs.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={(agent.metadata as Record<string, unknown> | undefined)?.auto_doc_injection === true}
+                    onCheckedChange={async (v) => {
+                      await updateAgent(agent.id, {
+                        metadata: { ...(agent.metadata || {}), auto_doc_injection: v },
+                      });
+                      await fetchAgents();
+                    }}
                   />
                 </div>
               </div>
