@@ -739,15 +739,30 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         const agentId = payload.agentId as string | undefined;
         if (!agentId) return;
         const isOnline = Boolean(payload.online);
+        const presence = payload.presence as
+          | "online_local"
+          | "online_hosted"
+          | "offline"
+          | undefined;
         set((s) => {
           const managed = s.agents[agentId];
-          if (!managed || managed.agent.online === isOnline) return s;
+          if (!managed) return s;
+          if (
+            managed.agent.online === isOnline &&
+            (presence === undefined || managed.agent.presence === presence)
+          ) {
+            return s;
+          }
           return {
             agents: {
               ...s.agents,
               [agentId]: {
                 ...managed,
-                agent: { ...managed.agent, online: isOnline },
+                agent: {
+                  ...managed.agent,
+                  online: isOnline,
+                  ...(presence ? { presence } : {}),
+                },
               },
             },
           };
