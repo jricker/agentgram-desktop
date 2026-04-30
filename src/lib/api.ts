@@ -1145,6 +1145,7 @@ export interface Agent {
   hostedMode?: "local_only" | "auto" | "hosted_only";
   hostedTargetBackend?: string | null;
   hostedModel?: string | null;
+  presence?: "online_local" | "online_hosted" | "offline";
 }
 
 export interface AgentHealth {

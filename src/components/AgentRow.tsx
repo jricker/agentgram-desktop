@@ -28,10 +28,26 @@ const ACTIVITY_DOT_COLORS = {
 function StatusBadge({
   status,
   uptimeSecs,
+  presence,
 }: {
   status: string;
   uptimeSecs: number | null;
+  presence?: "online_local" | "online_hosted" | "offline";
 }) {
+  // A `hosted_only` agent will sit at processStatus=stopped on this
+  // machine forever — that's by design. Showing "Stopped" implies
+  // something's broken, when really the agent is happily running
+  // server-side. Override the badge so the desktop owner sees the
+  // honest state.
+  if (status === "stopped" && presence === "online_hosted") {
+    return (
+      <Badge variant="outline" className="border-sky-500/30 text-sky-500 bg-sky-500/10 gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+        Hosted
+      </Badge>
+    );
+  }
+
   if (status === "running") {
     return (
       <Badge variant="outline" className="border-success/30 text-success bg-success/10 gap-1.5">
@@ -209,6 +225,7 @@ export function AgentRow({
               <StatusBadge
                 status={managed.processStatus}
                 uptimeSecs={managed.uptimeSecs}
+                presence={managed.agent.presence}
               />
               {managed.processStatus === "crashed" && managed.crashReason && (
                 <span
