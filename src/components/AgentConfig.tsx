@@ -540,24 +540,73 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   const isOn =
                     pref === true ||
                     (pref == null && apiBackends.includes(config.backend));
+                  // Per-agent hosted-model override. Empty string ===
+                  // "use local model"; saved as null on the wire.
+                  const savedHostedModel =
+                    typeof agent.hostedModel === "string" ? agent.hostedModel : "";
+                  // Models for the *target* backend, so a claude_cli
+                  // agent gets the anthropic model list when overriding.
+                  const targetModels = getModelsForProvider(target);
+                  const SAME_AS_LOCAL = "__same_as_local__";
                   return (
-                    <div className="flex items-start justify-between gap-3 pt-1">
-                      <div className="flex-1">
-                        <Label className="text-sm">Hosted fallback</Label>
-                        <p className="text-xs text-muted-foreground">
-                          When the local runtime is offline, the backend takes over and runs this agent server-side using your stored {targetLabel} key from Settings → Connections.
-                        </p>
+                    <>
+                      <div className="flex items-start justify-between gap-3 pt-1">
+                        <div className="flex-1">
+                          <Label className="text-sm">Hosted fallback</Label>
+                          <p className="text-xs text-muted-foreground">
+                            When the local runtime is offline, the backend takes over and runs this agent server-side using your stored {targetLabel} key from Settings → Connections.
+                          </p>
+                        </div>
+                        <Switch
+                          checked={isOn}
+                          onCheckedChange={async (v) => {
+                            await updateAgent(agent.id, {
+                              metadata: { ...(agent.metadata || {}), hosted_fallback: v },
+                            });
+                            await fetchAgents();
+                          }}
+                        />
                       </div>
-                      <Switch
-                        checked={isOn}
-                        onCheckedChange={async (v) => {
-                          await updateAgent(agent.id, {
-                            metadata: { ...(agent.metadata || {}), hosted_fallback: v },
-                          });
-                          await fetchAgents();
-                        }}
-                      />
-                    </div>
+                      {isOn && targetModels.length > 0 && (
+                        <div className="space-y-1.5 pl-1">
+                          <Label className="text-xs">Hosted model (optional)</Label>
+                          <Select
+                            value={savedHostedModel || SAME_AS_LOCAL}
+                            onValueChange={async (val: string | null) => {
+                              if (!val) return;
+                              const next = val === SAME_AS_LOCAL ? null : val;
+                              await updateAgent(agent.id, {
+                                metadata: { ...(agent.metadata || {}), hosted_model: next },
+                              });
+                              await fetchAgents();
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={SAME_AS_LOCAL}>
+                                Same as local
+                              </SelectItem>
+                              {savedHostedModel &&
+                                !targetModels.find((m) => m.id === savedHostedModel) && (
+                                  <SelectItem value={savedHostedModel}>
+                                    {savedHostedModel} (custom)
+                                  </SelectItem>
+                                )}
+                              {targetModels.map((m) => (
+                                <SelectItem key={m.id} value={m.id}>
+                                  {m.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Run a different (e.g. cheaper) model when the backend takes over. Defaults to your local model.
+                          </p>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
               </div>

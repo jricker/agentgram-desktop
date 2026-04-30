@@ -1144,6 +1144,7 @@ export interface Agent {
   hostedPaused?: boolean;
   hostedFallback?: boolean | null;
   hostedTargetBackend?: string | null;
+  hostedModel?: string | null;
 }
 
 export interface AgentHealth {
