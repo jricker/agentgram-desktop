@@ -87,6 +87,7 @@ class WebSocketService {
       "new_message",
       "typing_indicator",
       "agent_status_changed",
+      "agent_updated",
       "human_status_changed",
       "presence_snapshot",
       "agent_health_updated",

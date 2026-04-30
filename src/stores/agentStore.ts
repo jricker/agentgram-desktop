@@ -755,6 +755,31 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       })
     );
 
+    // Cross-device sync — backend pushes the fresh agent payload here
+    // whenever an agent is updated on any of the owner's clients.
+    // Without this, a setting toggled in the web app stays invisible
+    // in the desktop until the user refreshes.
+    unsubs.push(
+      ws.on("agent_updated", (payload) => {
+        const incoming = payload as Partial<api.Agent> & { id?: string };
+        const agentId = incoming?.id;
+        if (!agentId) return;
+        set((s) => {
+          const managed = s.agents[agentId];
+          if (!managed) return s;
+          return {
+            agents: {
+              ...s.agents,
+              [agentId]: {
+                ...managed,
+                agent: { ...managed.agent, ...incoming },
+              },
+            },
+          };
+        });
+      })
+    );
+
     return () => unsubs.forEach((u) => u());
   },
 
