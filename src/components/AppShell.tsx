@@ -19,6 +19,7 @@ import { useAgentStore } from "../stores/agentStore";
 import { useTaskStore, countActiveTasks } from "../stores/taskStore";
 import { usePresenceStore } from "../stores/presenceStore";
 import { useThemeStore } from "../stores/themeStore";
+import { AgentBusyToast } from "./AgentBusyToast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dashboard } from "./Dashboard";
 import { MessagesView } from "./messages/MessagesView";
@@ -90,6 +91,8 @@ export function AppShell() {
       >
         {showProfile && <Profile onClose={() => setShowProfile(false)} />}
       </div>
+
+      <AgentBusyToast />
     </div>
   );
 }
