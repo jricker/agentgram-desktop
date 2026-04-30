@@ -26,13 +26,11 @@ import { LogViewer } from "./LogViewer";
 import { SoulEditor } from "./SoulEditor";
 import { TemplateGallery } from "./TemplateGallery";
 import {
-  PROVIDERS,
   EXECUTION_MODES,
   EFFORT_LEVELS,
-  getModelsForProvider,
-  getSupportedModes,
   normalizeModelName,
 } from "../lib/models";
+import { useModelCatalog } from "../stores/modelCatalogStore";
 import { useLlmKeyStore } from "../stores/llmKeyStore";
 import { cn } from "../lib/utils";
 import { Button } from "@/components/ui/button";
@@ -107,9 +105,16 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   const backend = config.backend || "anthropic";
   const model = config.model || "";
   const executionMode = config.executionMode || "single_shot";
-  const availableModels = getModelsForProvider(backend);
+  // Backend-served catalog. Same source as web/mobile so the three
+  // surfaces stay aligned by construction.
+  const catalog = useModelCatalog();
+  useEffect(() => {
+    void catalog.ensureLoaded();
+  }, [catalog]);
+  const PROVIDERS = catalog.providers;
+  const availableModels = catalog.modelsFor(backend);
   const currentModelInList = availableModels.some((m) => m.id === model);
-  const supportedModes = getSupportedModes(backend);
+  const supportedModes = catalog.supportedModesFor(backend);
   const providerExists = PROVIDERS.some((p) => p.id === backend);
 
   const [keyError, setKeyError] = useState<string | null>(null);
@@ -240,8 +245,8 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     value={backend}
                     onValueChange={(val: string | null) => {
                       if (!val) return;
-                      const models = getModelsForProvider(val);
-                      const modes = getSupportedModes(val);
+                      const models = catalog.modelsFor(val);
+                      const modes = catalog.supportedModesFor(val);
                       const updates: Record<string, unknown> = {
                         backend: val,
                         model: models[0]?.id || "",
@@ -546,7 +551,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     typeof agent.hostedModel === "string" ? agent.hostedModel : "";
                   // Models for the *target* backend, so a claude_cli
                   // agent gets the anthropic model list when overriding.
-                  const targetModels = getModelsForProvider(target);
+                  const targetModels = catalog.modelsFor(target);
                   const SAME_AS_LOCAL = "__same_as_local__";
                   return (
                     <>

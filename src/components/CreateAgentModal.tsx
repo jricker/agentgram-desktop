@@ -2,13 +2,10 @@ import { useState, useMemo, useEffect } from "react";
 import { useAgentStore } from "../stores/agentStore";
 import { useLlmKeyStore } from "../stores/llmKeyStore";
 import {
-  PROVIDERS,
   EXECUTION_MODES,
   EFFORT_LEVELS,
-  getModelsForProvider,
-  getSupportedModes,
-  providerRequiresLlmKey,
 } from "../lib/models";
+import { useModelCatalog } from "../stores/modelCatalogStore";
 import {
   presignAvatarUpload,
   updateAgent,
@@ -73,9 +70,17 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
       });
   }, []);
 
-  const models = useMemo(() => getModelsForProvider(backend), [backend]);
-  const supportedModes = useMemo(() => getSupportedModes(backend), [backend]);
-  const needsApiKey = providerRequiresLlmKey(backend);
+  const catalog = useModelCatalog();
+  useEffect(() => {
+    void catalog.ensureLoaded();
+  }, [catalog]);
+  const PROVIDERS = catalog.providers;
+  const models = useMemo(() => catalog.modelsFor(backend), [catalog, backend]);
+  const supportedModes = useMemo(
+    () => catalog.supportedModesFor(backend),
+    [catalog, backend]
+  );
+  const needsApiKey = catalog.requiresLlmKey(backend);
   const hasDefaultKey = llmKeyStore.getDefaultKey(backend) !== null;
   const showApiKeyInput = needsApiKey && !hasDefaultKey;
   const showEffort = backend === "claude_cli";
@@ -120,12 +125,12 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
 
   const handleBackendChange = (newBackend: string) => {
     setBackend(newBackend);
-    const newModels = getModelsForProvider(newBackend);
+    const newModels = catalog.modelsFor(newBackend);
     if (newModels.length > 0) {
       setModel(newModels[0].id);
     }
     // Reset execution mode if not supported by new backend
-    const newModes = getSupportedModes(newBackend);
+    const newModes = catalog.supportedModesFor(newBackend);
     if (!newModes.includes(executionMode)) {
       setExecutionMode(newModes.includes("tool_use") ? "tool_use" : newModes[0]);
     }
