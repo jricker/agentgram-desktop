@@ -1142,7 +1142,7 @@ export interface Agent {
   // Hosted execution surface mirrors web/mobile.
   hostedReady?: boolean;
   hostedPaused?: boolean;
-  hostedFallback?: boolean | null;
+  hostedMode?: "local_only" | "auto" | "hosted_only";
   hostedTargetBackend?: string | null;
   hostedModel?: string | null;
 }

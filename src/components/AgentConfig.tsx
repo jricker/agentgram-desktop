@@ -538,42 +538,51 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   const targetLabel =
                     target === "anthropic" ? "Anthropic" :
                     target === "openai" ? "OpenAI" : target;
-                  // Tri-state pref → bool. Default mirrors the backend
-                  // rule: API agents default ON, local-runtime default OFF.
-                  const pref = agent.hostedFallback;
-                  const apiBackends = ["anthropic", "openai"];
-                  const isOn =
-                    pref === true ||
-                    (pref == null && apiBackends.includes(config.backend));
+                  // Server resolves the mode (per-backend default for
+                  // unset metadata), so we render directly against
+                  // the value we get back.
+                  const mode = agent.hostedMode ?? "local_only";
+                  const hostedActive = mode !== "local_only";
                   // Per-agent hosted-model override. Empty string ===
                   // "use local model"; saved as null on the wire.
                   const savedHostedModel =
                     typeof agent.hostedModel === "string" ? agent.hostedModel : "";
-                  // Models for the *target* backend, so a claude_cli
-                  // agent gets the anthropic model list when overriding.
                   const targetModels = catalog.modelsFor(target);
                   const SAME_AS_LOCAL = "__same_as_local__";
                   return (
                     <>
-                      <div className="flex items-start justify-between gap-3 pt-1">
-                        <div className="flex-1">
-                          <Label className="text-sm">Hosted fallback</Label>
-                          <p className="text-xs text-muted-foreground">
-                            When the local runtime is offline, the backend takes over and runs this agent server-side using your stored {targetLabel} key from Settings → Connections.
-                          </p>
-                        </div>
-                        <Switch
-                          checked={isOn}
-                          onCheckedChange={async (v) => {
+                      <div className="space-y-1.5 pt-1">
+                        <Label className="text-sm">Hosted mode</Label>
+                        <Select
+                          value={mode}
+                          onValueChange={async (val: string | null) => {
+                            if (!val) return;
                             await updateAgent(agent.id, {
-                              metadata: { ...(agent.metadata || {}), hosted_fallback: v },
+                              metadata: { ...(agent.metadata || {}), hosted_mode: val },
                             });
                             await fetchAgents();
                           }}
-                        />
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="local_only">Local only</SelectItem>
+                            <SelectItem value="auto">Local with hosted fallback</SelectItem>
+                            <SelectItem value="hosted_only">Hosted only</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {mode === "local_only" &&
+                            "Runs only via the desktop bridge. No server-side execution."}
+                          {mode === "auto" &&
+                            `Bridge-first. Backend takes over with your ${targetLabel} key from Settings → Connections after the bridge is offline 5+ min.`}
+                          {mode === "hosted_only" &&
+                            `Runs server-side always using your ${targetLabel} key. No desktop bridge required.`}
+                        </p>
                       </div>
-                      {isOn && targetModels.length > 0 && (
-                        <div className="space-y-1.5 pl-1">
+                      {hostedActive && targetModels.length > 0 && (
+                        <div className="space-y-1.5">
                           <Label className="text-xs">Hosted model (optional)</Label>
                           <Select
                             value={savedHostedModel || SAME_AS_LOCAL}
