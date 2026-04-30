@@ -559,11 +559,23 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
 
     const needsLlmKey = providerRequiresLlmKey(managed.config.backend);
-    const llmApiKey = resolveLlmApiKey(managed.config);
+    let llmApiKey = resolveLlmApiKey(managed.config);
+
+    // Fallback: if no local key but the backend has one stored under
+    // Connections, resolve it via the API. Walks the ownership chain
+    // server-side, so an agent's auth gets back its owner's key.
+    if (needsLlmKey && !llmApiKey) {
+      try {
+        const { token } = await api.resolveProviderToken(managed.config.backend);
+        if (token) llmApiKey = token;
+      } catch {
+        // Backend has nothing either — fall through to the error below.
+      }
+    }
 
     if (needsLlmKey && !llmApiKey) {
       throw new Error(
-        `No LLM API key configured for ${managed.config.backend}. Set one in Settings or in the agent config.`
+        `No LLM API key configured for ${managed.config.backend}. Set one in Settings → LLM Keys or Connections.`
       );
     }
 

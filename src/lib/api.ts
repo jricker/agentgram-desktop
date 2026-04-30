@@ -519,6 +519,17 @@ export async function getProviderStatus(provider: string): Promise<{
   return request(`/api/integrations/${provider}/status`);
 }
 
+// Resolves the raw token for a provider via the backend. Walks the
+// ownership chain server-side, so an agent's auth resolves its owner's
+// key. Used as a fallback when the local LLM Keys store doesn't have
+// an entry — lets a user paste an Anthropic key once in "Connections"
+// and have the local bridge pick it up too.
+export async function resolveProviderToken(
+  provider: string
+): Promise<{ provider: string; token: string }> {
+  return request(`/api/integrations/${provider}/resolve`);
+}
+
 // Annotations
 export async function listAnnotations(params?: {
   topic?: string;
