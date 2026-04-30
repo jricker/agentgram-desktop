@@ -527,6 +527,39 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     }}
                   />
                 </div>
+
+                {agent.hostedTargetBackend && (() => {
+                  const target = agent.hostedTargetBackend;
+                  const targetLabel =
+                    target === "anthropic" ? "Anthropic" :
+                    target === "openai" ? "OpenAI" : target;
+                  // Tri-state pref → bool. Default mirrors the backend
+                  // rule: API agents default ON, local-runtime default OFF.
+                  const pref = agent.hostedFallback;
+                  const apiBackends = ["anthropic", "openai"];
+                  const isOn =
+                    pref === true ||
+                    (pref == null && apiBackends.includes(config.backend));
+                  return (
+                    <div className="flex items-start justify-between gap-3 pt-1">
+                      <div className="flex-1">
+                        <Label className="text-sm">Hosted fallback</Label>
+                        <p className="text-xs text-muted-foreground">
+                          When the local runtime is offline, the backend takes over and runs this agent server-side using your stored {targetLabel} key from Settings → Connections.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={isOn}
+                        onCheckedChange={async (v) => {
+                          await updateAgent(agent.id, {
+                            metadata: { ...(agent.metadata || {}), hosted_fallback: v },
+                          });
+                          await fetchAgents();
+                        }}
+                      />
+                    </div>
+                  );
+                })()}
               </div>
             </Section>
 

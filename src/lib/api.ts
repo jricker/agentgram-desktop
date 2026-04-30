@@ -1139,6 +1139,11 @@ export interface Agent {
   soulMdInherited?: boolean;
   soulMdSourceName?: string;
   soulMdSourceId?: string;
+  // Hosted execution surface mirrors web/mobile.
+  hostedReady?: boolean;
+  hostedPaused?: boolean;
+  hostedFallback?: boolean | null;
+  hostedTargetBackend?: string | null;
 }
 
 export interface AgentHealth {
