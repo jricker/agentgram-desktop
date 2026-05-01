@@ -1219,8 +1219,13 @@ function LlmApiKeysSection() {
 
   const providersWithKeys = PROVIDERS.filter((p) => p.requiresLlmKey);
 
-  // Pull from the backend on mount; the migration shim runs the first
-  // time after this upgrade and pushes any localStorage keys up.
+  // Pull from the backend every time the section mounts (not just the
+  // first time). Avoids the failure mode where a stale Zustand
+  // snapshot — e.g. preserved across Vite HMR or carried over from a
+  // partial migration — would hold ids the backend doesn't have, which
+  // surfaces as a confusing "I clicked delete and nothing happened" UX.
+  // The migration shim short-circuits via `MIGRATION_DONE_KEY` so this
+  // is a normal list call after the first launch.
   useEffect(() => {
     refresh();
   }, [refresh]);

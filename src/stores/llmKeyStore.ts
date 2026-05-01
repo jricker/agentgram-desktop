@@ -194,6 +194,18 @@ function promoteVeryLegacyShape() {
   }
 }
 
+/**
+ * "The server doesn't have this row" detection. Any time a mutation
+ * targets an id the backend returns 404 for, our local list is stale —
+ * usually because of a partial migration, an HMR-preserved Zustand
+ * snapshot, or a multi-window state desync. Treat it as "already gone"
+ * and trigger a refresh instead of bubbling a scary error to the user.
+ */
+function isStaleEntry(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  return /\b404\b/.test(err.message);
+}
+
 function fromApi(key: api.LlmApiKey): LlmApiKey {
   return {
     id: key.id,
@@ -245,20 +257,49 @@ export const useLlmKeyStore = create<LlmKeyState>((set, get) => ({
   },
 
   updateKey: async (id, updates) => {
-    await api.updateLlmKey(id, {
-      label: updates.label,
-      token: updates.apiKey,
-    });
+    try {
+      await api.updateLlmKey(id, {
+        label: updates.label,
+        token: updates.apiKey,
+      });
+    } catch (e) {
+      if (isStaleEntry(e)) {
+        // Local list points at a row the server doesn't have. Refresh
+        // so the UI drops it instead of getting stuck on the 404.
+        await get().refresh();
+        return;
+      }
+      throw e;
+    }
     await get().refresh();
   },
 
   setDefault: async (_provider, keyId) => {
-    await api.setDefaultLlmKey(keyId);
+    try {
+      await api.setDefaultLlmKey(keyId);
+    } catch (e) {
+      if (isStaleEntry(e)) {
+        await get().refresh();
+        return;
+      }
+      throw e;
+    }
     await get().refresh();
   },
 
   removeKey: async (id) => {
-    await api.deleteLlmKey(id);
+    try {
+      await api.deleteLlmKey(id);
+    } catch (e) {
+      if (isStaleEntry(e)) {
+        // Server says the row is gone — UI was holding a stale id from
+        // a partial migration / HMR / multi-window state. Refresh to
+        // drop it; from the user's perspective the delete "worked".
+        await get().refresh();
+        return;
+      }
+      throw e;
+    }
     await get().refresh();
   },
 
