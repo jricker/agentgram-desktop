@@ -18,9 +18,14 @@ import {
   enableAgentHeartbeat,
   disableAgentHeartbeat,
   triggerAgentHeartbeat,
+  pauseAgentHosted,
+  resumeAgentHosted,
+  updateAgentHostedLimits,
   type Connection,
   type AgentHealthDetail,
   type HeartbeatData,
+  type Agent,
+  type AgentHostedLimits,
 } from "../lib/api";
 import { LogViewer } from "./LogViewer";
 import { SoulEditor } from "./SoulEditor";
@@ -82,6 +87,7 @@ import {
   Clock,
   HeartPulse,
   Play,
+  Loader2,
 } from "lucide-react";
 import {
   Dialog,
@@ -619,6 +625,12 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                             Run a different (e.g. cheaper) model when the backend takes over. Defaults to your local model.
                           </p>
                         </div>
+                      )}
+                      {hostedActive && (
+                        <HostedRunControls
+                          agent={agent}
+                          onChanged={fetchAgents}
+                        />
                       )}
                     </>
                   );
@@ -1764,5 +1776,181 @@ function DangerZone({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Hosted Run Controls — Pause toggle + per-agent RPM cap.
+// Mirrors web/src/components/AgentDetail.tsx → HostedRunControls so the
+// owner can manage hosted spend with the same granularity from desktop.
+// Caller is responsible for hiding this when hosted is `local_only`.
+// ---------------------------------------------------------------------------
+
+function HostedRunControls({
+  agent,
+  onChanged,
+}: {
+  agent: Agent;
+  onChanged: () => Promise<unknown> | void;
+}) {
+  const limits = agent.hostedLimits;
+
+  const [paused, setPaused] = useState(agent.hostedPaused ?? false);
+  const [pausing, setPausing] = useState(false);
+  const [rpmInput, setRpmInput] = useState(
+    limits?.rpm != null ? String(limits.rpm) : ""
+  );
+  const [rpmEditing, setRpmEditing] = useState(false);
+  const [rpmSaving, setRpmSaving] = useState(false);
+  const [rpmError, setRpmError] = useState<string | null>(null);
+  const [rpmSaved, setRpmSaved] = useState(false);
+
+  // Reflect upstream agent updates (cross-device edits, refetch after save).
+  useEffect(() => {
+    setPaused(agent.hostedPaused ?? false);
+  }, [agent.hostedPaused]);
+  useEffect(() => {
+    setRpmInput(limits?.rpm != null ? String(limits.rpm) : "");
+  }, [limits?.rpm]);
+
+  const togglePause = async () => {
+    const next = !paused;
+    setPausing(true);
+    try {
+      if (next) {
+        await pauseAgentHosted(agent.id);
+      } else {
+        await resumeAgentHosted(agent.id);
+      }
+      setPaused(next);
+      await onChanged();
+    } catch (e) {
+      console.error("Failed to toggle hosted pause", e);
+    } finally {
+      setPausing(false);
+    }
+  };
+
+  const saveRpm = async () => {
+    setRpmError(null);
+    const trimmed = rpmInput.trim();
+    let rpm: number | null;
+    if (trimmed === "") {
+      rpm = null;
+    } else {
+      const n = Number(trimmed);
+      if (!Number.isInteger(n) || n <= 0) {
+        setRpmError("Enter a positive whole number, or leave blank for the default.");
+        return;
+      }
+      if (limits && n > limits.maxRpm) {
+        setRpmError(`Maximum is ${limits.maxRpm}.`);
+        return;
+      }
+      rpm = n;
+    }
+
+    setRpmSaving(true);
+    try {
+      const res: { id: string; hostedLimits: AgentHostedLimits } =
+        await updateAgentHostedLimits(agent.id, rpm);
+      setRpmEditing(false);
+      setRpmSaved(true);
+      setTimeout(() => setRpmSaved(false), 1500);
+      // Sync local input from the server's resolved value (defaults applied).
+      setRpmInput(res.hostedLimits.rpm != null ? String(res.hostedLimits.rpm) : "");
+      await onChanged();
+    } catch (e) {
+      setRpmError(e instanceof Error ? e.message : "Could not save the RPM cap.");
+    } finally {
+      setRpmSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 border-t border-border pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex-1">
+          <Label className="text-xs">Paused</Label>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {paused
+              ? "Hosted runs are held. Bridge-mode delivery is unaffected."
+              : "Temporary stop for hosted runs without changing the mode above."}
+          </p>
+        </div>
+        <Switch checked={paused} onCheckedChange={togglePause} disabled={pausing} />
+      </div>
+
+      <div className="flex items-baseline justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <Label className="text-xs">Requests / minute</Label>
+          {!rpmEditing ? (
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {limits?.rpm != null
+                ? `${limits.rpm} (custom)`
+                : `${limits?.defaultRpm ?? 60} (default)`}
+            </p>
+          ) : (
+            <div className="mt-1 flex items-center gap-2">
+              <Input
+                type="number"
+                min={1}
+                max={limits?.maxRpm}
+                placeholder={String(limits?.defaultRpm ?? 60)}
+                value={rpmInput}
+                onChange={(e) => setRpmInput(e.target.value)}
+                className="h-7 max-w-[120px] text-sm tabular-nums"
+                disabled={rpmSaving}
+              />
+              <span className="text-[11px] text-muted-foreground">/ min</span>
+            </div>
+          )}
+          {rpmEditing && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Leave blank for the default ({limits?.defaultRpm ?? 60}). Max{" "}
+              {limits?.maxRpm}.
+            </p>
+          )}
+          {rpmError && <p className="mt-1 text-[11px] text-destructive">{rpmError}</p>}
+        </div>
+
+        {!rpmEditing ? (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRpmEditing(true);
+              setRpmError(null);
+            }}
+          >
+            Edit
+          </Button>
+        ) : (
+          <div className="flex shrink-0 gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setRpmEditing(false);
+                setRpmError(null);
+                setRpmInput(limits?.rpm != null ? String(limits.rpm) : "");
+              }}
+              disabled={rpmSaving}
+            >
+              Cancel
+            </Button>
+            <Button size="sm" onClick={saveRpm} disabled={rpmSaving}>
+              {rpmSaving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : rpmSaved ? (
+                <Check className="h-3 w-3" />
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

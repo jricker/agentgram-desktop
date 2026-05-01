@@ -121,6 +121,7 @@ const SECTIONS = [
   { value: "region", label: "Region", icon: Globe },
   { value: "memory", label: "Memory", icon: Brain },
   { value: "llm-keys", label: "LLM Keys", icon: Key },
+  { value: "hosted", label: "Hosted", icon: Cloud },
   { value: "connections", label: "Connections", icon: Link2 },
 ] as const;
 
@@ -613,6 +614,12 @@ export function Profile({ onClose }: { onClose: () => void }) {
         {activeSection === "llm-keys" && (
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             <LlmApiKeysSection />
+          </div>
+        )}
+
+        {activeSection === "hosted" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <HostedExecutionSection />
           </div>
         )}
 
@@ -1866,6 +1873,256 @@ function MemorySection({
 // ---------------------------------------------------------------------------
 // Sub-components
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Hosted Execution Section
+//
+// Mirrors web/src/pages/ProfilePage.tsx → HostedExecutionSection so users
+// who manage their setup from desktop have the same daily-token cap
+// control + live usage bar.
+// ---------------------------------------------------------------------------
+
+function formatTokens(n: number): string {
+  return n.toLocaleString("en-US");
+}
+
+function formatResetsAt(iso: string): string {
+  try {
+    const d = new Date(iso);
+    const hours = Math.max(
+      0,
+      Math.round((d.getTime() - Date.now()) / (60 * 60 * 1000))
+    );
+    if (hours <= 0) return "soon";
+    if (hours === 1) return "in 1 hour";
+    return `in ${hours} hours`;
+  } catch {
+    return "at UTC midnight";
+  }
+}
+
+function HostedExecutionSection() {
+  const [limits, setLimits] = useState<api.OwnerHostedLimits | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [input, setInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const data = await api.getMyHostedLimits();
+      setLimits(data);
+      setInput(data.dailyTokens != null ? String(data.dailyTokens) : "");
+    } catch (e) {
+      // Soft-fail: hide the panel on older backends rather than block.
+      console.warn("Failed to load hosted limits", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+    // Auto-refresh while mounted so the bar reflects fresh charges.
+    // 30s matches an order-of-magnitude burn rate for a single agent.
+    const interval = setInterval(refresh, 30_000);
+    return () => clearInterval(interval);
+  }, [refresh]);
+
+  const startEdit = () => {
+    setEditing(true);
+    setError(null);
+    setSaved(false);
+  };
+
+  const cancel = () => {
+    setEditing(false);
+    setError(null);
+    setInput(limits?.dailyTokens != null ? String(limits.dailyTokens) : "");
+  };
+
+  const save = async () => {
+    setError(null);
+    setSaving(true);
+
+    const trimmed = input.trim();
+    let dailyTokens: number | null;
+    if (trimmed === "") {
+      dailyTokens = null;
+    } else {
+      const n = Number(trimmed);
+      if (!Number.isInteger(n) || n <= 0) {
+        setError(
+          "Enter a positive whole number, or clear the field to use the default."
+        );
+        setSaving(false);
+        return;
+      }
+      dailyTokens = n;
+    }
+
+    try {
+      const updated = await api.updateMyHostedLimits(dailyTokens);
+      setLimits(updated);
+      setEditing(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not save the new cap.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section>
+        <SectionHeader title="Hosted Execution" />
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </section>
+    );
+  }
+
+  if (!limits) {
+    return (
+      <section>
+        <SectionHeader
+          title="Hosted Execution"
+          subtitle="Backend doesn't support hosted limits yet."
+        />
+      </section>
+    );
+  }
+
+  const pct = Math.min(
+    100,
+    Math.round(
+      (limits.usedTokensToday / Math.max(limits.effectiveDailyTokens, 1)) * 100
+    )
+  );
+  const isNearCap = pct >= 80;
+  const isAtCap = limits.remainingTokensToday <= 0;
+
+  return (
+    <section>
+      <SectionHeader
+        title="Hosted Execution"
+        subtitle={`Token budget for backend agent runs. Resets at UTC midnight (${formatResetsAt(limits.resetsAt)}).`}
+      />
+
+      <p className="mb-3 text-xs text-muted-foreground">
+        When your desktop bridge is offline for more than 5 minutes, agents
+        with API-based backends fall back to running on the server using
+        your stored Anthropic / OpenAI key. This budget caps cumulative
+        spend across all hosted runs.
+      </p>
+
+      <div className="space-y-3">
+        <div className="rounded-lg border border-border p-3">
+          <div className="flex items-baseline justify-between">
+            <span className="text-xs text-muted-foreground">Used today</span>
+            <span
+              className={cn(
+                "text-sm font-medium tabular-nums",
+                isAtCap && "text-destructive",
+                !isAtCap && isNearCap && "text-amber-500"
+              )}
+            >
+              {formatTokens(limits.usedTokensToday)} /{" "}
+              {formatTokens(limits.effectiveDailyTokens)}
+            </span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                "h-full transition-all",
+                isAtCap
+                  ? "bg-destructive"
+                  : isNearCap
+                    ? "bg-amber-500"
+                    : "bg-primary"
+              )}
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {isAtCap && (
+            <p className="mt-2 text-xs text-destructive">
+              Cap reached. Hosted agents won't reply until reset or until
+              you raise the cap.
+            </p>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-border p-3">
+          <div className="flex items-baseline justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <Label className="text-xs">Daily token cap</Label>
+              {!editing ? (
+                <div className="mt-1 text-sm">
+                  {limits.dailyTokens != null
+                    ? `${formatTokens(limits.dailyTokens)} (custom)`
+                    : `${formatTokens(limits.defaultDailyTokens)} (default)`}
+                </div>
+              ) : (
+                <div className="mt-2 flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    placeholder={String(limits.defaultDailyTokens)}
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    className="h-7 max-w-[180px] text-sm tabular-nums"
+                    disabled={saving}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    tokens / day
+                  </span>
+                </div>
+              )}
+              {editing && (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Leave blank to use the default (
+                  {formatTokens(limits.defaultDailyTokens)}).
+                </p>
+              )}
+              {error && (
+                <p className="mt-1 text-xs text-destructive">{error}</p>
+              )}
+            </div>
+
+            {!editing ? (
+              <Button variant="outline" size="sm" onClick={startEdit}>
+                Edit
+              </Button>
+            ) : (
+              <div className="flex shrink-0 gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={cancel}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={save} disabled={saving}>
+                  {saving ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : saved ? (
+                    <Check className="h-3 w-3" />
+                  ) : (
+                    "Save"
+                  )}
+                </Button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function SectionHeader({
   title,
