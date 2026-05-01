@@ -645,12 +645,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ agents: { ...get().agents, [id]: { ...managed, config } } });
       saveLocalConfig(id, config);
 
-      // Sync model_config fields to backend when changed
+      // Sync model_config fields to backend when changed. llm_api_key_id
+      // is the per-agent override that the hosted executor reads at
+      // resolve time — without persisting it server-side, hosted runs
+      // silently use the user's default key regardless of what was
+      // picked in the dropdown. `null` clears the override.
       const mcPatch: Record<string, unknown> = {};
       if (partial.backend) mcPatch.backend = partial.backend;
       if (partial.model) mcPatch.model = partial.model;
       if (partial.executionMode) mcPatch.execution_mode = partial.executionMode;
       if (partial.effort) mcPatch.effort = partial.effort;
+      if ("llmApiKeyId" in partial) mcPatch.llm_api_key_id = partial.llmApiKeyId;
       if (Object.keys(mcPatch).length > 0) {
         api.updateModelConfig(id, mcPatch).catch((err) =>
           console.warn(`[agentStore] Failed to sync model_config to backend:`, err)
