@@ -144,10 +144,28 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
     }
   };
 
-  const { keys: llmKeys, defaults: llmDefaults, getKeysForProvider: getLlmKeysForProvider } = useLlmKeyStore();
-  const providerKeys = useMemo(() => getLlmKeysForProvider(backend), [getLlmKeysForProvider, backend, llmKeys]);
-  const hasAppDefault = useMemo(() => !!llmDefaults[backend], [llmDefaults, backend]);
-  const keyMode = config.llmApiKey ? "custom" : config.llmApiKeyId || (hasAppDefault ? "__default__" : "__default__");
+  // Multi-key list is now backend-backed. Trigger a refresh on mount so
+  // the dropdown reflects the latest server state — adding a key from
+  // Profile → LLM Keys propagates here without a page reload.
+  const llmKeys = useLlmKeyStore((s) => s.keys);
+  const refreshLlmKeys = useLlmKeyStore((s) => s.refresh);
+  const llmKeysLoaded = useLlmKeyStore((s) => s.loaded);
+  useEffect(() => {
+    if (!llmKeysLoaded) refreshLlmKeys();
+  }, [llmKeysLoaded, refreshLlmKeys]);
+  const providerKeys = useMemo(
+    () => llmKeys.filter((k) => k.provider === backend),
+    [llmKeys, backend]
+  );
+  const hasAppDefault = useMemo(
+    () => providerKeys.some((k) => k.isDefault),
+    [providerKeys]
+  );
+  // Sentinel must match the SelectItem value below (`__custom__`), otherwise
+  // base-ui can't find a matching item and the trigger falls back to raw text.
+  const keyMode = config.llmApiKey
+    ? "__custom__"
+    : config.llmApiKeyId || "__default__";
 
   const [activeSection, setActiveSection] = useState("config");
   const [showGallery, setShowGallery] = useState(false);
@@ -324,7 +342,18 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     }}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue />
+                      <SelectValue>
+                        {(val: unknown) => {
+                          const v = String(val);
+                          if (v === "__default__") {
+                            return hasAppDefault
+                              ? "Provider Default"
+                              : "None (set in Settings)";
+                          }
+                          if (v === "__custom__") return "Custom Key...";
+                          return providerKeys.find((k) => k.id === v)?.label ?? v;
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="__default__">
@@ -338,7 +367,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                       <SelectItem value="__custom__">Custom Key...</SelectItem>
                     </SelectContent>
                   </Select>
-                  {keyMode === "custom" && (
+                  {keyMode === "__custom__" && (
                     <div className="flex gap-2">
                       <Input
                         type={showLlmKey ? "text" : "password"}
@@ -366,6 +395,141 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     </div>
                   )}
                 </div>
+
+                {/* Hosted execution — runs alongside the Provider/Model/API
+                    Key trio because it decides which path actually executes
+                    those settings (local bridge, hosted fallback, or always
+                    hosted). */}
+                {agent.hostedTargetBackend && (() => {
+                  const target = agent.hostedTargetBackend;
+                  const targetLabel =
+                    target === "anthropic" ? "Anthropic" :
+                    target === "openai" ? "OpenAI" : target;
+                  // Server resolves the mode (per-backend default for
+                  // unset metadata), so we render directly against
+                  // the value we get back.
+                  const mode = agent.hostedMode ?? "local_only";
+                  const hostedActive = mode !== "local_only";
+                  // Per-agent hosted-model override. Empty string ===
+                  // "use local model"; saved as null on the wire.
+                  const savedHostedModel =
+                    typeof agent.hostedModel === "string" ? agent.hostedModel : "";
+                  const targetModels = catalog.modelsFor(target);
+                  const SAME_AS_LOCAL = "__same_as_local__";
+                  // Local-runtime backends like claude_cli can't actually run
+                  // server-side — picking "hosted only" would silently swap
+                  // them onto the plain Anthropic API, which changes tools /
+                  // MCP / behavior. Hide the option for CLI agents so users
+                  // don't end up there by accident. Show it if it's already
+                  // the saved value (e.g. set from web before this guard
+                  // existed) so the user can switch off.
+                  const isLocalRuntime = backend === "claude_cli";
+                  const allowHostedOnly = !isLocalRuntime || mode === "hosted_only";
+                  // base-ui's Select.Value renders the raw `value` string
+                  // when it can't introspect the matched Item's label —
+                  // different from Radix. Map explicitly so the trigger
+                  // shows "Local with hosted fallback" instead of "auto".
+                  const HOSTED_MODE_LABELS: Record<string, string> = {
+                    local_only: "Local only",
+                    auto: "Local with hosted fallback",
+                    hosted_only: "Hosted only",
+                  };
+                  return (
+                    <>
+                      <div className="space-y-1.5 pt-1">
+                        <Label className="text-xs">Hosted mode</Label>
+                        <Select
+                          value={mode}
+                          onValueChange={async (val: string | null) => {
+                            if (!val) return;
+                            await updateAgent(agent.id, {
+                              metadata: { ...(agent.metadata || {}), hosted_mode: val },
+                            });
+                            await fetchAgents();
+                          }}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue>
+                              {(val: unknown) =>
+                                HOSTED_MODE_LABELS[String(val)] ?? String(val)
+                              }
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="local_only">Local only</SelectItem>
+                            <SelectItem value="auto">Local with hosted fallback</SelectItem>
+                            {allowHostedOnly && (
+                              <SelectItem value="hosted_only">Hosted only</SelectItem>
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          {mode === "local_only" &&
+                            "Runs only via the desktop bridge. No server-side execution."}
+                          {mode === "auto" &&
+                            (isLocalRuntime
+                              ? `Bridge-first. If the bridge is offline 5+ min, the backend falls back to the ${targetLabel} API for that window — note this swaps the CLI runtime for the plain API.`
+                              : `Bridge-first. Backend takes over with your ${targetLabel} key from Settings → Connections after the bridge is offline 5+ min.`)}
+                          {mode === "hosted_only" &&
+                            `Runs server-side always using your ${targetLabel} key. No desktop bridge required.`}
+                        </p>
+                      </div>
+                      {hostedActive && targetModels.length > 0 && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Hosted model (optional)</Label>
+                          <Select
+                            value={savedHostedModel || SAME_AS_LOCAL}
+                            onValueChange={async (val: string | null) => {
+                              if (!val) return;
+                              const next = val === SAME_AS_LOCAL ? null : val;
+                              await updateAgent(agent.id, {
+                                metadata: { ...(agent.metadata || {}), hosted_model: next },
+                              });
+                              await fetchAgents();
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue>
+                                {(val: unknown) => {
+                                  const v = String(val);
+                                  if (v === SAME_AS_LOCAL) return "Same as local";
+                                  return (
+                                    targetModels.find((m) => m.id === v)?.label ?? v
+                                  );
+                                }}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value={SAME_AS_LOCAL}>
+                                Same as local
+                              </SelectItem>
+                              {savedHostedModel &&
+                                !targetModels.find((m) => m.id === savedHostedModel) && (
+                                  <SelectItem value={savedHostedModel}>
+                                    {savedHostedModel} (custom)
+                                  </SelectItem>
+                                )}
+                              {targetModels.map((m) => (
+                                <SelectItem key={m.id} value={m.id}>
+                                  {m.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <p className="text-xs text-muted-foreground">
+                            Run a different (e.g. cheaper) model when the backend takes over. Defaults to your local model.
+                          </p>
+                        </div>
+                      )}
+                      {hostedActive && (
+                        <HostedRunControls
+                          agent={agent}
+                          onChanged={fetchAgents}
+                        />
+                      )}
+                    </>
+                  );
+                })()}
               </div>
             </Section>
 
@@ -539,102 +703,6 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   />
                 </div>
 
-                {agent.hostedTargetBackend && (() => {
-                  const target = agent.hostedTargetBackend;
-                  const targetLabel =
-                    target === "anthropic" ? "Anthropic" :
-                    target === "openai" ? "OpenAI" : target;
-                  // Server resolves the mode (per-backend default for
-                  // unset metadata), so we render directly against
-                  // the value we get back.
-                  const mode = agent.hostedMode ?? "local_only";
-                  const hostedActive = mode !== "local_only";
-                  // Per-agent hosted-model override. Empty string ===
-                  // "use local model"; saved as null on the wire.
-                  const savedHostedModel =
-                    typeof agent.hostedModel === "string" ? agent.hostedModel : "";
-                  const targetModels = catalog.modelsFor(target);
-                  const SAME_AS_LOCAL = "__same_as_local__";
-                  return (
-                    <>
-                      <div className="space-y-1.5 pt-1">
-                        <Label className="text-sm">Hosted mode</Label>
-                        <Select
-                          value={mode}
-                          onValueChange={async (val: string | null) => {
-                            if (!val) return;
-                            await updateAgent(agent.id, {
-                              metadata: { ...(agent.metadata || {}), hosted_mode: val },
-                            });
-                            await fetchAgents();
-                          }}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="local_only">Local only</SelectItem>
-                            <SelectItem value="auto">Local with hosted fallback</SelectItem>
-                            <SelectItem value="hosted_only">Hosted only</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <p className="text-xs text-muted-foreground">
-                          {mode === "local_only" &&
-                            "Runs only via the desktop bridge. No server-side execution."}
-                          {mode === "auto" &&
-                            `Bridge-first. Backend takes over with your ${targetLabel} key from Settings → Connections after the bridge is offline 5+ min.`}
-                          {mode === "hosted_only" &&
-                            `Runs server-side always using your ${targetLabel} key. No desktop bridge required.`}
-                        </p>
-                      </div>
-                      {hostedActive && targetModels.length > 0 && (
-                        <div className="space-y-1.5">
-                          <Label className="text-xs">Hosted model (optional)</Label>
-                          <Select
-                            value={savedHostedModel || SAME_AS_LOCAL}
-                            onValueChange={async (val: string | null) => {
-                              if (!val) return;
-                              const next = val === SAME_AS_LOCAL ? null : val;
-                              await updateAgent(agent.id, {
-                                metadata: { ...(agent.metadata || {}), hosted_model: next },
-                              });
-                              await fetchAgents();
-                            }}
-                          >
-                            <SelectTrigger className="w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value={SAME_AS_LOCAL}>
-                                Same as local
-                              </SelectItem>
-                              {savedHostedModel &&
-                                !targetModels.find((m) => m.id === savedHostedModel) && (
-                                  <SelectItem value={savedHostedModel}>
-                                    {savedHostedModel} (custom)
-                                  </SelectItem>
-                                )}
-                              {targetModels.map((m) => (
-                                <SelectItem key={m.id} value={m.id}>
-                                  {m.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <p className="text-xs text-muted-foreground">
-                            Run a different (e.g. cheaper) model when the backend takes over. Defaults to your local model.
-                          </p>
-                        </div>
-                      )}
-                      {hostedActive && (
-                        <HostedRunControls
-                          agent={agent}
-                          onChanged={fetchAgents}
-                        />
-                      )}
-                    </>
-                  );
-                })()}
               </div>
             </Section>
 

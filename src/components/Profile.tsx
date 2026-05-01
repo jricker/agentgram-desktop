@@ -434,9 +434,16 @@ export function Profile({ onClose }: { onClose: () => void }) {
     displayName.trim() !== "" &&
     displayName.trim() !== participant?.displayName;
 
-  // Filter out "custom" provider from the backend list (we manage it ourselves)
+  // Filter out "custom" provider from the backend list (we manage it ourselves).
+  // Also exclude LLM-key providers — they live in the dedicated LLM Keys tab
+  // so users have a single home for them. Connections is for service
+  // integrations (Gmail/Calendar/Drive/GitHub/etc.), not raw model keys.
+  const LLM_PROVIDER_NAMES = new Set(["anthropic", "openai"]);
   const standardProviders = providers.filter(
-    (p) => p.name !== "custom" && p.name !== "custom_api"
+    (p) =>
+      p.name !== "custom" &&
+      p.name !== "custom_api" &&
+      !LLM_PROVIDER_NAMES.has(p.name)
   );
 
   // ---- Render ----
@@ -1189,8 +1196,16 @@ function AppearanceSection() {
 // ---------------------------------------------------------------------------
 
 function LlmApiKeysSection() {
-  const { keys, defaults, addKey, updateKey, removeKey, setDefault } = useLlmKeyStore();
-  const [visibility, setVisibility] = useState<Record<string, boolean>>({});
+  const keys = useLlmKeyStore((s) => s.keys);
+  const loading = useLlmKeyStore((s) => s.loading);
+  const loaded = useLlmKeyStore((s) => s.loaded);
+  const error = useLlmKeyStore((s) => s.error);
+  const refresh = useLlmKeyStore((s) => s.refresh);
+  const addKey = useLlmKeyStore((s) => s.addKey);
+  const updateKey = useLlmKeyStore((s) => s.updateKey);
+  const removeKey = useLlmKeyStore((s) => s.removeKey);
+  const setDefault = useLlmKeyStore((s) => s.setDefault);
+
   const [adding, setAdding] = useState<string | null>(null); // provider id being added to
   const [newLabel, setNewLabel] = useState("");
   const [newApiKey, setNewApiKey] = useState("");
@@ -1199,12 +1214,16 @@ function LlmApiKeysSection() {
   const [editApiKey, setEditApiKey] = useState("");
   const [saved, setSaved] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [opError, setOpError] = useState<string | null>(null);
 
   const providersWithKeys = PROVIDERS.filter((p) => p.requiresLlmKey);
 
-  const toggleVisibility = (keyId: string) => {
-    setVisibility((v) => ({ ...v, [keyId]: !v[keyId] }));
-  };
+  // Pull from the backend on mount; the migration shim runs the first
+  // time after this upgrade and pushes any localStorage keys up.
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const flashSaved = (id: string) => {
     setSaved(id);
@@ -1216,35 +1235,77 @@ function LlmApiKeysSection() {
     const providerLabel = providersWithKeys.find((p) => p.id === providerId)?.label || providerId;
     setNewLabel(`${providerLabel} ${count + 1}`);
     setNewApiKey("");
+    setOpError(null);
     setAdding(providerId);
   };
 
-  const handleConfirmAdd = () => {
+  const handleConfirmAdd = async () => {
     if (!adding || !newApiKey.trim()) return;
-    const label = newLabel.trim() || `Key ${keys.filter((k) => k.provider === adding).length + 1}`;
-    const id = addKey(adding, label, newApiKey.trim());
-    flashSaved(id);
-    setAdding(null);
-    setNewLabel("");
-    setNewApiKey("");
+    const label =
+      newLabel.trim() || `Key ${keys.filter((k) => k.provider === adding).length + 1}`;
+    setBusy("adding");
+    setOpError(null);
+    try {
+      const id = await addKey(adding, label, newApiKey.trim());
+      flashSaved(id);
+      setAdding(null);
+      setNewLabel("");
+      setNewApiKey("");
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : "Failed to save key");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const handleStartEdit = (key: LlmApiKeyEntry) => {
     setEditing(key.id);
     setEditLabel(key.label);
-    setEditApiKey(key.apiKey);
+    setEditApiKey(""); // never populate; rotation requires a fresh value.
+    setOpError(null);
   };
 
-  const handleConfirmEdit = () => {
+  const handleConfirmEdit = async () => {
     if (!editing) return;
-    updateKey(editing, { label: editLabel.trim() || undefined, apiKey: editApiKey.trim() || undefined });
-    flashSaved(editing);
-    setEditing(null);
+    setBusy(editing);
+    setOpError(null);
+    try {
+      await updateKey(editing, {
+        label: editLabel.trim() || undefined,
+        apiKey: editApiKey.trim() || undefined,
+      });
+      flashSaved(editing);
+      setEditing(null);
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : "Failed to update key");
+    } finally {
+      setBusy(null);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    removeKey(id);
-    setConfirmDelete(null);
+  const handleDelete = async (id: string) => {
+    setBusy(id);
+    setOpError(null);
+    try {
+      await removeKey(id);
+      setConfirmDelete(null);
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : "Failed to delete key");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleSetDefault = async (provider: string, keyId: string) => {
+    setBusy(keyId);
+    setOpError(null);
+    try {
+      await setDefault(provider, keyId);
+    } catch (e) {
+      setOpError(e instanceof Error ? e.message : "Failed to set default");
+    } finally {
+      setBusy(null);
+    }
   };
 
   const keyPlaceholder = (providerId: string) => {
@@ -1262,208 +1323,244 @@ function LlmApiKeysSection() {
         title="LLM API Keys"
         subtitle="Manage multiple keys per provider. The default key is used by all agents unless overridden."
       />
+      {opError && (
+        <div className="mb-4 flex items-start gap-2 text-xs text-destructive bg-destructive/10 border border-destructive/20 px-3 py-2 rounded-md">
+          <AlertCircle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+          <p>{opError}</p>
+        </div>
+      )}
       <div className="space-y-5">
-        {providersWithKeys.map((provider) => {
-          const providerKeys = keys.filter((k) => k.provider === provider.id);
-          const defaultId = defaults[provider.id];
+        {loading && !loaded ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+          </div>
+        ) : (
+          providersWithKeys.map((provider) => {
+            const providerKeys = keys.filter((k) => k.provider === provider.id);
 
-          return (
-            <div key={provider.id} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Label className="text-sm font-medium">{provider.label}</Label>
-                  <Badge variant="secondary" className="text-[10px] py-0">
-                    {providerKeys.length} key{providerKeys.length !== 1 ? "s" : ""}
-                  </Badge>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleStartAdd(provider.id)}
-                  className="h-7 text-xs"
-                >
-                  <Plus className="w-3 h-3" />
-                  Add Key
-                </Button>
-              </div>
-
-              {/* Add key form */}
-              {adding === provider.id && (
-                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">Label</Label>
-                    <Input
-                      value={newLabel}
-                      onChange={(e) => setNewLabel(e.target.value)}
-                      placeholder="e.g. Work, Personal, Project X"
-                      className="text-xs"
-                      autoFocus
-                    />
+            return (
+              <div key={provider.id} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Label className="text-sm font-medium">{provider.label}</Label>
+                    <Badge variant="secondary" className="text-[10px] py-0">
+                      {providerKeys.length} key{providerKeys.length !== 1 ? "s" : ""}
+                    </Badge>
                   </div>
-                  <div className="space-y-1.5">
-                    <Label className="text-xs">API Key</Label>
-                    <Input
-                      type="password"
-                      value={newApiKey}
-                      onChange={(e) => setNewApiKey(e.target.value)}
-                      placeholder={keyPlaceholder(provider.id)}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                  <div className="flex gap-2 pt-1">
-                    <Button size="sm" onClick={handleConfirmAdd} disabled={!newApiKey.trim()} className="h-7 text-xs">
-                      <Check className="w-3 h-3" />
-                      Add
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setAdding(null)} className="h-7 text-xs">
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Key list */}
-              {providerKeys.length === 0 && adding !== provider.id && (
-                <p className="text-xs text-muted-foreground pl-1">No keys configured</p>
-              )}
-
-              {providerKeys.map((key) => {
-                const isDefault = defaultId === key.id;
-                const isVisible = visibility[key.id] || false;
-                const isEditing = editing === key.id;
-                const isSaved = saved === key.id;
-
-                if (isEditing) {
-                  return (
-                    <div key={key.id} className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">Label</Label>
-                        <Input
-                          value={editLabel}
-                          onChange={(e) => setEditLabel(e.target.value)}
-                          className="text-xs"
-                          autoFocus
-                        />
-                      </div>
-                      <div className="space-y-1.5">
-                        <Label className="text-xs">API Key</Label>
-                        <Input
-                          type="password"
-                          value={editApiKey}
-                          onChange={(e) => setEditApiKey(e.target.value)}
-                          placeholder={keyPlaceholder(provider.id)}
-                          className="font-mono text-xs"
-                        />
-                      </div>
-                      <div className="flex gap-2 pt-1">
-                        <Button size="sm" onClick={handleConfirmEdit} className="h-7 text-xs">
-                          <Check className="w-3 h-3" />
-                          Save
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => setEditing(null)} className="h-7 text-xs">
-                          Cancel
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={key.id}
-                    className={cn(
-                      "rounded-lg border p-3 transition-colors",
-                      isDefault ? "border-primary/30 bg-primary/5" : "border-border bg-card"
-                    )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleStartAdd(provider.id)}
+                    className="h-7 text-xs"
                   >
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium truncate">{key.label}</span>
-                          {isDefault && (
-                            <Badge variant="secondary" className="text-[10px] py-0 bg-primary/10 text-primary">
-                              Default
-                            </Badge>
-                          )}
-                          {isSaved && (
-                            <Badge variant="secondary" className="text-[10px] py-0">
-                              <Check className="w-3 h-3 mr-0.5" />
-                              Saved
-                            </Badge>
-                          )}
+                    <Plus className="w-3 h-3" />
+                    Add Key
+                  </Button>
+                </div>
+
+                {/* Add key form */}
+                {adding === provider.id && (
+                  <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Label</Label>
+                      <Input
+                        value={newLabel}
+                        onChange={(e) => setNewLabel(e.target.value)}
+                        placeholder="e.g. Work, Personal, Project X"
+                        className="text-xs"
+                        autoFocus
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">API Key</Label>
+                      <Input
+                        type="password"
+                        value={newApiKey}
+                        onChange={(e) => setNewApiKey(e.target.value)}
+                        placeholder={keyPlaceholder(provider.id)}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        onClick={handleConfirmAdd}
+                        disabled={!newApiKey.trim() || busy === "adding"}
+                        className="h-7 text-xs"
+                      >
+                        {busy === "adding" ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <Check className="w-3 h-3" />
+                        )}
+                        Add
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setAdding(null)} className="h-7 text-xs">
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Key list */}
+                {providerKeys.length === 0 && adding !== provider.id && (
+                  <p className="text-xs text-muted-foreground pl-1">No keys configured</p>
+                )}
+
+                {providerKeys.map((key) => {
+                  const isDefault = key.isDefault;
+                  const isEditing = editing === key.id;
+                  const isSaved = saved === key.id;
+                  const isBusy = busy === key.id;
+
+                  if (isEditing) {
+                    return (
+                      <div key={key.id} className="rounded-lg border border-primary/30 bg-primary/5 p-3 space-y-2">
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Label</Label>
+                          <Input
+                            value={editLabel}
+                            onChange={(e) => setEditLabel(e.target.value)}
+                            className="text-xs"
+                            autoFocus
+                          />
                         </div>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <code className="text-[11px] text-muted-foreground font-mono">
-                            {isVisible ? key.apiKey : maskKey(key.apiKey)}
-                          </code>
-                          <button
-                            onClick={() => toggleVisibility(key.id)}
-                            className="text-muted-foreground hover:text-foreground"
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Rotate API key (optional)</Label>
+                          <Input
+                            type="password"
+                            value={editApiKey}
+                            onChange={(e) => setEditApiKey(e.target.value)}
+                            placeholder={`${keyPlaceholder(provider.id)} — leave blank to keep current`}
+                            className="font-mono text-xs"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            Stored encrypted on the backend. We never display the value back.
+                          </p>
+                        </div>
+                        <div className="flex gap-2 pt-1">
+                          <Button
+                            size="sm"
+                            onClick={handleConfirmEdit}
+                            disabled={isBusy}
+                            className="h-7 text-xs"
                           >
-                            {isVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                          </button>
+                            {isBusy ? (
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Check className="w-3 h-3" />
+                            )}
+                            Save
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(null)} className="h-7 text-xs">
+                            Cancel
+                          </Button>
                         </div>
                       </div>
+                    );
+                  }
 
-                      <div className="flex items-center gap-1 flex-shrink-0">
-                        {!isDefault && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setDefault(provider.id, key.id)}
-                            className="h-7 text-xs text-muted-foreground"
-                            title="Set as default"
-                          >
-                            Set Default
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                          onClick={() => handleStartEdit(key)}
-                          title="Edit"
-                        >
-                          <Pencil className="w-3 h-3" />
-                        </Button>
-                        {confirmDelete === key.id ? (
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs text-destructive hover:text-destructive/90"
-                              onClick={() => handleDelete(key.id)}
-                            >
-                              Confirm
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-7 text-xs"
-                              onClick={() => setConfirmDelete(null)}
-                            >
-                              Cancel
-                            </Button>
+                  return (
+                    <div
+                      key={key.id}
+                      className={cn(
+                        "rounded-lg border p-3 transition-colors",
+                        isDefault ? "border-primary/30 bg-primary/5" : "border-border bg-card"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium truncate">{key.label}</span>
+                            {isDefault && (
+                              <Badge variant="secondary" className="text-[10px] py-0 bg-primary/10 text-primary">
+                                Default
+                              </Badge>
+                            )}
+                            {key.status === "revoked" && (
+                              <Badge variant="secondary" className="text-[10px] py-0 bg-destructive/10 text-destructive">
+                                Revoked
+                              </Badge>
+                            )}
+                            {isSaved && (
+                              <Badge variant="secondary" className="text-[10px] py-0">
+                                <Check className="w-3 h-3 mr-0.5" />
+                                Saved
+                              </Badge>
+                            )}
                           </div>
-                        ) : (
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            Stored encrypted on the backend. Rotate to update.
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          {!isDefault && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleSetDefault(provider.id, key.id)}
+                              disabled={isBusy}
+                              className="h-7 text-xs text-muted-foreground"
+                              title="Set as default"
+                            >
+                              {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Set Default"}
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-destructive/90"
-                            onClick={() => setConfirmDelete(key.id)}
-                            title="Delete"
+                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            onClick={() => handleStartEdit(key)}
+                            disabled={isBusy}
+                            title="Edit / rotate"
                           >
-                            <Trash2 className="w-3 h-3" />
+                            <Pencil className="w-3 h-3" />
                           </Button>
-                        )}
+                          {confirmDelete === key.id ? (
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs text-destructive hover:text-destructive/90"
+                                onClick={() => handleDelete(key.id)}
+                                disabled={isBusy}
+                              >
+                                {isBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : "Confirm"}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => setConfirmDelete(null)}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-muted-foreground hover:text-destructive/90"
+                              onClick={() => setConfirmDelete(key.id)}
+                              disabled={isBusy}
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
+                  );
+                })}
+              </div>
+            );
+          })
+        )}
+        {error && !loading && (
+          <p className="text-xs text-destructive">{error}</p>
+        )}
         <p className="text-xs text-muted-foreground">
           The default key for each provider is used by all agents automatically.
           You can override which key an agent uses in that agent's config, or
@@ -1474,10 +1571,6 @@ function LlmApiKeysSection() {
   );
 }
 
-function maskKey(key: string): string {
-  if (key.length <= 8) return "••••••••";
-  return key.slice(0, 6) + "••••" + key.slice(-4);
-}
 
 // ---------------------------------------------------------------------------
 // Memory Section

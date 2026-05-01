@@ -2,7 +2,6 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import * as api from "../lib/api";
 import { providerRequiresLlmKey } from "../lib/models";
-import { useLlmKeyStore } from "./llmKeyStore";
 import { ws } from "../services/websocket";
 
 interface AgentConfig {
@@ -559,17 +558,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     }
 
     const needsLlmKey = providerRequiresLlmKey(managed.config.backend);
-    let llmApiKey = resolveLlmApiKey(managed.config);
+    // Inline `llmApiKey` is the only local source — for one-off
+    // overrides someone pasted into the agent's "Custom Key…" field.
+    // The named multi-key store now lives on the backend (encrypted),
+    // so for everything else we resolve through /api/integrations/:p/
+    // resolve, optionally targeting a specific row via key_id.
+    let llmApiKey: string | null = managed.config.llmApiKey ?? null;
 
-    // Fallback: if no local key but the backend has one stored under
-    // Connections, resolve it via the API. Walks the ownership chain
-    // server-side, so an agent's auth gets back its owner's key.
     if (needsLlmKey && !llmApiKey) {
       try {
-        const { token } = await api.resolveProviderToken(managed.config.backend);
+        const { token } = await api.resolveProviderToken(
+          managed.config.backend,
+          { keyId: managed.config.llmApiKeyId ?? null }
+        );
         if (token) llmApiKey = token;
       } catch {
-        // Backend has nothing either — fall through to the error below.
+        // Backend has nothing — fall through to the error below.
       }
     }
 
@@ -874,23 +878,3 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 }));
 
-/**
- * Resolve the LLM API key for an agent config.
- * Priority: direct llmApiKey → named llmApiKeyId → provider default.
- */
-function resolveLlmApiKey(config: AgentConfig): string | null {
-  // 1. Direct key override
-  if (config.llmApiKey) return config.llmApiKey;
-
-  const keyStore = useLlmKeyStore.getState();
-
-  // 2. Named key reference
-  if (config.llmApiKeyId) {
-    const namedKey = keyStore.getKeyById(config.llmApiKeyId);
-    if (namedKey) return namedKey.apiKey;
-  }
-
-  // 3. Provider default
-  const defaultKey = keyStore.getDefaultKey(config.backend);
-  return defaultKey?.apiKey || null;
-}

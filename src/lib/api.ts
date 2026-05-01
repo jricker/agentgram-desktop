@@ -525,9 +525,17 @@ export async function getProviderStatus(provider: string): Promise<{
 // an entry — lets a user paste an Anthropic key once in "Connections"
 // and have the local bridge pick it up too.
 export async function resolveProviderToken(
-  provider: string
+  provider: string,
+  opts?: { keyId?: string | null }
 ): Promise<{ provider: string; token: string }> {
-  return request(`/api/integrations/${provider}/resolve`);
+  // Pass `key_id` so multi-key providers can resolve the agent's
+  // preferred key instead of the user's default. Omitted when null/
+  // undefined, in which case the backend picks the default.
+  const keyId = opts?.keyId;
+  const path = keyId
+    ? `/api/integrations/${provider}/resolve?key_id=${encodeURIComponent(keyId)}`
+    : `/api/integrations/${provider}/resolve`;
+  return request(path);
 }
 
 // Annotations
@@ -1167,6 +1175,57 @@ export interface OwnerHostedLimits {
   usedTokensToday: number;
   remainingTokensToday: number;
   resetsAt: string;
+}
+
+// LLM API keys — multi-key, encrypted server-side. Replaces the legacy
+// localStorage-backed flow; see desktop/src/stores/llmKeyStore.ts for
+// the migration shim.
+export interface LlmApiKey {
+  id: string;
+  provider: string;
+  label: string;
+  isDefault: boolean;
+  status: string;
+  insertedAt: string;
+  updatedAt: string;
+  /** Last validated timestamp from the upstream provider, when known. */
+  lastValidatedAt?: string;
+}
+
+export async function listLlmKeys(): Promise<{ keys: LlmApiKey[] }> {
+  return request("/api/me/llm-keys");
+}
+
+export async function createLlmKey(args: {
+  provider: string;
+  token: string;
+  label?: string;
+  makeDefault?: boolean;
+}): Promise<{ key: LlmApiKey }> {
+  return request("/api/me/llm-keys", {
+    method: "POST",
+    body: JSON.stringify(args),
+  });
+}
+
+export async function updateLlmKey(
+  id: string,
+  attrs: { label?: string; token?: string }
+): Promise<{ key: LlmApiKey }> {
+  return request(`/api/me/llm-keys/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(attrs),
+  });
+}
+
+export async function setDefaultLlmKey(
+  id: string
+): Promise<{ key: LlmApiKey }> {
+  return request(`/api/me/llm-keys/${id}/default`, { method: "POST" });
+}
+
+export async function deleteLlmKey(id: string): Promise<void> {
+  await request(`/api/me/llm-keys/${id}`, { method: "DELETE" });
 }
 
 export async function getMyHostedLimits(): Promise<OwnerHostedLimits> {
