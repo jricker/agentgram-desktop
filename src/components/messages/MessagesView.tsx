@@ -3,7 +3,6 @@ import { MessageSquare, ChevronRight, SquarePen, Bot, Cloud, RefreshCw } from "l
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
-import { useAgentStore } from "../../stores/agentStore";
 import { useStreamingStore } from "../../stores/streamingStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../../lib/utils";
@@ -218,23 +217,20 @@ function ActiveConversation({
   showDetails: boolean;
   onToggleDetails: () => void;
 }) {
-  const conversation = useChatStore((s) =>
-    s.conversations.find((c) => c.id === conversationId)
+  const conversation = useChatStore(
+    (s) =>
+      s.conversations.find((c) => c.id === conversationId) ??
+      s.agentConversations.find((c) => c.id === conversationId)
   );
   const myId = useAuthStore((s) => s.participant?.id);
 
   const online = usePresenceStore((s) => s.online);
-  // Fold hosted-eligible agents in so a DM with a hosted_only agent
-  // reads "Hosted" with a sky cloud icon instead of "Offline."
-  const agentsMap = useAgentStore((s) => s.agents);
-  const presenceByAgent = useMemo(() => {
-    const map = new Map<string, "online_local" | "online_hosted" | "offline">();
-    for (const managed of Object.values(agentsMap)) {
-      const a = managed.agent;
-      if (a.presence) map.set(a.id, a.presence);
-    }
-    return map;
-  }, [agentsMap]);
+  // Per-agent tri-state from presenceStore — works for any agent in the
+  // conversation, including hosted_only agents owned by other users that
+  // aren't in our local agents map. The presenceStore handler keeps
+  // hosted-only agents OUT of `online` so a DM with one reads "Hosted"
+  // with a cloud icon, not "Online" with a green dot.
+  const agentPresence = usePresenceStore((s) => s.agentPresence);
 
   // Match web's ChatView header — show a stacked GroupAvatar for group
   // conversations or whenever there's more than one other participant.
@@ -264,8 +260,8 @@ function ActiveConversation({
     const partner = others[0]?.participantId;
     if (!partner) return null;
     if (online.has(partner)) return "online_local";
-    return presenceByAgent.get(partner) ?? "offline";
-  }, [conversation, myId, online, presenceByAgent]);
+    return agentPresence[partner] ?? "offline";
+  }, [conversation, myId, online, agentPresence]);
 
   const presenceLine = useMemo(() => {
     if (!conversation) return null;
@@ -274,7 +270,7 @@ function ActiveConversation({
     const onlineCount = others.filter(
       (m) =>
         online.has(m.participantId) ||
-        presenceByAgent.get(m.participantId) === "online_hosted"
+        agentPresence[m.participantId] === "online_hosted"
     ).length;
     const isDM = conversation.type === "direct" || others.length === 1;
     if (isDM) {
@@ -287,7 +283,7 @@ function ActiveConversation({
         : `${others.length + 1} members`;
     }
     return null;
-  }, [conversation, online, presenceByAgent, dmAgentPresence, myId]);
+  }, [conversation, online, agentPresence, dmAgentPresence, myId]);
 
   return (
     <>
@@ -364,8 +360,10 @@ function DetailsPanelWrapper({
   conversationId: string;
   onClose: () => void;
 }) {
-  const conversation = useChatStore((s) =>
-    s.conversations.find((c) => c.id === conversationId)
+  const conversation = useChatStore(
+    (s) =>
+      s.conversations.find((c) => c.id === conversationId) ??
+      s.agentConversations.find((c) => c.id === conversationId)
   );
   const myId = useAuthStore((s) => s.participant?.id);
   const refreshConversation = useChatStore((s) => s.refreshConversation);

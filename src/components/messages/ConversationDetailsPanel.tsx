@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { useAgentStore } from "../../stores/agentStore";
+// usePresenceStore.agentPresence is the source of tri-state presence (covers
+// external agents owned by other users); useAgentStore is still needed for
+// the "add member" picker which lists this user's own agents.
 import { useMemoryStore } from "../../stores/memoryStore";
 import * as api from "../../lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -131,29 +134,19 @@ export function ConversationDetailsPanel({
   // Desktop's agent store is a Record<id, ManagedAgent>. Memoize the
   // flattened list so the selector returns a stable reference until the
   // record itself changes — avoids the Zustand `?? []` re-render trap.
+  // Used by the "add member" picker below.
   const agentsMap = useAgentStore((s) => s.agents);
   const agents = useMemo(
     () => Object.values(agentsMap).map((m) => m.agent),
     [agentsMap]
   );
-  // Hosted-eligible agents have no bridge presence — fold them in
-  // here so a hosted_only member shows the sky cloud icon instead of
-  // a muted dot.
-  const hostedAvailable = useMemo(() => {
-    const ids = new Set<string>();
-    for (const a of agents) {
-      if (a.presence === "online_hosted" || a.presence === "online_local") {
-        ids.add(a.id);
-      }
-    }
-    return ids;
-  }, [agents]);
+  // Per-agent tri-state presence — works for external agents we don't own.
+  const agentPresence = usePresenceStore((s) => s.agentPresence);
   const presenceFor = (
     id: string
   ): "online_local" | "online_hosted" | "offline" => {
     if (online.has(id)) return "online_local";
-    if (hostedAvailable.has(id)) return "online_hosted";
-    return "offline";
+    return agentPresence[id] ?? "offline";
   };
 
   const isAdmin = conversation.createdBy === currentUserId;
@@ -166,7 +159,9 @@ export function ConversationDetailsPanel({
   const members = useMemo(() => {
     const score = (m: ConversationMember): number => {
       if (m.participantId === currentUserId) return 0;
-      const isOnline = online.has(m.participantId);
+      const isOnline =
+        online.has(m.participantId) ||
+        agentPresence[m.participantId] === "online_hosted";
       const isAgent = m.participant?.type === "agent";
       // 1-2: online (human=1, agent=2); 3-4: offline (human=3, agent=4)
       return (isOnline ? 0 : 2) + (isAgent ? 2 : 1);
@@ -179,7 +174,7 @@ export function ConversationDetailsPanel({
       const nb = b.participant?.displayName ?? "";
       return na.localeCompare(nb);
     });
-  }, [rawMembers, currentUserId, online]);
+  }, [rawMembers, currentUserId, online, agentPresence]);
 
   const [editing, setEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState(conversation.title ?? "");

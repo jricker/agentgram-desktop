@@ -1,8 +1,7 @@
-import { memo, useMemo } from "react";
+import { memo } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
-import { useAgentStore } from "../../stores/agentStore";
 import { Cloud } from "lucide-react";
 import {
   cn,
@@ -36,22 +35,12 @@ export function ConversationList({
   const unreadCounts = useChatStore((s) => s.unreadCounts);
   const setActive = useChatStore((s) => s.setActiveConversation);
   const online = usePresenceStore((s) => s.online);
-  // Hosted-eligible agents (no bridge by design) aren't in the
-  // presence set — fold them in here so a hosted_only agent shows
-  // as available with a sky cloud icon instead of a muted dot.
-  // useMemo on the agents map (stable reference) so the derived Set
-  // doesn't trigger a re-render loop.
-  const agents = useAgentStore((s) => s.agents);
-  const hostedAvailable = useMemo(() => {
-    const ids = new Set<string>();
-    for (const managed of Object.values(agents)) {
-      const a = managed.agent;
-      if (a.presence === "online_hosted" || a.presence === "online_local") {
-        ids.add(a.id);
-      }
-    }
-    return ids;
-  }, [agents]);
+  // Per-agent tri-state presence — covers external agents owned by other
+  // users that aren't in our local agents map. The presenceStore handler
+  // routes online_hosted agents OUT of the `online` set, so they only show
+  // up here, which lets us render the cloud icon distinctly from the green
+  // dot regardless of whether we own the agent.
+  const agentPresence = usePresenceStore((s) => s.agentPresence);
   const currentUserId = useAuthStore((s) => s.participant?.id);
 
   if (loading && conversations.length === 0) {
@@ -92,7 +81,7 @@ export function ConversationList({
             presence = "online_local";
             break;
           }
-          if (hostedAvailable.has(m.participantId)) {
+          if (agentPresence[m.participantId] === "online_hosted") {
             presence = "online_hosted";
           }
         }

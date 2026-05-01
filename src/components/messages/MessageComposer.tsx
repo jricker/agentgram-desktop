@@ -24,16 +24,27 @@ import {
   uploadFile,
   type PendingAttachment,
 } from "../../services/fileUpload";
+import type { ConversationMember } from "../../lib/api";
 
 const MAX_HEIGHT = 180;
+// Stable singleton for the `members` selector fallback. Inlining `?? []`
+// returns a fresh array each call, which trips Zustand v4's
+// `useSyncExternalStore` snapshot equality check and loops React forever.
+const EMPTY_MEMBERS: ConversationMember[] = [];
 
 export function MessageComposer({ conversationId }: { conversationId: string }) {
   const draft = useChatStore((s) => s.drafts[conversationId] ?? "");
   const setDraft = useChatStore((s) => s.setDraft);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const replyingTo = useChatStore((s) => s.replyingTo[conversationId]);
+  // Search both lists — agent-to-agent conversations live in
+  // `agentConversations`, not `conversations`. Without the second branch
+  // the find returns undefined for them and the `?? []` fallback loops.
   const members = useChatStore(
-    (s) => s.conversations.find((c) => c.id === conversationId)?.members ?? []
+    (s) =>
+      (s.conversations.find((c) => c.id === conversationId) ??
+        s.agentConversations.find((c) => c.id === conversationId))
+        ?.members ?? EMPTY_MEMBERS
   );
   const agentsMap = useAgentStore((s) => s.agents);
   // Stable flattened list to avoid the Zustand `?? []` selector trap.

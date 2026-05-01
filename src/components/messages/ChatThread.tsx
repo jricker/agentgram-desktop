@@ -193,7 +193,11 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   // in ChatView.tsx:187-220. Without this desktop's expanded cards only
   // ever saw the in-message payload, missing the summary and agent info
   // that StatusUpdate carries.
-  useMemo(() => {
+  //
+  // Must be a useEffect — writing to the task store during render (e.g. via
+  // useMemo) synchronously notifies Zustand subscribers and can drive an
+  // infinite re-render loop on threads that carry StatusUpdate messages.
+  useEffect(() => {
     const update = useTaskStore.getState().updateTaskLifecycleMeta;
     for (const msg of rawMessages) {
       const type = msg.messageType || msg.contentType || "";
