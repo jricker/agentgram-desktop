@@ -1,7 +1,9 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
+import { useAgentStore } from "../../stores/agentStore";
+import { Cloud } from "lucide-react";
 import {
   cn,
   getConversationTitle,
@@ -34,6 +36,22 @@ export function ConversationList({
   const unreadCounts = useChatStore((s) => s.unreadCounts);
   const setActive = useChatStore((s) => s.setActiveConversation);
   const online = usePresenceStore((s) => s.online);
+  // Hosted-eligible agents (no bridge by design) aren't in the
+  // presence set — fold them in here so a hosted_only agent shows
+  // as available with a sky cloud icon instead of a muted dot.
+  // useMemo on the agents map (stable reference) so the derived Set
+  // doesn't trigger a re-render loop.
+  const agents = useAgentStore((s) => s.agents);
+  const hostedAvailable = useMemo(() => {
+    const ids = new Set<string>();
+    for (const managed of Object.values(agents)) {
+      const a = managed.agent;
+      if (a.presence === "online_hosted" || a.presence === "online_local") {
+        ids.add(a.id);
+      }
+    }
+    return ids;
+  }, [agents]);
   const currentUserId = useAuthStore((s) => s.participant?.id);
 
   if (loading && conversations.length === 0) {
@@ -63,12 +81,21 @@ export function ConversationList({
   return (
     <div className="flex flex-col gap-0.5 px-2 py-1">
       {conversations.map((conv) => {
-        const anyOnline =
-          conv.members?.some(
-            (m) =>
-              m.participantId !== currentUserId &&
-              online.has(m.participantId)
-          ) ?? false;
+        // Best-available presence across non-self members: bridge
+        // online wins over hosted, hosted wins over offline. The
+        // early-break guarantees we never overwrite online_local
+        // with online_hosted later in the loop.
+        let presence: "online_local" | "online_hosted" | "offline" = "offline";
+        for (const m of conv.members ?? []) {
+          if (m.participantId === currentUserId) continue;
+          if (online.has(m.participantId)) {
+            presence = "online_local";
+            break;
+          }
+          if (hostedAvailable.has(m.participantId)) {
+            presence = "online_hosted";
+          }
+        }
         const hasAgent =
           conv.members?.some(
             (m) =>
@@ -81,7 +108,7 @@ export function ConversationList({
             conversation={conv}
             isActive={conv.id === activeId}
             unreadCount={scope === "agents" ? 0 : unreadCounts[conv.id] ?? 0}
-            anyOnline={anyOnline}
+            presence={presence}
             hasAgent={hasAgent}
             currentUserId={currentUserId}
             onClick={() => setActive(conv.id)}
@@ -96,7 +123,7 @@ const ConversationItem = memo(function ConversationItem({
   conversation,
   isActive,
   unreadCount,
-  anyOnline,
+  presence,
   hasAgent,
   currentUserId,
   onClick,
@@ -104,7 +131,7 @@ const ConversationItem = memo(function ConversationItem({
   conversation: Conversation;
   isActive: boolean;
   unreadCount: number;
-  anyOnline: boolean;
+  presence: "online_local" | "online_hosted" | "offline";
   hasAgent: boolean;
   currentUserId?: string;
   onClick: () => void;
@@ -159,10 +186,21 @@ const ConversationItem = memo(function ConversationItem({
             {hasAgent && (
               <span
                 className={cn(
-                  "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card",
-                  anyOnline ? "bg-success" : "bg-muted-foreground"
+                  "absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full border-2 border-card",
+                  presence === "online_hosted"
+                    ? "h-3.5 w-3.5 bg-sky-500"
+                    : "h-2.5 w-2.5",
+                  presence === "online_local"
+                    ? "bg-success"
+                    : presence === "online_hosted"
+                      ? ""
+                      : "bg-muted-foreground"
                 )}
-              />
+              >
+                {presence === "online_hosted" && (
+                  <Cloud className="h-2 w-2 text-white" />
+                )}
+              </span>
             )}
           </div>
         )}

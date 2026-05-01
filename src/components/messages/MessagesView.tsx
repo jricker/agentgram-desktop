@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { MessageSquare, ChevronRight, SquarePen, Bot, RefreshCw } from "lucide-react";
+import { MessageSquare, ChevronRight, SquarePen, Bot, Cloud, RefreshCw } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
+import { useAgentStore } from "../../stores/agentStore";
 import { useStreamingStore } from "../../stores/streamingStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../../lib/utils";
@@ -223,6 +224,17 @@ function ActiveConversation({
   const myId = useAuthStore((s) => s.participant?.id);
 
   const online = usePresenceStore((s) => s.online);
+  // Fold hosted-eligible agents in so a DM with a hosted_only agent
+  // reads "Hosted" with a sky cloud icon instead of "Offline."
+  const agentsMap = useAgentStore((s) => s.agents);
+  const presenceByAgent = useMemo(() => {
+    const map = new Map<string, "online_local" | "online_hosted" | "offline">();
+    for (const managed of Object.values(agentsMap)) {
+      const a = managed.agent;
+      if (a.presence) map.set(a.id, a.presence);
+    }
+    return map;
+  }, [agentsMap]);
 
   // Match web's ChatView header — show a stacked GroupAvatar for group
   // conversations or whenever there's more than one other participant.
@@ -240,13 +252,33 @@ function ActiveConversation({
     otherParticipant?.displayName ||
     (conversation?.type === "group" ? "Group" : "Conversation");
 
+  const dmAgentPresence = useMemo<
+    "online_local" | "online_hosted" | "offline" | null
+  >(() => {
+    if (!conversation) return null;
+    const others = (conversation.members ?? []).filter(
+      (m) => m.participantId !== myId
+    );
+    const isDM = conversation.type === "direct" || others.length === 1;
+    if (!isDM) return null;
+    const partner = others[0]?.participantId;
+    if (!partner) return null;
+    if (online.has(partner)) return "online_local";
+    return presenceByAgent.get(partner) ?? "offline";
+  }, [conversation, myId, online, presenceByAgent]);
+
   const presenceLine = useMemo(() => {
     if (!conversation) return null;
     const members = conversation.members ?? [];
     const others = members.filter((m) => m.participantId !== myId);
-    const onlineCount = others.filter((m) => online.has(m.participantId)).length;
+    const onlineCount = others.filter(
+      (m) =>
+        online.has(m.participantId) ||
+        presenceByAgent.get(m.participantId) === "online_hosted"
+    ).length;
     const isDM = conversation.type === "direct" || others.length === 1;
     if (isDM) {
+      if (dmAgentPresence === "online_hosted") return "Hosted";
       return onlineCount > 0 ? "Online" : "Offline";
     }
     if (conversation.type === "channel" || conversation.type === "group") {
@@ -255,15 +287,7 @@ function ActiveConversation({
         : `${others.length + 1} members`;
     }
     return null;
-  }, [conversation, online, myId]);
-
-  const presenceDotColor = useMemo(() => {
-    if (!presenceLine) return null;
-    if (presenceLine === "Online" || presenceLine.startsWith(`${"0"} online`)) {
-      return presenceLine === "Online" ? "bg-success" : "bg-muted-foreground/40";
-    }
-    return presenceLine.includes("online ·") ? "bg-success" : null;
-  }, [presenceLine]);
+  }, [conversation, online, presenceByAgent, dmAgentPresence, myId]);
 
   return (
     <>
@@ -302,9 +326,13 @@ function ActiveConversation({
             <p className="text-sm font-semibold truncate">{headerTitle}</p>
             {presenceLine && (
               <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                {presenceDotColor && (
-                  <span className={cn("h-1.5 w-1.5 rounded-full", presenceDotColor)} />
-                )}
+                {dmAgentPresence === "online_hosted" ? (
+                  <Cloud className="h-3 w-3 text-sky-500" aria-hidden />
+                ) : presenceLine === "Online" || presenceLine.includes("online ·") ? (
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                ) : presenceLine === "Offline" ? (
+                  <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
+                ) : null}
                 {presenceLine}
               </p>
             )}

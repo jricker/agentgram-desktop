@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { formatModelLabel, formatBackendLabel } from "../lib/models";
 import { formatUptime, cn } from "../lib/utils";
-import { Play, Square, RotateCcw, Crown } from "lucide-react";
+import { Play, Square, RotateCcw, Crown, Cloud } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -42,7 +42,7 @@ function StatusBadge({
   if (status === "stopped" && presence === "online_hosted") {
     return (
       <Badge variant="outline" className="border-sky-500/30 text-sky-500 bg-sky-500/10 gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+        <Cloud className="w-3 h-3" />
         Hosted
       </Badge>
     );

@@ -12,6 +12,7 @@ import {
   Search,
   Bot,
   Check,
+  Cloud,
   Loader2,
   MessageCircle,
   Users,
@@ -481,7 +482,16 @@ function AgentRow({
         )}
       </div>
       <div className="flex items-center gap-2">
-        {agent.online && <span className="h-2 w-2 rounded-full bg-success" />}
+        {(() => {
+          const presence = agent.presence ?? (agent.online ? "online_local" : "offline");
+          if (presence === "online_local") {
+            return <span className="h-2 w-2 rounded-full bg-success" />;
+          }
+          if (presence === "online_hosted") {
+            return <Cloud className="h-3 w-3 text-sky-500" />;
+          }
+          return null;
+        })()}
         {isSelected && (
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
             <Check className="h-3 w-3 text-primary-foreground" />

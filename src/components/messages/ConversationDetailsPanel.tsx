@@ -27,6 +27,7 @@ import {
   ChevronRight,
   Loader2,
   Camera,
+  Cloud,
 } from "lucide-react";
 import { GroupAvatar } from "./GroupAvatar";
 import { cn, getInitials } from "../../lib/utils";
@@ -135,6 +136,25 @@ export function ConversationDetailsPanel({
     () => Object.values(agentsMap).map((m) => m.agent),
     [agentsMap]
   );
+  // Hosted-eligible agents have no bridge presence — fold them in
+  // here so a hosted_only member shows the sky cloud icon instead of
+  // a muted dot.
+  const hostedAvailable = useMemo(() => {
+    const ids = new Set<string>();
+    for (const a of agents) {
+      if (a.presence === "online_hosted" || a.presence === "online_local") {
+        ids.add(a.id);
+      }
+    }
+    return ids;
+  }, [agents]);
+  const presenceFor = (
+    id: string
+  ): "online_local" | "online_hosted" | "offline" => {
+    if (online.has(id)) return "online_local";
+    if (hostedAvailable.has(id)) return "online_hosted";
+    return "offline";
+  };
 
   const isAdmin = conversation.createdBy === currentUserId;
   const rawMembers = conversation.members ?? [];
@@ -336,7 +356,7 @@ export function ConversationDetailsPanel({
               <MemberRow
                 key={m.participantId}
                 member={m}
-                isOnline={online.has(m.participantId)}
+                presence={presenceFor(m.participantId)}
                 isSelf={m.participantId === currentUserId}
                 isAdmin={isAdmin}
                 isConversationCreator={m.participantId === conversation.createdBy}
@@ -492,14 +512,14 @@ export function ConversationDetailsPanel({
 
 function MemberRow({
   member,
-  isOnline,
+  presence,
   isSelf,
   isAdmin,
   isConversationCreator,
   onRemove,
 }: {
   member: ConversationMember;
-  isOnline: boolean;
+  presence: "online_local" | "online_hosted" | "offline";
   isSelf: boolean;
   isAdmin: boolean;
   isConversationCreator: boolean;
@@ -508,6 +528,8 @@ function MemberRow({
   const p = member.participant;
   const name = p?.displayName ?? "Unknown";
   const isAgent = p?.type === "agent";
+  const isOnline = presence !== "offline";
+  const isHosted = presence === "online_hosted";
 
   return (
     <li className="group flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50">
@@ -520,10 +542,16 @@ function MemberRow({
         </Avatar>
         <span
           className={cn(
-            "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card",
-            isOnline ? "bg-success" : "bg-muted-foreground/40"
+            "absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full border-2 border-card",
+            isHosted
+              ? "h-3.5 w-3.5 bg-sky-500"
+              : isOnline
+                ? "h-2.5 w-2.5 bg-success"
+                : "h-2.5 w-2.5 bg-muted-foreground/40"
           )}
-        />
+        >
+          {isHosted && <Cloud className="h-2 w-2 text-white" />}
+        </span>
       </div>
 
       <div className="min-w-0 flex-1">
@@ -535,7 +563,7 @@ function MemberRow({
           )}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          {isAgent ? "Agent" : "Human"} · {isOnline ? "Online" : "Offline"}
+          {isAgent ? "Agent" : "Human"} · {isHosted ? "Hosted" : isOnline ? "Online" : "Offline"}
         </p>
       </div>
 
