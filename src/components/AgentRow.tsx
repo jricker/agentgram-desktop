@@ -25,6 +25,25 @@ const ACTIVITY_DOT_COLORS = {
   error: "bg-destructive",
 };
 
+// Mirrors the AgentConfig hosted-mode picker labels but truncated for
+// the row's narrow column. "—" when hosted execution isn't applicable
+// (no target backend resolved server-side).
+function hostedModeLabel(
+  mode: "local_only" | "auto" | "hosted_only" | undefined,
+  target: string | null | undefined
+): string {
+  if (!target) return "—";
+  switch (mode ?? "local_only") {
+    case "auto":
+      return "Local + fallback";
+    case "hosted_only":
+      return "Hosted only";
+    case "local_only":
+    default:
+      return "Local only";
+  }
+}
+
 function StatusBadge({
   status,
   uptimeSecs,
@@ -153,7 +172,7 @@ export function AgentRow({
       onClick={onSelect}
     >
       {/* Main row */}
-      <div className="grid grid-cols-[1fr_100px_140px_120px_80px_60px] gap-3 px-5 py-2.5 items-center">
+      <div className="grid grid-cols-[1fr_100px_140px_110px_120px_80px_60px] gap-3 px-5 py-2.5 items-center">
         {/* Agent */}
         <div className="flex items-center gap-2.5 min-w-0">
           <Avatar className="h-8 w-8 rounded-lg shrink-0">
@@ -212,6 +231,13 @@ export function AgentRow({
         {/* Model */}
         <div className="truncate">
           <span className="text-xs text-muted-foreground">{modelLabel}</span>
+        </div>
+
+        {/* Hosted */}
+        <div className="truncate">
+          <span className="text-xs text-muted-foreground">
+            {hostedModeLabel(managed.agent.hostedMode, managed.agent.hostedTargetBackend)}
+          </span>
         </div>
 
         {/* Status */}
