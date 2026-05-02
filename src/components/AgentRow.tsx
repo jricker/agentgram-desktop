@@ -243,6 +243,14 @@ export function AgentRow({
               <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
               Hosted only
             </Badge>
+          ) : managed.agent.hostedTargetBackend && managed.agent.hostedMode === "auto" ? (
+            <Badge
+              variant="outline"
+              className="border-warning/30 text-warning bg-warning/10 gap-1.5"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-warning" />
+              Local + fallback
+            </Badge>
           ) : (
             <span className="text-xs text-muted-foreground">
               {hostedModeLabel(managed.agent.hostedMode, managed.agent.hostedTargetBackend)}
