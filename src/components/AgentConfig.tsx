@@ -183,16 +183,39 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   const [activeSection, setActiveSection] = useState("config");
   const [showGallery, setShowGallery] = useState(false);
 
-  const sections = [
-    { value: "config", label: "Config", icon: Settings2 },
-    { value: "logs", label: "Logs", icon: ScrollText },
-    { value: "soul", label: "Soul", icon: FileText },
-    { value: "skills", label: "Skills", icon: Sparkles },
-    { value: "templates", label: "Templates", icon: LayoutTemplate },
-    { value: "routines", label: "Routines", icon: Timer },
-    { value: "canvas", label: "Canvas", icon: Palette },
-    { value: "heartbeat", label: "Heartbeat", icon: HeartPulse },
-    { value: "health", label: "Health", icon: Activity },
+  // Sidebar tabs grouped to mirror the mobile agent-detail screen's
+  // section vocabulary (Profile / Model / Capabilities / Operations).
+  // Each group renders as an icon cluster separated from the next by
+  // a hairline divider — tooltips on each icon carry the full label.
+  const sectionGroups: Array<{
+    name: string;
+    sections: Array<{ value: string; label: string; icon: typeof Settings2 }>;
+  }> = [
+    {
+      name: "Profile",
+      sections: [{ value: "soul", label: "Soul", icon: FileText }],
+    },
+    {
+      name: "Model",
+      sections: [{ value: "config", label: "Model", icon: Settings2 }],
+    },
+    {
+      name: "Capabilities",
+      sections: [
+        { value: "skills", label: "Skills", icon: Sparkles },
+        { value: "templates", label: "Templates", icon: LayoutTemplate },
+        { value: "routines", label: "Routines", icon: Timer },
+        { value: "canvas", label: "Canvas", icon: Palette },
+      ],
+    },
+    {
+      name: "Operations",
+      sections: [
+        { value: "heartbeat", label: "Heartbeat", icon: HeartPulse },
+        { value: "logs", label: "Logs", icon: ScrollText },
+        { value: "health", label: "Health", icon: Activity },
+      ],
+    },
   ];
 
   return (
@@ -212,27 +235,39 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
 
           <Separator className="w-6 mb-1" />
 
-          {sections.map((section) => (
-            <Tooltip key={section.value}>
-              <TooltipTrigger
-                render={
-                  <button
-                    onClick={() => setActiveSection(section.value)}
-                    className={cn(
-                      "w-8 h-8 rounded-md flex items-center justify-center transition-colors",
-                      activeSection === section.value
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                    )}
-                  >
-                    <section.icon className="w-4 h-4" />
-                  </button>
-                }
-              />
-              <TooltipContent side="right" className="text-xs">
-                {section.label}
-              </TooltipContent>
-            </Tooltip>
+          {sectionGroups.map((group, groupIdx) => (
+            <div key={group.name} className="flex flex-col items-center gap-1">
+              {group.sections.map((section) => (
+                <Tooltip key={section.value}>
+                  <TooltipTrigger
+                    render={
+                      <button
+                        onClick={() => setActiveSection(section.value)}
+                        className={cn(
+                          "w-8 h-8 rounded-md flex items-center justify-center transition-colors",
+                          activeSection === section.value
+                            ? "bg-primary/10 text-primary"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                        )}
+                      >
+                        <section.icon className="w-4 h-4" />
+                      </button>
+                    }
+                  />
+                  <TooltipContent side="right" className="text-xs">
+                    <div className="font-semibold">{section.label}</div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">
+                      {group.name}
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              ))}
+              {/* Hairline between groups so the categorization is
+                  visible without widening the sidebar. */}
+              {groupIdx < sectionGroups.length - 1 && (
+                <Separator className="w-6 my-1" />
+              )}
+            </div>
           ))}
 
           {/* Close button at bottom */}
