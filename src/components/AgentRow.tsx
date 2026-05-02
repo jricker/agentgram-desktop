@@ -172,7 +172,7 @@ export function AgentRow({
       onClick={onSelect}
     >
       {/* Main row */}
-      <div className="grid grid-cols-[1fr_100px_140px_110px_120px_80px_60px] gap-3 px-5 py-2.5 items-center">
+      <div className="grid grid-cols-[1fr_100px_140px_150px_120px_80px_60px] gap-3 px-5 py-2.5 items-center">
         {/* Agent */}
         <div className="flex items-center gap-2.5 min-w-0">
           <Avatar className="h-8 w-8 rounded-lg shrink-0">

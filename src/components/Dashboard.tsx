@@ -269,7 +269,7 @@ export function Dashboard() {
                 {/* Hex activity board + Agent list share same container */}
                 <div className="p-6">
                   <Card className="overflow-hidden">
-                    <div className="grid grid-cols-[1fr_100px_140px_110px_120px_80px_60px] gap-3 px-5 py-3 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    <div className="grid grid-cols-[1fr_100px_140px_150px_120px_80px_60px] gap-3 px-5 py-3 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       <span>Agent</span>
                       <span>Backend</span>
                       <span>Model</span>
