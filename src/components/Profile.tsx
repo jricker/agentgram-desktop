@@ -2111,7 +2111,7 @@ function HostedExecutionSection() {
       />
 
       <p className="mb-3 text-xs text-muted-foreground">
-        When your desktop bridge is offline for more than 5 minutes, agents
+        When your desktop bridge is offline for more than 2 minutes, agents
         with API-based backends fall back to running on the server using
         your stored Anthropic / OpenAI key. This budget caps cumulative
         spend across all hosted runs.

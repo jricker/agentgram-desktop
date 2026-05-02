@@ -161,6 +161,19 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
     () => providerKeys.some((k) => k.isDefault),
     [providerKeys]
   );
+  // Per-backend memory of the user's last API-key choice. Survives backend
+  // switches so flipping anthropic → claude_cli → anthropic restores the
+  // previously chosen key instead of silently dropping back to default.
+  const apiKeyByProvider = useMemo(() => {
+    const raw = (agent.metadata as Record<string, unknown> | undefined)?.api_key_by_provider;
+    if (!raw || typeof raw !== "object") return {} as Record<string, string | null>;
+    const out: Record<string, string | null> = {};
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      if (v === null || typeof v === "string") out[k] = v;
+    }
+    return out;
+  }, [agent.metadata]);
+  const requiresLlmKey = catalog.requiresLlmKey(backend);
   // Sentinel must match the SelectItem value below (`__custom__`), otherwise
   // base-ui can't find a matching item and the trigger falls back to raw text.
   const keyMode = config.llmApiKey
@@ -274,10 +287,32 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                       const updates: Record<string, unknown> = {
                         backend: val,
                         model: models[0]?.id || "",
+                        // Custom inline keys are provider-specific raw secrets —
+                        // never carry them across providers.
+                        llmApiKey: null,
+                        // Restore the user's last named-key choice for this
+                        // provider (or null = use provider default).
+                        llmApiKeyId: apiKeyByProvider[val] ?? null,
                       };
                       if (!modes.includes(config.executionMode)) {
                         updates.executionMode = modes[0] || "single_shot";
                       }
+                      // Snapshot the current provider's selection before
+                      // switching so we can restore it on the way back.
+                      const nextMap = {
+                        ...apiKeyByProvider,
+                        [backend]: config.llmApiKeyId ?? null,
+                      };
+                      void updateAgent(agent.id, {
+                        metadata: {
+                          ...(agent.metadata || {}),
+                          api_key_by_provider: nextMap,
+                        },
+                      })
+                        .then(() => fetchAgents())
+                        .catch(() => {
+                          // Non-fatal — local config still updates below.
+                        });
                       updateConfig(agent.id, updates);
                     }}
                   >
@@ -309,7 +344,14 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     }
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue />
+                      <SelectValue>
+                        {(val: unknown) => {
+                          const v = String(val);
+                          const match = availableModels.find((m) => m.id === v);
+                          if (match) return match.label;
+                          return normalizeModelName(v) || v;
+                        }}
+                      </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {!currentModelInList && config.model && (
@@ -326,12 +368,33 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   </Select>
                 </div>
 
+                {requiresLlmKey && (
                 <div className="space-y-1.5">
                   <Label className="text-xs">API Key</Label>
                   <Select
                     value={keyMode}
                     onValueChange={(val: string | null) => {
                       if (!val) return;
+                      // Mirror the named-key choice into per-provider memory
+                      // so it survives a backend round-trip. We persist `null`
+                      // for "use default" and the keyId for a named pick;
+                      // raw custom keys stay local-only.
+                      const nextKeyIdForProvider =
+                        val === "__default__" || val === "__custom__" ? null : val;
+                      const nextMap = {
+                        ...apiKeyByProvider,
+                        [backend]: nextKeyIdForProvider,
+                      };
+                      void updateAgent(agent.id, {
+                        metadata: {
+                          ...(agent.metadata || {}),
+                          api_key_by_provider: nextMap,
+                        },
+                      })
+                        .then(() => fetchAgents())
+                        .catch(() => {
+                          // Non-fatal — local config still updates below.
+                        });
                       if (val === "__default__") {
                         updateConfig(agent.id, { llmApiKeyId: null, llmApiKey: null });
                       } else if (val === "__custom__") {
@@ -395,6 +458,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     </div>
                   )}
                 </div>
+                )}
 
                 {/* Hosted execution — runs alongside the Provider/Model/API
                     Key trio because it decides which path actually executes
@@ -410,11 +474,22 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   // the value we get back.
                   const mode = agent.hostedMode ?? "local_only";
                   const hostedActive = mode !== "local_only";
+                  // Hosted execution requires a key for the target backend.
+                  // Without one, server-side runs would 401 — so disable
+                  // the hosted modes and hide the model dropdown rather
+                  // than letting the user pick a broken config.
+                  const hostedTargetHasKey = llmKeys.some(
+                    (k) => k.provider === target,
+                  );
                   // Per-agent hosted-model override. Empty string ===
                   // "use local model"; saved as null on the wire.
                   const savedHostedModel =
                     typeof agent.hostedModel === "string" ? agent.hostedModel : "";
-                  const targetModels = catalog.modelsFor(target);
+                  // Only surface models whose provider has a saved key —
+                  // picking one without is a footgun that fails at run time.
+                  const targetModels = catalog
+                    .modelsFor(target)
+                    .filter(() => hostedTargetHasKey);
                   const SAME_AS_LOCAL = "__same_as_local__";
                   // Local-runtime backends like claude_cli can't actually run
                   // server-side — picking "hosted only" would silently swap
@@ -457,9 +532,18 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="local_only">Local only</SelectItem>
-                            <SelectItem value="auto">Local with hosted fallback</SelectItem>
+                            <SelectItem value="auto" disabled={!hostedTargetHasKey}>
+                              Local with hosted fallback
+                              {!hostedTargetHasKey && " (no key)"}
+                            </SelectItem>
                             {allowHostedOnly && (
-                              <SelectItem value="hosted_only">Hosted only</SelectItem>
+                              <SelectItem
+                                value="hosted_only"
+                                disabled={!hostedTargetHasKey}
+                              >
+                                Hosted only
+                                {!hostedTargetHasKey && " (no key)"}
+                              </SelectItem>
                             )}
                           </SelectContent>
                         </Select>
@@ -468,11 +552,16 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                             "Runs only via the desktop bridge. No server-side execution."}
                           {mode === "auto" &&
                             (isLocalRuntime
-                              ? `Bridge-first. If the bridge is offline 5+ min, the backend falls back to the ${targetLabel} API for that window — note this swaps the CLI runtime for the plain API.`
-                              : `Bridge-first. Backend takes over with your ${targetLabel} key from Settings → Connections after the bridge is offline 5+ min.`)}
+                              ? `Bridge-first. If the bridge is offline 2+ min, the backend falls back to the ${targetLabel} API for that window — note this swaps the CLI runtime for the plain API.`
+                              : `Bridge-first. Backend takes over with your ${targetLabel} key from Profile → LLM API Keys after the bridge is offline 2+ min.`)}
                           {mode === "hosted_only" &&
                             `Runs server-side always using your ${targetLabel} key. No desktop bridge required.`}
                         </p>
+                        {!hostedTargetHasKey && (
+                          <p className="text-xs text-muted-foreground">
+                            Add a {targetLabel} key in Profile → LLM API Keys to enable hosted execution.
+                          </p>
+                        )}
                       </div>
                       {hostedActive && targetModels.length > 0 && (
                         <div className="space-y-1.5">

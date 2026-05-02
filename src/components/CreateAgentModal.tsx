@@ -168,11 +168,25 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      // If user entered an API key, save it as the provider default
+      // If user entered an API key, save it as the provider default.
+      // Awaited and hard-fail — a created agent without a resolvable
+      // key 401s on first run.
       if (apiKey.trim() && needsApiKey) {
         const provider = PROVIDERS.find((p) => p.id === backend);
         const label = `${provider?.label || backend} Key`;
-        llmKeyStore.addKey(backend, label, apiKey.trim());
+        try {
+          await llmKeyStore.addKey(backend, label, apiKey.trim(), {
+            makeDefault: true,
+          });
+        } catch (e) {
+          setError(
+            e instanceof Error
+              ? `Couldn't save API key: ${e.message}`
+              : "Couldn't save API key. The agent has not been created."
+          );
+          setLoading(false);
+          return;
+        }
       }
 
       const id = await createAgent({

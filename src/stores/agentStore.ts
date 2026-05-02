@@ -579,7 +579,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
     if (needsLlmKey && !llmApiKey) {
       throw new Error(
-        `No LLM API key configured for ${managed.config.backend}. Set one in Settings → LLM Keys or Connections.`
+        `No LLM API key configured for ${managed.config.backend}. Set one in Profile → LLM API Keys.`
       );
     }
 
