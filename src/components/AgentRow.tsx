@@ -235,9 +235,19 @@ export function AgentRow({
 
         {/* Hosted */}
         <div className="truncate">
-          <span className="text-xs text-muted-foreground">
-            {hostedModeLabel(managed.agent.hostedMode, managed.agent.hostedTargetBackend)}
-          </span>
+          {managed.agent.hostedTargetBackend && managed.agent.hostedMode === "hosted_only" ? (
+            <Badge
+              variant="outline"
+              className="border-destructive/30 text-destructive bg-destructive/10 gap-1.5"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
+              Hosted only
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {hostedModeLabel(managed.agent.hostedMode, managed.agent.hostedTargetBackend)}
+            </span>
+          )}
         </div>
 
         {/* Status */}
