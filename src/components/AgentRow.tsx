@@ -35,7 +35,7 @@ function hostedModeLabel(
   if (!target) return "—";
   switch (mode ?? "local_only") {
     case "auto":
-      return "Local + cloud";
+      return "Local + Cloud";
     case "hosted_only":
       return "Cloud only";
     case "local_only":
@@ -60,7 +60,7 @@ function StatusBadge({
   // honest state.
   if (status === "stopped" && presence === "online_hosted") {
     return (
-      <Badge variant="outline" className="border-sky-500/30 text-sky-500 bg-sky-500/10 gap-1.5">
+      <Badge variant="outline" className="border-info/30 text-info bg-info/10 gap-1.5">
         <Cloud className="w-3 h-3" />
         Hosted
       </Badge>
@@ -238,18 +238,18 @@ export function AgentRow({
           {managed.agent.hostedTargetBackend && managed.agent.hostedMode === "hosted_only" ? (
             <Badge
               variant="outline"
-              className="border-destructive/30 text-destructive bg-destructive/10 gap-1.5"
+              className="border-info/30 text-info bg-info/10 gap-1.5"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
+              <span className="w-1.5 h-1.5 rounded-full bg-info" />
               Cloud only
             </Badge>
           ) : managed.agent.hostedTargetBackend && managed.agent.hostedMode === "auto" ? (
             <Badge
               variant="outline"
-              className="border-warning/30 text-warning bg-warning/10 gap-1.5"
+              className="border-info/30 text-info bg-info/10 gap-1.5"
             >
-              <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-              Local + cloud
+              <span className="w-1.5 h-1.5 rounded-full bg-info" />
+              Local + Cloud
             </Badge>
           ) : managed.agent.hostedTargetBackend &&
             (managed.agent.hostedMode ?? "local_only") === "local_only" ? (

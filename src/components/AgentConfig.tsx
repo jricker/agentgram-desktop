@@ -503,10 +503,10 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   // base-ui's Select.Value renders the raw `value` string
                   // when it can't introspect the matched Item's label —
                   // different from Radix. Map explicitly so the trigger
-                  // shows "Local + cloud" instead of "auto".
+                  // shows "Local + Cloud" instead of "auto".
                   const HOSTED_MODE_LABELS: Record<string, string> = {
                     local_only: "Local",
-                    auto: "Local + cloud",
+                    auto: "Local + Cloud",
                     hosted_only: "Cloud only",
                   };
                   return (
@@ -533,7 +533,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                           <SelectContent>
                             <SelectItem value="local_only">Local</SelectItem>
                             <SelectItem value="auto" disabled={!hostedTargetHasKey}>
-                              Local + cloud
+                              Local + Cloud
                               {!hostedTargetHasKey && " (no key)"}
                             </SelectItem>
                             {allowHostedOnly && (
