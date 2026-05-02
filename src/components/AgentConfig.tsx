@@ -503,16 +503,16 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   // base-ui's Select.Value renders the raw `value` string
                   // when it can't introspect the matched Item's label —
                   // different from Radix. Map explicitly so the trigger
-                  // shows "Local with hosted fallback" instead of "auto".
+                  // shows "Local + cloud" instead of "auto".
                   const HOSTED_MODE_LABELS: Record<string, string> = {
-                    local_only: "Local only",
-                    auto: "Local with hosted fallback",
-                    hosted_only: "Hosted only",
+                    local_only: "Local",
+                    auto: "Local + cloud",
+                    hosted_only: "Cloud only",
                   };
                   return (
                     <>
                       <div className="space-y-1.5 pt-1">
-                        <Label className="text-xs">Hosted mode</Label>
+                        <Label className="text-xs">Run mode</Label>
                         <Select
                           value={mode}
                           onValueChange={async (val: string | null) => {
@@ -531,9 +531,9 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="local_only">Local only</SelectItem>
+                            <SelectItem value="local_only">Local</SelectItem>
                             <SelectItem value="auto" disabled={!hostedTargetHasKey}>
-                              Local with hosted fallback
+                              Local + cloud
                               {!hostedTargetHasKey && " (no key)"}
                             </SelectItem>
                             {allowHostedOnly && (
@@ -541,7 +541,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                                 value="hosted_only"
                                 disabled={!hostedTargetHasKey}
                               >
-                                Hosted only
+                                Cloud only
                                 {!hostedTargetHasKey && " (no key)"}
                               </SelectItem>
                             )}
@@ -549,23 +549,23 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                         </Select>
                         <p className="text-xs text-muted-foreground">
                           {mode === "local_only" &&
-                            "Runs only via the desktop bridge. No server-side execution."}
+                            "Runs only via the desktop bridge. No cloud execution."}
                           {mode === "auto" &&
                             (isLocalRuntime
                               ? `Bridge-first. If the bridge is offline 2+ min, the backend falls back to the ${targetLabel} API for that window — note this swaps the CLI runtime for the plain API.`
-                              : `Bridge-first. Backend takes over with your ${targetLabel} key from Profile → LLM API Keys after the bridge is offline 2+ min.`)}
+                              : `Bridge-first. Cloud takes over with your ${targetLabel} key from Profile → LLM API Keys after the bridge is offline 2+ min.`)}
                           {mode === "hosted_only" &&
-                            `Runs server-side always using your ${targetLabel} key. No desktop bridge required.`}
+                            `Always runs in the cloud using your ${targetLabel} key. No desktop bridge required.`}
                         </p>
                         {!hostedTargetHasKey && (
                           <p className="text-xs text-muted-foreground">
-                            Add a {targetLabel} key in Profile → LLM API Keys to enable hosted execution.
+                            Add a {targetLabel} key in Profile → LLM API Keys to enable cloud execution.
                           </p>
                         )}
                       </div>
                       {hostedActive && targetModels.length > 0 && (
                         <div className="space-y-1.5">
-                          <Label className="text-xs">Hosted model (optional)</Label>
+                          <Label className="text-xs">Cloud model (optional)</Label>
                           <Select
                             value={savedHostedModel || SAME_AS_LOCAL}
                             onValueChange={async (val: string | null) => {
@@ -606,7 +606,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                             </SelectContent>
                           </Select>
                           <p className="text-xs text-muted-foreground">
-                            Run a different (e.g. cheaper) model when the backend takes over. Defaults to your local model.
+                            Run a different (e.g. cheaper) model when cloud execution takes over. Defaults to your local model.
                           </p>
                         </div>
                       )}

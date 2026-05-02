@@ -35,12 +35,12 @@ function hostedModeLabel(
   if (!target) return "—";
   switch (mode ?? "local_only") {
     case "auto":
-      return "Local + fallback";
+      return "Local + cloud";
     case "hosted_only":
-      return "Hosted only";
+      return "Cloud only";
     case "local_only":
     default:
-      return "Local only";
+      return "Local";
   }
 }
 
@@ -241,7 +241,7 @@ export function AgentRow({
               className="border-destructive/30 text-destructive bg-destructive/10 gap-1.5"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
-              Hosted only
+              Cloud only
             </Badge>
           ) : managed.agent.hostedTargetBackend && managed.agent.hostedMode === "auto" ? (
             <Badge
@@ -249,7 +249,7 @@ export function AgentRow({
               className="border-warning/30 text-warning bg-warning/10 gap-1.5"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-              Local + fallback
+              Local + cloud
             </Badge>
           ) : managed.agent.hostedTargetBackend &&
             (managed.agent.hostedMode ?? "local_only") === "local_only" ? (
@@ -258,7 +258,7 @@ export function AgentRow({
               className="border-success/30 text-success bg-success/10 gap-1.5"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-success" />
-              Local only
+              Local
             </Badge>
           ) : (
             <span className="text-xs text-muted-foreground">
