@@ -1093,8 +1093,13 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
   const lastRun = data?.heartbeatConfig?.lastRunAt;
   const nextRun = data?.heartbeatConfig?.nextRunAt;
 
+  const [hbError, setHbError] = useState<string | null>(null);
+  const [hbResult, setHbResult] = useState<string | null>(null);
+
   const handleToggle = async () => {
     setActionLoading("toggle");
+    setHbError(null);
+    setHbResult(null);
     try {
       if (isEnabled) {
         await disableAgentHeartbeat(managed.agent.id);
@@ -1102,14 +1107,28 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
         await enableAgentHeartbeat(managed.agent.id);
       }
       await fetchData();
-    } catch {
-      // ignore
+    } catch (e) {
+      setHbError(
+        e instanceof Error ? e.message : "Failed to toggle heartbeat."
+      );
     }
     setActionLoading(null);
   };
 
   const handleSave = async () => {
+    // Match web + mobile validation so the user gets feedback before
+    // the round-trip — backend now validates too (since the review).
+    if (
+      !Number.isInteger(intervalMinutes) ||
+      intervalMinutes < 1 ||
+      intervalMinutes > 1440
+    ) {
+      setHbError("Interval must be a whole number between 1 and 1440 minutes.");
+      return;
+    }
     setSaving(true);
+    setHbError(null);
+    setHbResult(null);
     try {
       await updateAgentHeartbeat(managed.agent.id, {
         heartbeat_md: heartbeatMd,
@@ -1118,18 +1137,28 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
         timezone,
       });
       await fetchData();
-    } catch {
-      // ignore
+      setHbResult("Saved.");
+      setTimeout(() => setHbResult(null), 1800);
+    } catch (e) {
+      setHbError(
+        e instanceof Error ? e.message : "Failed to save heartbeat."
+      );
     }
     setSaving(false);
   };
 
   const handleTrigger = async () => {
     setActionLoading("trigger");
+    setHbError(null);
+    setHbResult(null);
     try {
       await triggerAgentHeartbeat(managed.agent.id);
-    } catch {
-      // ignore
+      setHbResult("Heartbeat triggered.");
+      setTimeout(() => setHbResult(null), 1800);
+    } catch (e) {
+      setHbError(
+        e instanceof Error ? e.message : "Failed to trigger heartbeat."
+      );
     }
     setActionLoading(null);
   };
@@ -1252,7 +1281,7 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
             <Select value={timezone} onValueChange={(v) => { if (v) { setTimezone(v); setDirty(true); } }}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
-                {["Europe/Berlin", "Europe/London", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney", "Etc/UTC"].map((tz) => (
+                {["Etc/UTC", "Europe/Berlin", "Europe/London", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "Asia/Tokyo", "Asia/Shanghai", "Australia/Sydney"].map((tz) => (
                   <SelectItem key={tz} value={tz}>{tz}</SelectItem>
                 ))}
               </SelectContent>
@@ -1274,6 +1303,20 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
           placeholder="e.g., Check if any reminders are due..."
         />
       </Section>
+
+      {/* Toast-style feedback for enable/disable/trigger/save. Sits
+          just above the save bar so the user sees outcomes inline
+          instead of nothing (the previous catch-all swallowed errors). */}
+      {(hbError || hbResult) && (
+        <p
+          className={cn(
+            "text-xs",
+            hbError ? "text-destructive" : "text-success"
+          )}
+        >
+          {hbError ?? hbResult}
+        </p>
+      )}
 
       {dirty && (
         <div className="sticky bottom-0 bg-background border-t border-border pt-3 pb-1">
@@ -1314,21 +1357,39 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
     );
   }
 
-  const handleAction = async (key: string, action: () => Promise<unknown>) => {
+  const [actionResult, setActionResult] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Wrapper that gates destructive actions on a confirm() prompt,
+  // surfaces success / error inline (no more silent console.error),
+  // and produces a human-friendly summary on success.
+  const handleAction = async (
+    key: string,
+    label: string,
+    action: () => Promise<string>,
+    confirmMsg?: string
+  ) => {
+    // Set loading first so other action buttons disable while the
+    // confirm dialog is open. Clear if user cancels.
     setActionLoading(key);
+    setActionResult(null);
+    setActionError(null);
+    if (confirmMsg && !window.confirm(confirmMsg)) {
+      setActionLoading(null);
+      return;
+    }
     try {
-      await action();
+      const summary = await action();
+      setActionResult(`${label}: ${summary}`);
       await fetchDetail();
     } catch (e) {
-      console.error(`Health action ${key} failed:`, e);
+      setActionError(
+        e instanceof Error ? e.message : `Failed to run ${label}.`
+      );
     } finally {
       setActionLoading(null);
     }
   };
-
-  // Used for conditional action buttons
-  const _hasStuckItems = (detail?.stuckTasks.length ?? 0) > 0 || (detail?.unackedMessages.length ?? 0) > 0;
-  void _hasStuckItems;
 
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-5">
@@ -1374,7 +1435,22 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
             variant="outline"
             disabled={actionLoading !== null}
             onClick={() =>
-              handleAction("unstick", () => unstickAgent(managed.agent.id))
+              handleAction(
+                "unstick",
+                "Unstick",
+                async () => {
+                  const r = await unstickAgent(managed.agent.id);
+                  if (
+                    r.executorsReset === 0 &&
+                    r.tasksExpired === 0 &&
+                    r.messagesRequeued === 0
+                  ) {
+                    return "nothing to unstick";
+                  }
+                  return `reset ${r.executorsReset} executor(s), expired ${r.tasksExpired} task(s) and re-queued ${r.messagesRequeued} message(s)`;
+                },
+                "Re-enable disabled executors and re-queue any stuck tasks or messages. Safe to run any time the agent feels stalled."
+              )
             }
           >
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
@@ -1386,7 +1462,16 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
               variant="outline"
               disabled={actionLoading !== null}
               onClick={() =>
-                handleAction("clear-messages", () => clearAgentMessages(managed.agent.id))
+                handleAction(
+                  "clear-messages",
+                  "Clear messages",
+                  async () => {
+                    const r = await clearAgentMessages(managed.agent.id);
+                    if (r.expired === 0 && r.unclaimed === 0) return "nothing to clear";
+                    return `expired ${r.expired}, unclaimed ${r.unclaimed}`;
+                  },
+                  "Expire every queued message for this agent. Use when a flood of stuck messages is blocking new work."
+                )
               }
             >
               <Inbox className="w-3.5 h-3.5 mr-1.5" />
@@ -1399,7 +1484,16 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
               variant="outline"
               disabled={actionLoading !== null}
               onClick={() =>
-                handleAction("clear-tasks", () => clearAgentTasks(managed.agent.id))
+                handleAction(
+                  "clear-tasks",
+                  "Clear tasks",
+                  async () => {
+                    const r = await clearAgentTasks(managed.agent.id);
+                    if (r.expired === 0 && r.unclaimed === 0) return "nothing to clear";
+                    return `expired ${r.expired}, unclaimed ${r.unclaimed}`;
+                  },
+                  "Expire every queued task for this agent. Use when stuck tasks are blocking new assignments."
+                )
               }
             >
               <ListTodo className="w-3.5 h-3.5 mr-1.5" />
@@ -1411,13 +1505,30 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
             variant="destructive"
             disabled={actionLoading !== null}
             onClick={() =>
-              handleAction("reset", () => forceResetAgent(managed.agent.id))
+              handleAction(
+                "reset",
+                "Force reset",
+                async () => {
+                  const r = await forceResetAgent(managed.agent.id);
+                  return `disabled ${r.disabledExecutors} executor(s), unclaimed ${r.unclaimedTasks} task(s) and ${r.unclaimedMessages} message(s)`;
+                },
+                "Shut down all executors and unclaim all pending work. The agent will need to be restarted manually."
+              )
             }
           >
             <Zap className="w-3.5 h-3.5 mr-1.5" />
             {actionLoading === "reset" ? "Resetting..." : "Force Reset"}
           </Button>
         </div>
+        {actionResult && (
+          <p className="mt-2 flex items-start gap-1.5 text-xs text-success">
+            <Check className="mt-0.5 w-3 h-3 flex-shrink-0" />
+            {actionResult}
+          </p>
+        )}
+        {actionError && (
+          <p className="mt-2 text-xs text-destructive">{actionError}</p>
+        )}
       </Section>
 
       {/* Executors */}
@@ -1453,9 +1564,18 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
                     variant="ghost"
                     className="h-6 px-2 text-xs text-destructive hover:text-destructive/90"
                     disabled={actionLoading !== null}
-                    onClick={() =>
-                      handleAction(`kill-${ex.id}`, () => killExecutor(managed.agent.id, ex.id))
-                    }
+                    onClick={() => {
+                      const name = ex.displayName || ex.executorKey;
+                      handleAction(
+                        `kill-${ex.id}`,
+                        "Kill executor",
+                        async () => {
+                          await killExecutor(managed.agent.id, ex.id);
+                          return `shut down "${name}"`;
+                        },
+                        `Kill executor "${name}"?`
+                      );
+                    }}
                   >
                     {actionLoading === `kill-${ex.id}` ? "..." : "Kill"}
                   </Button>
