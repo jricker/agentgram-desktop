@@ -60,7 +60,7 @@ export function ConversationList({
         </p>
         <p className="text-xs text-muted-foreground mt-1">
           {scope === "agents"
-            ? "Heartbeat and agent-to-agent DMs will appear here."
+            ? "Pulse and agent-to-agent DMs will appear here."
             : "Click the pencil icon above to start one."}
         </p>
       </div>

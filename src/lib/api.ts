@@ -32,7 +32,9 @@ export async function request<T>(
     localStorage.removeItem("authToken");
     localStorage.removeItem("participant");
     window.dispatchEvent(new Event("auth:expired"));
-    throw new Error("Authentication expired");
+    const err = new Error("Authentication expired") as Error & { status?: number };
+    err.status = 401;
+    throw err;
   }
 
   // Retry on 429 with exponential backoff (up to 3 attempts)
@@ -44,7 +46,11 @@ export async function request<T>(
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    const err = new Error(body.error || `Request failed: ${res.status}`) as Error & {
+      status?: number;
+    };
+    err.status = res.status;
+    throw err;
   }
 
   return res.json();
@@ -242,8 +248,8 @@ export async function markAgentOffline(id: string): Promise<{ message: string }>
   return request(`/api/agents/${id}/health/offline`, { method: "POST" });
 }
 
-// Heartbeat Mind
-export interface HeartbeatConfig {
+// Pulse
+export interface PulseConfig {
   enabled?: boolean;
   intervalMinutes?: number;
   activeHours?: { start: number; end: number };
@@ -256,35 +262,35 @@ export interface HeartbeatConfig {
   consecutiveFailures?: number;
 }
 
-export interface HeartbeatData {
-  heartbeatMd: string | null;
-  heartbeatConfig: HeartbeatConfig | null;
+export interface PulseData {
+  pulseMd: string | null;
+  pulseConfig: PulseConfig | null;
 }
 
-export async function getAgentHeartbeat(id: string): Promise<HeartbeatData> {
-  return request(`/api/agents/${id}/heartbeat`);
+export async function getAgentPulse(id: string): Promise<PulseData> {
+  return request(`/api/agents/${id}/pulse`);
 }
 
-export async function updateAgentHeartbeat(
+export async function updateAgentPulse(
   id: string,
-  data: { heartbeat_md?: string; interval_minutes?: number; active_hours?: { start: number; end: number }; timezone?: string; model?: string | null }
-): Promise<HeartbeatData> {
-  return request(`/api/agents/${id}/heartbeat`, {
+  data: { pulse_md?: string; interval_minutes?: number; active_hours?: { start: number; end: number }; timezone?: string; model?: string | null }
+): Promise<PulseData> {
+  return request(`/api/agents/${id}/pulse`, {
     method: "PATCH",
     body: JSON.stringify(data),
   });
 }
 
-export async function enableAgentHeartbeat(id: string): Promise<{ heartbeatConfig: HeartbeatConfig }> {
-  return request(`/api/agents/${id}/heartbeat/enable`, { method: "POST" });
+export async function enableAgentPulse(id: string): Promise<{ pulseConfig: PulseConfig }> {
+  return request(`/api/agents/${id}/pulse/enable`, { method: "POST" });
 }
 
-export async function disableAgentHeartbeat(id: string): Promise<{ heartbeatConfig: HeartbeatConfig }> {
-  return request(`/api/agents/${id}/heartbeat/disable`, { method: "POST" });
+export async function disableAgentPulse(id: string): Promise<{ pulseConfig: PulseConfig }> {
+  return request(`/api/agents/${id}/pulse/disable`, { method: "POST" });
 }
 
-export async function triggerAgentHeartbeat(id: string): Promise<{ message: string }> {
-  return request(`/api/agents/${id}/heartbeat/trigger`, { method: "POST" });
+export async function triggerAgentPulse(id: string): Promise<{ message: string }> {
+  return request(`/api/agents/${id}/pulse/trigger`, { method: "POST" });
 }
 
 // Invites
@@ -1269,6 +1275,9 @@ export async function resumeAgentHosted(
   );
 }
 
+// Fleet-summary row — comes from the multi-agent /api/agents/health
+// list endpoint, which enriches each row with displayName/avatarUrl
+// for direct rendering in a list.
 export interface AgentHealth {
   agentId: string;
   displayName: string;
@@ -1281,7 +1290,19 @@ export interface AgentHealth {
   queuedMessages: number;
 }
 
-export interface AgentHealthDetail extends AgentHealth {
+// Per-agent detail — comes from /api/agents/:id/health/detail. The
+// detail endpoint does NOT emit displayName / avatarUrl (the caller
+// already knows which agent it asked about), so we deliberately
+// don't extend AgentHealth — that would make TS think those fields
+// are present when they're actually undefined at runtime.
+export interface AgentHealthDetail {
+  agentId: string;
+  healthStatus: "healthy" | "degraded" | "stuck" | "offline";
+  executorCount: number;
+  onlineExecutorCount: number;
+  stuckCount: number;
+  queuedTasks: number;
+  queuedMessages: number;
   executors: Array<{
     id: string;
     displayName?: string;
@@ -1291,7 +1312,11 @@ export interface AgentHealthDetail extends AgentHealth {
     secondsSincePoll?: number;
     activeTaskCount: number;
     processMetrics?: Record<string, unknown>;
-    pendingCommand?: string;
+    pendingCommand?: {
+      type: string;
+      reason: string;
+      issuedAt: string;
+    } | null;
   }>;
   stuckTasks: Array<{
     id: string;

@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import {
   deleteAgent,
@@ -13,17 +13,17 @@ import {
   clearAgentTasks,
   killExecutor,
   unstickAgent,
-  getAgentHeartbeat,
-  updateAgentHeartbeat,
-  enableAgentHeartbeat,
-  disableAgentHeartbeat,
-  triggerAgentHeartbeat,
+  getAgentPulse,
+  updateAgentPulse,
+  enableAgentPulse,
+  disableAgentPulse,
+  triggerAgentPulse,
   pauseAgentHosted,
   resumeAgentHosted,
   updateAgentHostedLimits,
   type Connection,
   type AgentHealthDetail,
-  type HeartbeatData,
+  type PulseData,
   type Agent,
   type AgentHostedLimits,
 } from "../lib/api";
@@ -214,7 +214,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
     {
       name: "Operations",
       sections: [
-        { value: "heartbeat", label: "Heartbeat", icon: HeartPulse },
+        { value: "pulse", label: "Pulse", icon: HeartPulse },
         { value: "logs", label: "Logs", icon: ScrollText },
         { value: "health", label: "Health", icon: Activity },
       ],
@@ -1042,8 +1042,8 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
           </div>
         )}
 
-        {activeSection === "heartbeat" && (
-          <HeartbeatPanel managed={managed} />
+        {activeSection === "pulse" && (
+          <PulsePanel managed={managed} />
         )}
 
         {activeSection === "health" && (
@@ -1054,14 +1054,18 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   );
 }
 
-function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
-  const [data, setData] = useState<HeartbeatData | null>(null);
+function PulsePanel({ managed }: { managed: ManagedAgent }) {
+  const [data, setData] = useState<PulseData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  // Editable fields
-  const [heartbeatMd, setHeartbeatMd] = useState("");
-  const [intervalMinutes, setIntervalMinutes] = useState(30);
+  // Editable fields. intervalMinutes is a string so the input can hold
+  // mid-typing values like "" or "1" without snapping to NaN — matches
+  // the web/mobile pattern.
+  const [pulseMd, setPulseMd] = useState("");
+  const [intervalMinutes, setIntervalMinutes] = useState("30");
   const [activeStart, setActiveStart] = useState(8);
   const [activeEnd, setActiveEnd] = useState(22);
   const [timezone, setTimezone] = useState("Etc/UTC");
@@ -1069,16 +1073,27 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
 
   const fetchData = useCallback(async () => {
     try {
-      const d = await getAgentHeartbeat(managed.agent.id);
+      const d = await getAgentPulse(managed.agent.id);
       setData(d);
-      setHeartbeatMd(d.heartbeatMd || "");
-      setIntervalMinutes(d.heartbeatConfig?.intervalMinutes ?? 30);
-      setActiveStart(d.heartbeatConfig?.activeHours?.start ?? 8);
-      setActiveEnd(d.heartbeatConfig?.activeHours?.end ?? 22);
-      setTimezone(d.heartbeatConfig?.timezone ?? "Etc/UTC");
+      setPulseMd(d.pulseMd || "");
+      setIntervalMinutes(String(d.pulseConfig?.intervalMinutes ?? 30));
+      setActiveStart(d.pulseConfig?.activeHours?.start ?? 8);
+      setActiveEnd(d.pulseConfig?.activeHours?.end ?? 22);
+      setTimezone(d.pulseConfig?.timezone ?? "Etc/UTC");
       setDirty(false);
-    } catch {
-      // Non-fatal
+      setLoadError(null);
+    } catch (e) {
+      // 404 means the agent simply has no pulse row yet — that's a
+      // valid "use defaults" state, not an error worth surfacing. Any
+      // other failure we want the user to see so they don't silently
+      // edit defaults that won't save.
+      const msg = e instanceof Error ? e.message : String(e);
+      const status = (e as { status?: number } | null)?.status;
+      if (status !== 404 && !/\b404\b/.test(msg)) {
+        setLoadError(msg || "Failed to load pulse config.");
+      }
+    } finally {
+      setLoading(false);
     }
   }, [managed.agent.id]);
 
@@ -1086,12 +1101,12 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
     fetchData();
   }, [fetchData]);
 
-  const isEnabled = data?.heartbeatConfig?.enabled ?? false;
-  const status = data?.heartbeatConfig?.status ?? "active";
-  const runCount = data?.heartbeatConfig?.runCount ?? 0;
-  const failures = data?.heartbeatConfig?.consecutiveFailures ?? 0;
-  const lastRun = data?.heartbeatConfig?.lastRunAt;
-  const nextRun = data?.heartbeatConfig?.nextRunAt;
+  const isEnabled = data?.pulseConfig?.enabled ?? false;
+  const status = data?.pulseConfig?.status ?? "active";
+  const runCount = data?.pulseConfig?.runCount ?? 0;
+  const failures = data?.pulseConfig?.consecutiveFailures ?? 0;
+  const lastRun = data?.pulseConfig?.lastRunAt;
+  const nextRun = data?.pulseConfig?.nextRunAt;
 
   const [hbError, setHbError] = useState<string | null>(null);
   const [hbResult, setHbResult] = useState<string | null>(null);
@@ -1102,14 +1117,14 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
     setHbResult(null);
     try {
       if (isEnabled) {
-        await disableAgentHeartbeat(managed.agent.id);
+        await disableAgentPulse(managed.agent.id);
       } else {
-        await enableAgentHeartbeat(managed.agent.id);
+        await enableAgentPulse(managed.agent.id);
       }
       await fetchData();
     } catch (e) {
       setHbError(
-        e instanceof Error ? e.message : "Failed to toggle heartbeat."
+        e instanceof Error ? e.message : "Failed to toggle pulse."
       );
     }
     setActionLoading(null);
@@ -1117,22 +1132,25 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
 
   const handleSave = async () => {
     // Match web + mobile validation so the user gets feedback before
-    // the round-trip — backend now validates too (since the review).
-    if (
-      !Number.isInteger(intervalMinutes) ||
-      intervalMinutes < 1 ||
-      intervalMinutes > 1440
-    ) {
-      setHbError("Interval must be a whole number between 1 and 1440 minutes.");
+    // the round-trip — backend enforces the same 5-1440 bound (the
+    // scheduler cron only fires every 5 minutes, so anything below
+    // that would be a UI lie).
+    const parsed = Number(intervalMinutes);
+    if (!Number.isInteger(parsed) || parsed < 5 || parsed > 1440) {
+      setHbError("Interval must be a whole number between 5 and 1440 minutes.");
+      return;
+    }
+    if (activeStart === activeEnd) {
+      setHbError("Active hours: start and end must differ (zero-length window).");
       return;
     }
     setSaving(true);
     setHbError(null);
     setHbResult(null);
     try {
-      await updateAgentHeartbeat(managed.agent.id, {
-        heartbeat_md: heartbeatMd,
-        interval_minutes: intervalMinutes,
+      await updateAgentPulse(managed.agent.id, {
+        pulse_md: pulseMd,
+        interval_minutes: parsed,
         active_hours: { start: activeStart, end: activeEnd },
         timezone,
       });
@@ -1141,7 +1159,7 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
       setTimeout(() => setHbResult(null), 1800);
     } catch (e) {
       setHbError(
-        e instanceof Error ? e.message : "Failed to save heartbeat."
+        e instanceof Error ? e.message : "Failed to save pulse."
       );
     }
     setSaving(false);
@@ -1152,12 +1170,12 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
     setHbError(null);
     setHbResult(null);
     try {
-      await triggerAgentHeartbeat(managed.agent.id);
-      setHbResult("Heartbeat triggered.");
+      await triggerAgentPulse(managed.agent.id);
+      setHbResult("Pulse triggered.");
       setTimeout(() => setHbResult(null), 1800);
     } catch (e) {
       setHbError(
-        e instanceof Error ? e.message : "Failed to trigger heartbeat."
+        e instanceof Error ? e.message : "Failed to trigger pulse."
       );
     }
     setActionLoading(null);
@@ -1172,9 +1190,24 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
     }
   };
 
+  if (loading) {
+    return (
+      <div className="flex-1 overflow-y-auto p-5 space-y-3">
+        <div className="h-5 w-40 bg-muted/40 rounded animate-pulse" />
+        <div className="h-24 bg-muted/30 rounded animate-pulse" />
+        <div className="h-32 bg-muted/30 rounded animate-pulse" />
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 overflow-y-auto p-5 space-y-5">
-      <Section title="Heartbeat Mind">
+      {loadError && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+          {loadError}
+        </div>
+      )}
+      <Section title="Pulse">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-sm font-medium">
@@ -1231,14 +1264,17 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
             <Label className="text-xs">Interval (minutes)</Label>
             <Input
               type="number"
-              min={1}
+              min={5}
               max={1440}
               value={intervalMinutes}
               onChange={(e) => {
-                setIntervalMinutes(Number(e.target.value));
+                setIntervalMinutes(e.target.value);
                 setDirty(true);
               }}
             />
+            <p className="text-xs text-muted-foreground">
+              Minimum 5 minutes — the scheduler runs every 5 minutes.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1294,12 +1330,12 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
 
       <Section title="Checklist">
         <p className="text-xs text-muted-foreground mb-2">
-          What should the agent evaluate on each heartbeat? The agent will message you only if something needs attention.
+          What should the agent evaluate on each pulse? The agent will message you only if something needs attention.
         </p>
         <textarea
           className="w-full min-h-[200px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus:outline-none focus:ring-1 focus:ring-ring"
-          value={heartbeatMd}
-          onChange={(e) => { setHeartbeatMd(e.target.value); setDirty(true); }}
+          value={pulseMd}
+          onChange={(e) => { setPulseMd(e.target.value); setDirty(true); }}
           placeholder="e.g., Check if any reminders are due..."
         />
       </Section>
@@ -1332,6 +1368,19 @@ function HeartbeatPanel({ managed }: { managed: ManagedAgent }) {
 function HealthPanel({ managed }: { managed: ManagedAgent }) {
   const [detail, setDetail] = useState<AgentHealthDetail | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  // ALL hooks must run unconditionally on every render — the previous
+  // version declared these two below the `if (!health) return` early
+  // exit, which threw "Rendered fewer hooks than expected" the moment
+  // the agent's health data flipped from null → present.
+  const [actionResult, setActionResult] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  // Race protection: skip the auto-refresh tick while a user-triggered
+  // action is in flight. Otherwise the background read can land after
+  // the action's own post-mutation refetch and revert optimistic state
+  // (same fix the web HealthSection got).
+  const actionLoadingRef = useRef<string | null>(null);
+  actionLoadingRef.current = actionLoading;
 
   const fetchDetail = useCallback(async () => {
     try {
@@ -1344,7 +1393,10 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
 
   useEffect(() => {
     fetchDetail();
-    const interval = setInterval(fetchDetail, 10000);
+    const interval = setInterval(() => {
+      if (actionLoadingRef.current) return;
+      fetchDetail();
+    }, 10000);
     return () => clearInterval(interval);
   }, [fetchDetail]);
 
@@ -1356,9 +1408,6 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
       </div>
     );
   }
-
-  const [actionResult, setActionResult] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   // Wrapper that gates destructive actions on a confirm() prompt,
   // surfaces success / error inline (no more silent console.error),
@@ -1573,7 +1622,7 @@ function HealthPanel({ managed }: { managed: ManagedAgent }) {
                           await killExecutor(managed.agent.id, ex.id);
                           return `shut down "${name}"`;
                         },
-                        `Kill executor "${name}"?`
+                        `Kill executor "${name}"? It will stop processing tasks.`
                       );
                     }}
                   >
