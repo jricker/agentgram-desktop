@@ -88,6 +88,7 @@ import {
   HeartPulse,
   Play,
   Loader2,
+  User,
 } from "lucide-react";
 import {
   Dialog,
@@ -193,7 +194,10 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
   }> = [
     {
       name: "Profile",
-      sections: [{ value: "soul", label: "Soul", icon: FileText }],
+      sections: [
+        { value: "profile", label: "Profile", icon: User },
+        { value: "soul", label: "Soul", icon: FileText },
+      ],
     },
     {
       name: "Model",
@@ -982,6 +986,12 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
           </div>
         )}
 
+        {activeSection === "profile" && (
+          <div className="flex-1 overflow-y-auto p-5 space-y-6">
+            <ProfileSection agent={agent} />
+          </div>
+        )}
+
         {activeSection === "logs" && (
           <div className="flex-1 overflow-hidden">
             <LogViewer agentId={agent.id} />
@@ -1536,6 +1546,157 @@ function FieldRow({
       <span className="text-xs text-muted-foreground">{label}</span>
       <span className="text-sm">{value}</span>
     </div>
+  );
+}
+
+// --- Profile Section (agent identity beyond the always-visible header) ---
+//
+// Display name, description, and avatar live in `AgentHeader` since they
+// stay visible across every tab. This section covers the remaining
+// profile fields the mobile + web apps already let users edit:
+// agent type, capabilities (free-text tags), and wake URL.
+
+const AGENT_TYPES: Array<{ value: string; label: string; desc: string }> = [
+  { value: "worker", label: "Worker", desc: "Does tasks when asked" },
+  { value: "orchestrator", label: "Orchestrator", desc: "Coordinates other agents" },
+  { value: "reviewer", label: "Reviewer", desc: "Reviews and validates work" },
+  { value: "observer", label: "Observer", desc: "Monitors conversations" },
+];
+
+function ProfileSection({
+  agent,
+}: {
+  agent: Agent;
+}) {
+  const { fetchAgents } = useAgentStore();
+  const [agentType, setAgentType] = useState(agent.agentType || "worker");
+  const [caps, setCaps] = useState((agent.capabilities ?? []).join(", "));
+  const [wakeUrl, setWakeUrl] = useState((agent as { wakeUrl?: string }).wakeUrl ?? "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Re-seed when the agent payload refreshes (e.g. an edit from
+  // another window) so the form reflects current state.
+  useEffect(() => {
+    setAgentType(agent.agentType || "worker");
+    setCaps((agent.capabilities ?? []).join(", "));
+    setWakeUrl((agent as { wakeUrl?: string }).wakeUrl ?? "");
+  }, [agent.agentType, agent.capabilities, (agent as { wakeUrl?: string }).wakeUrl]);
+
+  const dirty =
+    agentType !== (agent.agentType || "worker") ||
+    caps !== (agent.capabilities ?? []).join(", ") ||
+    wakeUrl !== ((agent as { wakeUrl?: string }).wakeUrl ?? "");
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const trimmedCaps = caps
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      const trimmedWake = wakeUrl.trim();
+      await updateAgent(agent.id, {
+        agentType,
+        capabilities: trimmedCaps,
+        wakeUrl: trimmedWake || null,
+      });
+      await fetchAgents();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save profile.");
+    } finally {
+      setSaving(false);
+    }
+  }, [agent.id, agentType, caps, wakeUrl, fetchAgents]);
+
+  return (
+    <>
+      <Section title="Identity">
+        <p className="text-xs text-muted-foreground mb-3">
+          Display name, description, and avatar live in the header above
+          this panel — they stay visible across every tab.
+        </p>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Agent Role</Label>
+          <Select
+            value={agentType}
+            onValueChange={(val: string | null) => {
+              if (val) setAgentType(val);
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AGENT_TYPES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            {AGENT_TYPES.find((t) => t.value === agentType)?.desc ?? ""}
+          </p>
+        </div>
+
+        <div className="space-y-1.5 mt-4">
+          <Label className="text-xs">Capabilities</Label>
+          <Input
+            value={caps}
+            onChange={(e) => setCaps(e.target.value)}
+            placeholder="search, weather, calendar"
+            className="text-xs"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Comma-separated tags. Used by orchestrators to discover which
+            sibling can handle a task.
+          </p>
+        </div>
+
+        <div className="space-y-1.5 mt-4">
+          <Label className="text-xs">Wake URL (optional)</Label>
+          <Input
+            value={wakeUrl}
+            onChange={(e) => setWakeUrl(e.target.value)}
+            placeholder="https://..."
+            className="text-xs font-mono"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            Backend POSTs here when this agent receives messages while its
+            bridge is offline. Leave blank if you don't run a custom wake
+            endpoint.
+          </p>
+        </div>
+
+        {error && (
+          <p className="text-xs text-destructive mt-2">{error}</p>
+        )}
+
+        <div className="flex items-center gap-2 mt-4">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={!dirty || saving}
+          >
+            {saving ? (
+              <Loader2 className="w-3 h-3 animate-spin mr-1.5" />
+            ) : saved ? (
+              <Check className="w-3 h-3 mr-1.5" />
+            ) : null}
+            {saved ? "Saved" : "Save"}
+          </Button>
+          {dirty && !saving && (
+            <span className="text-[11px] text-muted-foreground">Unsaved changes</span>
+          )}
+        </div>
+      </Section>
+    </>
   );
 }
 
