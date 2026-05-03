@@ -28,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn, formatRelativeShort } from "../../lib/utils";
 import { useTemplateStore } from "../../stores/templateStore";
 import { FieldEditor } from "./FieldEditor";
+import { TemplateCardPreview } from "../TemplateCardPreview";
 import type { DetailField, ResponseTemplate, ResultType } from "../../lib/api";
 
 const RESULT_TYPES: ResultType[] = [
@@ -213,6 +214,25 @@ export function TemplateEditor({ template, isNew }: Props) {
     setFields((prev) => [...prev, emptyField()]);
   }, []);
 
+  const cardPreviewTemplate: ResponseTemplate | null = useMemo(() => {
+    if (template) {
+      return { ...template, name: name || template.name, resultType, fields };
+    }
+    if (isNew) {
+      return {
+        id: "new",
+        name: name || "untitled",
+        description,
+        resultType,
+        fields,
+        isBuiltin: false,
+        insertedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    return null;
+  }, [template, isNew, name, description, resultType, fields]);
+
   const TypeIcon = RESULT_TYPE_ICONS[resultType];
 
   return (
@@ -311,6 +331,19 @@ export function TemplateEditor({ template, isNew }: Props) {
               </div>
             </div>
           </div>
+
+          <Section label="Card Preview">
+            {cardPreviewTemplate && cardPreviewTemplate.sampleData ? (
+              <div className="rounded-xl border border-border bg-card p-4">
+                <TemplateCardPreview template={cardPreviewTemplate} />
+              </div>
+            ) : (
+              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-4 text-xs text-muted-foreground">
+                No sample data on this template. The rendered HTML further down
+                uses the server's preview pipeline regardless.
+              </div>
+            )}
+          </Section>
 
           <Section label="Details">
             <div className="space-y-3">
