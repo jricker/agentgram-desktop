@@ -77,7 +77,6 @@ import {
   AlertTriangle,
   Unlink,
   Camera,
-  Pencil,
   Check,
   FolderOpen,
   Zap,
@@ -1549,12 +1548,13 @@ function FieldRow({
   );
 }
 
-// --- Profile Section (agent identity beyond the always-visible header) ---
+// --- Profile Section (full agent identity editor) ---
 //
-// Display name, description, and avatar live in `AgentHeader` since they
-// stay visible across every tab. This section covers the remaining
-// profile fields the mobile + web apps already let users edit:
-// agent type, capabilities (free-text tags), and wake URL.
+// All identity fields the mobile + web apps already let users edit:
+// avatar, display name, description, agent type, capabilities, and
+// wake URL. The always-visible AgentHeader at the top is now read-only
+// — it just shows the current avatar + name + description as an
+// across-tab anchor; editing happens here.
 
 const AGENT_TYPES: Array<{ value: string; label: string; desc: string }> = [
   { value: "worker", label: "Worker", desc: "Does tasks when asked" },
@@ -1569,27 +1569,46 @@ function ProfileSection({
   agent: Agent;
 }) {
   const { fetchAgents } = useAgentStore();
+  const [name, setName] = useState(agent.displayName);
+  const [desc, setDesc] = useState(agent.description ?? "");
   const [agentType, setAgentType] = useState(agent.agentType || "worker");
   const [caps, setCaps] = useState((agent.capabilities ?? []).join(", "));
   const [wakeUrl, setWakeUrl] = useState((agent as { wakeUrl?: string }).wakeUrl ?? "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [cropImage, setCropImage] = useState<string | null>(null);
 
   // Re-seed when the agent payload refreshes (e.g. an edit from
   // another window) so the form reflects current state.
   useEffect(() => {
+    setName(agent.displayName);
+    setDesc(agent.description ?? "");
     setAgentType(agent.agentType || "worker");
     setCaps((agent.capabilities ?? []).join(", "));
     setWakeUrl((agent as { wakeUrl?: string }).wakeUrl ?? "");
-  }, [agent.agentType, agent.capabilities, (agent as { wakeUrl?: string }).wakeUrl]);
+  }, [
+    agent.displayName,
+    agent.description,
+    agent.agentType,
+    agent.capabilities,
+    (agent as { wakeUrl?: string }).wakeUrl,
+  ]);
 
   const dirty =
+    name !== agent.displayName ||
+    desc !== (agent.description ?? "") ||
     agentType !== (agent.agentType || "worker") ||
     caps !== (agent.capabilities ?? []).join(", ") ||
     wakeUrl !== ((agent as { wakeUrl?: string }).wakeUrl ?? "");
 
   const handleSave = useCallback(async () => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError("Display name is required.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -1598,7 +1617,10 @@ function ProfileSection({
         .map((c) => c.trim())
         .filter(Boolean);
       const trimmedWake = wakeUrl.trim();
+      const trimmedDesc = desc.trim();
       await updateAgent(agent.id, {
+        displayName: trimmedName,
+        description: trimmedDesc || null,
         agentType,
         capabilities: trimmedCaps,
         wakeUrl: trimmedWake || null,
@@ -1611,17 +1633,96 @@ function ProfileSection({
     } finally {
       setSaving(false);
     }
-  }, [agent.id, agentType, caps, wakeUrl, fetchAgents]);
+  }, [agent.id, name, desc, agentType, caps, wakeUrl, fetchAgents]);
+
+  const handleAvatarClick = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/jpeg,image/png,image/webp";
+    input.onchange = () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      setCropImage(url);
+    };
+    input.click();
+  };
+
+  const handleCropConfirm = async (blob: Blob) => {
+    setCropImage(null);
+    setUploadingAvatar(true);
+    try {
+      const filename = `avatars/${agent.id}.jpg`;
+      const contentType = "image/jpeg";
+      const { url: uploadUrl, publicUrl } = await presignAvatarUpload(filename, contentType);
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: blob,
+        headers: { "Content-Type": contentType },
+      });
+      const newUrl = `${publicUrl}?t=${Date.now()}`;
+      await updateAgent(agent.id, { avatarUrl: newUrl });
+      await fetchAgents();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Avatar upload failed.");
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
 
   return (
     <>
       <Section title="Identity">
-        <p className="text-xs text-muted-foreground mb-3">
-          Display name, description, and avatar live in the header above
-          this panel — they stay visible across every tab.
-        </p>
+        {/* Avatar — own row at the top so it reads as the focal point. */}
+        <div className="flex items-center gap-3 mb-5">
+          <button
+            onClick={handleAvatarClick}
+            disabled={uploadingAvatar}
+            className="relative flex-shrink-0"
+            title="Change avatar"
+          >
+            <Avatar className="h-16 w-16 rounded-lg">
+              {agent.avatarUrl && (
+                <AvatarImage src={agent.avatarUrl} className="rounded-lg" />
+              )}
+              <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-lg font-semibold">
+                {agent.displayName.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary flex items-center justify-center border-2 border-card">
+              {uploadingAvatar ? (
+                <Loader2 className="w-3 h-3 text-primary-foreground animate-spin" />
+              ) : (
+                <Camera className="w-3 h-3 text-primary-foreground" />
+              )}
+            </div>
+          </button>
+          <p className="text-xs text-muted-foreground">
+            Click the avatar to upload a new picture (square crop, JPEG/PNG/WebP).
+          </p>
+        </div>
 
         <div className="space-y-1.5">
+          <Label className="text-xs">Display Name</Label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="My Agent"
+            className="text-sm"
+          />
+        </div>
+
+        <div className="space-y-1.5 mt-4">
+          <Label className="text-xs">Description</Label>
+          <Input
+            value={desc}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder="What this agent does"
+            className="text-sm"
+          />
+        </div>
+
+        <div className="space-y-1.5 mt-4">
           <Label className="text-xs">Agent Role</Label>
           <Select
             value={agentType}
@@ -1696,223 +1797,53 @@ function ProfileSection({
           )}
         </div>
       </Section>
+      {cropImage && (
+        <AvatarCropDialog
+          open={!!cropImage}
+          imageSrc={cropImage}
+          onClose={() => {
+            URL.revokeObjectURL(cropImage);
+            setCropImage(null);
+          }}
+          onConfirm={(blob) => {
+            URL.revokeObjectURL(cropImage);
+            handleCropConfirm(blob);
+          }}
+        />
+      )}
     </>
   );
 }
 
-// --- Agent Header (editable name + avatar) ---
+// --- Agent Header (read-only anchor) ---
+//
+// All editing of name / avatar / description moved into the Profile
+// tab. The header stays visible across every tab so users keep their
+// "what agent am I configuring" context, but it's no longer a tap
+// target.
 
 function AgentHeader({
   agent,
 }: {
   agent: { id: string; displayName: string; avatarUrl?: string; description?: string; agentType?: string };
 }) {
-  const { fetchAgents } = useAgentStore();
-  const [editingName, setEditingName] = useState(false);
-  const [name, setName] = useState(agent.displayName);
-  const [editingDesc, setEditingDesc] = useState(false);
-  const [desc, setDesc] = useState(agent.description || "");
-  const [saving, setSaving] = useState(false);
-  const [uploadingAvatar, setUploadingAvatar] = useState(false);
-  const [cropImage, setCropImage] = useState<string | null>(null);
-
-  const handleSaveName = async () => {
-    const trimmed = name.trim();
-    if (!trimmed || trimmed === agent.displayName) {
-      setEditingName(false);
-      setName(agent.displayName);
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateAgent(agent.id, { displayName: trimmed });
-      await fetchAgents();
-      setEditingName(false);
-    } catch {
-      setName(agent.displayName);
-      setEditingName(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSaveDesc = async () => {
-    const trimmed = desc.trim();
-    if (trimmed === (agent.description || "")) {
-      setEditingDesc(false);
-      setDesc(agent.description || "");
-      return;
-    }
-    setSaving(true);
-    try {
-      await updateAgent(agent.id, { description: trimmed || null });
-      await fetchAgents();
-      setEditingDesc(false);
-    } catch {
-      setDesc(agent.description || "");
-      setEditingDesc(false);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAvatarClick = () => {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/jpeg,image/png,image/webp";
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      setCropImage(url);
-    };
-    input.click();
-  };
-
-  const handleCropConfirm = async (blob: Blob) => {
-    setCropImage(null);
-    setUploadingAvatar(true);
-    try {
-      const filename = `avatars/${agent.id}.jpg`;
-      const contentType = "image/jpeg";
-
-      const { url: uploadUrl, publicUrl } = await presignAvatarUpload(filename, contentType);
-
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: blob,
-        headers: { "Content-Type": contentType },
-      });
-
-      const newUrl = `${publicUrl}?t=${Date.now()}`;
-      await updateAgent(agent.id, { avatarUrl: newUrl });
-      await fetchAgents();
-    } catch (e) {
-      console.error("Avatar upload failed:", e);
-    } finally {
-      setUploadingAvatar(false);
-    }
-  };
-
   return (
-    <>
     <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-shrink-0">
-      {/* Clickable avatar with always-visible camera badge */}
-      <button
-        onClick={handleAvatarClick}
-        disabled={uploadingAvatar}
-        className="relative flex-shrink-0"
-        title="Change avatar"
-      >
-        <Avatar className="h-9 w-9 rounded-lg">
-          {agent.avatarUrl && <AvatarImage src={agent.avatarUrl} className="rounded-lg" />}
-          <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
-            {agent.displayName.charAt(0).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-        <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-primary flex items-center justify-center border-2 border-card">
-          <Camera className="w-2 h-2 text-primary-foreground" />
-        </div>
-      </button>
-
-      {/* Editable name */}
+      <Avatar className="h-9 w-9 rounded-lg flex-shrink-0">
+        {agent.avatarUrl && <AvatarImage src={agent.avatarUrl} className="rounded-lg" />}
+        <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
+          {agent.displayName.charAt(0).toUpperCase()}
+        </AvatarFallback>
+      </Avatar>
       <div className="flex-1 min-w-0">
-        {editingName ? (
-          <div className="flex items-center gap-1.5">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-7 text-sm font-semibold"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveName();
-                if (e.key === "Escape") {
-                  setName(agent.displayName);
-                  setEditingName(false);
-                }
-              }}
-            />
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7 flex-shrink-0"
-              onClick={handleSaveName}
-              disabled={saving}
-            >
-              <Check className="w-3.5 h-3.5 text-primary" />
-            </Button>
-          </div>
-        ) : (
-          <div
-            className="flex items-center gap-1.5 cursor-pointer"
-            onClick={() => {
-              setName(agent.displayName);
-              setEditingName(true);
-            }}
-          >
-            <p className="text-sm font-semibold truncate">
-              {agent.displayName}
-            </p>
-            <Pencil className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-          </div>
-        )}
-        {editingDesc ? (
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <Input
-              value={desc}
-              onChange={(e) => setDesc(e.target.value)}
-              className="h-6 text-[11px] text-muted-foreground"
-              placeholder="Add a description..."
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleSaveDesc();
-                if (e.key === "Escape") {
-                  setDesc(agent.description || "");
-                  setEditingDesc(false);
-                }
-              }}
-            />
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 flex-shrink-0"
-              onClick={handleSaveDesc}
-              disabled={saving}
-            >
-              <Check className="w-3 h-3 text-primary" />
-            </Button>
-          </div>
-        ) : (
-          <div
-            className="flex items-center gap-1 cursor-pointer mt-0.5 group"
-            onClick={() => {
-              setDesc(agent.description || "");
-              setEditingDesc(true);
-            }}
-          >
-            <p className="text-[11px] text-muted-foreground truncate">
-              {agent.description || "Add description..."}
-            </p>
-            <Pencil className="w-2.5 h-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 flex-shrink-0 transition-opacity" />
-          </div>
+        <p className="text-sm font-semibold truncate">{agent.displayName}</p>
+        {agent.description && (
+          <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+            {agent.description}
+          </p>
         )}
       </div>
     </div>
-    {cropImage && (
-      <AvatarCropDialog
-        open={!!cropImage}
-        imageSrc={cropImage}
-        onClose={() => {
-          URL.revokeObjectURL(cropImage);
-          setCropImage(null);
-        }}
-        onConfirm={(blob) => {
-          URL.revokeObjectURL(cropImage);
-          handleCropConfirm(blob);
-        }}
-      />
-    )}
-    </>
   );
 }
 
