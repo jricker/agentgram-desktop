@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bot, Loader2, Search, Zap } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -62,6 +62,19 @@ export function TaskList() {
 
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
+
+  // If a task is selected externally (e.g. via "View Full Details" from a
+  // chat card) and its status doesn't match the current filter, switch the
+  // filter so the row is visible in the list.
+  useEffect(() => {
+    if (!selectedId) return;
+    const task = tasks.find((t) => t.id === selectedId);
+    if (!task) return;
+    const current = FILTERS.find((x) => x.value === filter) ?? FILTERS[0];
+    if (current.matches(task.status)) return;
+    const next = FILTERS.find((f) => f.value !== filter && f.matches(task.status));
+    if (next) setFilter(next.value);
+  }, [selectedId, tasks, filter]);
 
   const filtered = useMemo(() => {
     const f = FILTERS.find((x) => x.value === filter) ?? FILTERS[0];

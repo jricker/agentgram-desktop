@@ -859,6 +859,10 @@ export async function fetchTasksRest(
   return Array.isArray(data) ? { tasks: data } : data;
 }
 
+export async function fetchTaskRest(taskId: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${taskId}`);
+}
+
 export async function updateTaskStatusRest(
   taskId: string,
   status: TaskStatus

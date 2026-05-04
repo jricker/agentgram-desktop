@@ -49,6 +49,7 @@ interface TaskState {
   taskLifecycleMeta: Record<string, TaskLifecycleMeta>;
 
   fetchTasks: (status?: TaskStatus) => Promise<void>;
+  fetchTask: (taskId: string) => Promise<Task | null>;
   selectTask: (id: string | null) => void;
   updateTaskStatus: (taskId: string, status: TaskStatus) => Promise<void>;
   requestRevision: (taskId: string, feedback: string) => Promise<void>;
@@ -100,7 +101,15 @@ export const useTaskStore = create<TaskState>((set) => ({
     set({ loading: true });
     try {
       const { tasks } = await api.fetchTasksRest(status);
-      set({ tasks: sortByUpdatedDesc(tasks) });
+      const incomingIds = new Set(tasks.map((t) => t.id));
+      // Merge: keep any task already in the store that isn't in the response
+      // (the index endpoint is capped at 50, but the user may have pulled a
+      // specific older task in via fetchTask or WS). Refresh the ones the
+      // server returned.
+      set((s) => {
+        const preserved = s.tasks.filter((t) => !incomingIds.has(t.id));
+        return { tasks: sortByUpdatedDesc([...tasks, ...preserved]) };
+      });
       // Seed lifecycle metadata so cards show the server's truth even when
       // the completion message is outside the recent_messages window.
       set((s) => {
@@ -114,6 +123,29 @@ export const useTaskStore = create<TaskState>((set) => ({
       console.warn("[tasks] fetchTasks failed", e);
     } finally {
       set({ loading: false });
+    }
+  },
+
+  fetchTask: async (taskId) => {
+    try {
+      const task = await api.fetchTaskRest(taskId);
+      set((s) => {
+        const filtered = s.tasks.filter((t) => t.id !== task.id);
+        return {
+          tasks: sortByUpdatedDesc([task, ...filtered]),
+          taskLifecycleMeta: {
+            ...s.taskLifecycleMeta,
+            [task.id]: {
+              ...(s.taskLifecycleMeta[task.id] ?? {}),
+              effectiveStatus: task.status,
+            },
+          },
+        };
+      });
+      return task;
+    } catch (e) {
+      console.warn("[tasks] fetchTask failed", taskId, e);
+      return null;
     }
   },
 

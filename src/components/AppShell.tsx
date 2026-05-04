@@ -17,6 +17,7 @@ import { useChatStore } from "../stores/chatStore";
 import { useAuthStore } from "../stores/authStore";
 import { useAgentStore } from "../stores/agentStore";
 import { useTaskStore, countActiveTasks } from "../stores/taskStore";
+import { useNavStore } from "../stores/navStore";
 import { usePresenceStore } from "../stores/presenceStore";
 import { useThemeStore } from "../stores/themeStore";
 import { AgentBusyToast } from "./AgentBusyToast";
@@ -31,7 +32,8 @@ import { Profile } from "./Profile";
 type View = "chat" | "tasks" | "agents" | "templates" | "canvas";
 
 export function AppShell() {
-  const [view, setView] = useState<View>("chat");
+  const view = useNavStore((s) => s.view);
+  const setView = useNavStore((s) => s.setView);
   const [showProfile, setShowProfile] = useState(false);
 
   // Connect socket + wire store listeners once we have auth

@@ -20,6 +20,7 @@ import {
 import { cn, formatClockTime } from "../../lib/utils";
 import type { Message } from "../../lib/api";
 import { useTaskStore } from "../../stores/taskStore";
+import { useNavStore } from "../../stores/navStore";
 import { MarkdownContent } from "./MarkdownContent";
 
 /**
@@ -304,6 +305,9 @@ function CompletionCard({
   message: Message;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const setView = useNavStore((s) => s.setView);
+  const selectTask = useTaskStore((s) => s.selectTask);
+  const fetchTask = useTaskStore((s) => s.fetchTask);
   const agentName = resolveAgentName(payload, message);
   const avatarUrl = resolveAvatarUrl(payload, message);
   const title = payload.title || "Untitled task";
@@ -332,7 +336,7 @@ function CompletionCard({
 
   return (
     <div className="my-2 w-full">
-      <div className="overflow-hidden rounded-xl border border-success/20 border-l-4 border-l-success bg-success/5">
+      <div className="overflow-hidden rounded-xl border border-border bg-success/5">
         <button
           type="button"
           onClick={() => setExpanded(false)}
@@ -363,6 +367,22 @@ function CompletionCard({
             </div>
           )}
           {payload.task_id && <CopyableTaskId taskId={payload.task_id} />}
+
+          {payload.task_id && (
+            <button
+              type="button"
+              onClick={() => {
+                const id = payload.task_id!;
+                selectTask(id);
+                setView("tasks");
+                void fetchTask(id);
+              }}
+              className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-border bg-background/50 py-2 text-xs font-medium text-primary transition-colors hover:bg-accent"
+            >
+              View Full Details
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>
