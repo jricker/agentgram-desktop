@@ -47,6 +47,23 @@ interface StatusPayload {
   agent_avatar_url?: string;
   assignee_name?: string;
   assignee_avatar_url?: string;
+  /** Present on `task_request_failed` payloads — the agent's create_task
+   *  call was rejected by the backend. No `task_id` exists. */
+  error_kind?: string;
+  attempted_title?: string;
+  attempted_assignees?: string[];
+  attempted_conversation_id?: string;
+  /** Present on `task_capability_warning` payloads — task was created
+   *  but capability handshake flagged something. */
+  kind?: string;
+  required_tools?: string[];
+  unresolved_mismatches?: Array<{ agent_id: string; missing: string[] }>;
+  reroutes?: Array<{
+    original_agent_id: string;
+    replacement_agent_id: string;
+    replacement_display_name?: string;
+    missing_tools: string[];
+  }>;
 }
 
 const LIFECYCLE_TYPES = new Set<string>([
@@ -424,6 +441,112 @@ function FailureCard({
   );
 }
 
+/** Slim amber banner shown when a task was created successfully but the
+ *  capability handshake flagged something. */
+function CapabilityWarningCard({
+  payload,
+  message,
+}: {
+  payload: StatusPayload;
+  message: Message;
+}) {
+  const agentName = resolveAgentName(payload, message);
+  const avatarUrl = resolveAvatarUrl(payload, message);
+  const headline =
+    payload.kind === "snapshot_error"
+      ? "Capability check failed"
+      : payload.kind === "missing_required_tools"
+      ? "Assignee missing required tools"
+      : payload.kind === "rerouted"
+      ? "Auto-rerouted to capable agent"
+      : "Task capability warning";
+
+  const detail =
+    payload.kind === "snapshot_error"
+      ? payload.error
+      : payload.kind === "missing_required_tools"
+      ? payload.unresolved_mismatches
+          ?.map((m) => `${m.agent_id.slice(0, 8)}… missing ${m.missing.join(", ")}`)
+          .join("; ")
+      : payload.kind === "rerouted"
+      ? payload.reroutes
+          ?.map((r) => `→ ${r.replacement_display_name ?? r.replacement_agent_id.slice(0, 8) + "…"}`)
+          .join("; ")
+      : undefined;
+
+  return (
+    <div className="my-2 w-full">
+      <div className="flex w-full items-start gap-3 rounded-xl border border-warning/40 border-l-4 border-l-warning bg-warning/5 px-4 py-2.5">
+        <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={20} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
+            <span className="text-xs font-semibold text-warning">{headline}</span>
+          </div>
+          {payload.title && (
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {agentName} &middot; {payload.title}
+            </p>
+          )}
+          {detail && (
+            <p className="mt-1 text-xs leading-relaxed text-foreground">{detail}</p>
+          )}
+          {payload.required_tools && payload.required_tools.length > 0 && (
+            <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/80">
+              required: {payload.required_tools.join(", ")}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Slim banner shown when an agent's `create_task` MCP call was rejected
+ *  (misroute / bad assignee / unauthorized). No `task_id` exists since the
+ *  task was never persisted — without this card the only signal is the
+ *  LLM's narration, which often glosses over the failure. */
+function RequestFailedCard({
+  payload,
+  message,
+}: {
+  payload: StatusPayload;
+  message: Message;
+}) {
+  const agentName = resolveAgentName(payload, message);
+  const avatarUrl = resolveAvatarUrl(payload, message);
+  const title = payload.attempted_title || "Task creation attempt";
+  const error = payload.error;
+  const reason = payload.error_kind ? payload.error_kind.replace(/_/g, " ") : "rejected";
+
+  return (
+    <div className="my-2 w-full">
+      <div className="flex w-full items-start gap-3 rounded-xl border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 px-4 py-2.5">
+        <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={20} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+            <span className="text-xs font-semibold text-destructive dark:text-destructive">
+              Task not created
+            </span>
+          </div>
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
+            {agentName} &middot; {title} &middot; {reason}
+          </p>
+          {error && (
+            <p className="mt-1 text-xs leading-relaxed text-foreground">{error}</p>
+          )}
+          {payload.attempted_assignees && payload.attempted_assignees.length > 0 && (
+            <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/80">
+              attempted assignees: {payload.attempted_assignees.join(", ")}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CancelledCard({
   payload,
   message,
@@ -560,6 +683,19 @@ export function StatusUpdateMessage({ message }: { message: Message }) {
   if (liveMeta?.error) enriched.error = liveMeta.error;
   if (liveMeta?.agentName) enriched.agent_name = liveMeta.agentName;
   if (liveMeta?.agentAvatarUrl) enriched.agent_avatar_url = liveMeta.agentAvatarUrl;
+
+  // task_request_failed: backend rejected the agent's create_task call.
+  // No task_id exists — render a slim destructive banner so the user
+  // doesn't have to trust the LLM's narration of what happened.
+  if (payload.type === "task_request_failed") {
+    return <RequestFailedCard payload={payload} message={message} />;
+  }
+
+  // task_capability_warning: task created, but handshake flagged
+  // missing required tools / snapshot crash / auto-reroute.
+  if (payload.type === "task_capability_warning") {
+    return <CapabilityWarningCard payload={payload} message={message} />;
+  }
 
   const isLifecycle =
     LIFECYCLE_TYPES.has(lifecycle) || LIFECYCLE_TYPES.has(effectiveType);
