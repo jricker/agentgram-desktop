@@ -1748,6 +1748,13 @@ function ProfileSection({
   const [error, setError] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [cropImage, setCropImage] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState(false);
+
+  const handleCopyId = useCallback(() => {
+    navigator.clipboard.writeText(agent.id);
+    setCopiedId(true);
+    setTimeout(() => setCopiedId(false), 2000);
+  }, [agent.id]);
 
   // Re-seed when the agent payload refreshes (e.g. an edit from
   // another window) so the form reflects current state.
@@ -1966,6 +1973,37 @@ function ProfileSection({
           )}
         </div>
       </Section>
+
+      <Section title="Details">
+        <div className="space-y-1.5">
+          <Label className="text-xs">Agent ID</Label>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 truncate rounded bg-muted px-2 py-1.5 font-mono text-xs">{agent.id}</code>
+            <button
+              onClick={handleCopyId}
+              className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+              title="Copy agent ID"
+            >
+              {copiedId ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+        </div>
+
+        {agent.ownerId && (
+          <div className="space-y-1.5 mt-4">
+            <Label className="text-xs">Owner</Label>
+            <p className="text-sm text-muted-foreground font-mono">{agent.ownerId}</p>
+          </div>
+        )}
+
+        {agent.insertedAt && (
+          <div className="space-y-1.5 mt-4">
+            <Label className="text-xs">Created</Label>
+            <p className="text-sm text-muted-foreground">{new Date(agent.insertedAt).toLocaleDateString()}</p>
+          </div>
+        )}
+      </Section>
+
       {cropImage && (
         <AvatarCropDialog
           open={!!cropImage}

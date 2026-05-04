@@ -1144,6 +1144,8 @@ export interface Agent {
   status: string;
   agentType?: string;
   avatarUrl?: string;
+  ownerId?: string;
+  insertedAt?: string;
   capabilities?: string[];
   structuredCapabilities?: {
     detail_templates?: Record<string, DetailField[]>;
