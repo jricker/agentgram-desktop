@@ -132,6 +132,7 @@ const ConversationItem = memo(function ConversationItem({
     (m) => m.participantId !== currentUserId
   );
   const otherMember = otherMembers[0]?.participant;
+  const showGroupAvatar = isGroup || otherMembers.length >= 2;
   const hasUnread = unreadCount > 0;
   const timeStr = formatConversationTime(conversation.updatedAt);
 
@@ -157,7 +158,7 @@ const ConversationItem = memo(function ConversationItem({
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-muted">
             <Hash className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
-        ) : isGroup && otherMembers.length > 0 ? (
+        ) : showGroupAvatar && otherMembers.length > 0 ? (
           <GroupAvatar members={otherMembers} size={28} />
         ) : (
           <div className="relative">
