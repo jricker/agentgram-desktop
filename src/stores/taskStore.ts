@@ -205,10 +205,8 @@ export const useTaskStore = create<TaskState>((set) => ({
     const handleProgress = (payload: Record<string, unknown>) => {
       const taskId = extractTaskId(payload);
       if (!taskId) return;
-      const progress =
-        (payload.progress as Record<string, unknown> | undefined) ?? payload;
-      const currentStep = (progress.current_step ??
-        progress.currentStep ??
+      const currentStep = (payload.current_step ??
+        payload.currentStep ??
         "") as string;
       set((s) => {
         const merged = mergeProgress(s.taskProgress[taskId], currentStep);

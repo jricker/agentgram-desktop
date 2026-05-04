@@ -255,53 +255,53 @@ export function TaskDecisionMessage({ message }: { message: Message }) {
 }
 
 // --- TaskProgress ---
-
+// Canonical flat shape posted by Tasks.execute_report_progress and broadcast
+// by Gateway.broadcast_task_progress. Keep in sync with mobile + web.
 interface TaskProgressPayload {
-  progress?: number;
+  task_id?: string;
+  type?: "task_progress";
   status?: string;
-  activities?: string[];
-  elapsed_seconds?: number;
+  title?: string;
+  current_step?: string;
+  progress?: string;
+  percent_complete?: number;
+  steps_total?: number;
+  elapsed_ms?: number;
+  phase?: string;
 }
 
 export function TaskProgressMessage({ message }: { message: Message }) {
   const p = getMessagePayload<TaskProgressPayload>(message);
-  const activities = p.activities ?? [];
-  const currentStep =
-    activities.length > 0 ? activities[activities.length - 1] : null;
-  const pastSteps = activities.slice(0, -1).reverse().slice(0, 3);
+  const stepText = p.current_step || p.progress || null;
+  const percent =
+    typeof p.percent_complete === "number"
+      ? Math.max(0, Math.min(100, p.percent_complete))
+      : null;
+  const elapsedSeconds =
+    typeof p.elapsed_ms === "number" ? p.elapsed_ms / 1000 : null;
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between text-xs">
         <span className="font-medium">{p.status ?? "In progress"}</span>
-        {p.elapsed_seconds != null && (
+        {elapsedSeconds != null && (
           <span className="text-muted-foreground tabular-nums">
-            {formatDuration(p.elapsed_seconds)}
+            {formatDuration(elapsedSeconds)}
           </span>
         )}
       </div>
-      {p.progress != null && (
+      {percent != null && (
         <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
           <div
             className="h-full bg-primary transition-all"
-            style={{ width: `${Math.max(0, Math.min(100, p.progress))}%` }}
+            style={{ width: `${percent}%` }}
           />
         </div>
       )}
-      {(currentStep || pastSteps.length > 0) && (
-        <div className="relative mt-1 space-y-1">
-          {currentStep && (
-            <div className="flex items-start gap-2.5">
-              <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse" />
-              <span className="text-xs font-medium">{currentStep}</span>
-            </div>
-          )}
-          {pastSteps.map((step, i) => (
-            <div key={i} className="flex items-start gap-2.5">
-              <span className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-muted-foreground/40" />
-              <span className="text-xs text-muted-foreground/60">{step}</span>
-            </div>
-          ))}
+      {stepText && (
+        <div className="flex items-start gap-2.5">
+          <span className="mt-[5px] h-2 w-2 shrink-0 rounded-full bg-primary animate-pulse" />
+          <span className="text-xs font-medium">{stepText}</span>
         </div>
       )}
     </div>
