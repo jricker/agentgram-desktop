@@ -269,7 +269,7 @@ function WorkingCard({
 
   return (
     <div className="my-2 w-full">
-      <div className="overflow-hidden rounded-xl border border-primary/20 border-l-4 border-l-primary bg-card">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="p-4">
           <div className="flex items-center gap-3">
             <div className="relative">

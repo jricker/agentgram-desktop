@@ -131,14 +131,7 @@ export function TaskRequestMessage({ message }: { message: Message }) {
 
   if (isWorking) {
     return (
-      <div
-        className={cn(
-          "overflow-hidden rounded-xl border border-l-4 bg-card",
-          status === "pending"
-            ? "border-muted-foreground/20 border-l-muted-foreground"
-            : "border-primary/20 border-l-primary"
-        )}
-      >
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
         <div className="p-3">
           <div className="flex items-center gap-2.5">
             <div className="relative">
@@ -169,7 +162,7 @@ export function TaskRequestMessage({ message }: { message: Message }) {
 
   if (isComplete) {
     return (
-      <div className="overflow-hidden rounded-xl border border-success/20 border-l-4 border-l-success bg-success/5">
+      <div className="overflow-hidden rounded-xl border border-border bg-success/5">
         <div className="flex items-center gap-2.5 p-3">
           <AgentAvatar name={agentName} avatarUrl={avatarUrl} />
           <div className="min-w-0 flex-1">
@@ -186,7 +179,7 @@ export function TaskRequestMessage({ message }: { message: Message }) {
 
   if (isFailed) {
     return (
-      <div className="overflow-hidden rounded-xl border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5">
+      <div className="overflow-hidden rounded-xl border border-border bg-destructive/5">
         <div className="flex items-center gap-2.5 p-3">
           <AgentAvatar name={agentName} avatarUrl={avatarUrl} />
           <div className="min-w-0 flex-1">
@@ -202,7 +195,7 @@ export function TaskRequestMessage({ message }: { message: Message }) {
   }
 
   return (
-    <div className="rounded-lg border border-border/60 p-3">
+    <div className="rounded-lg border border-border p-3">
       <div className="flex items-center gap-2">
         <ListChecks className="h-4 w-4 text-primary shrink-0" />
         <span className="text-sm font-semibold flex-1 min-w-0">{title}</span>
