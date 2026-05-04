@@ -198,6 +198,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   addConversation: (conv) => {
     if (conv.parentConversationId || conv.type === "task") return;
+    // Pulse conversations are an internal workspace for the agent's pulse runs;
+    // the backend filters them out of /conversations?scope=agents, so suppress
+    // the live `new_conversation` add too — otherwise the very first pulse for
+    // a new agent would briefly leak its workspace into the agent list.
+    if ((conv as { metadata?: { pulse_conversation?: boolean } }).metadata?.pulse_conversation) return;
     set((s) => {
       if (s.conversations.some((c) => c.id === conv.id)) return s;
       return { conversations: sortConversations([conv, ...s.conversations]) };
