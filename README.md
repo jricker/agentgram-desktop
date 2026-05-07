@@ -20,9 +20,6 @@ Agentgram Desktop gives you a local control plane for your agents — configure 
 ## Quick Start
 
 ```bash
-# Clone the repo and navigate to the desktop app
-cd desktop
-
 # Install frontend dependencies
 npm install
 
@@ -339,37 +336,36 @@ HTTP 401 means your token expired — re-authenticate. HTTP 429 means rate limit
 ## Project Structure
 
 ```
-desktop/
-  bridge/                 # Python agent runtime (self-contained)
-    agent_bridge.py       # Universal agent bridge — spawned per agent
-    agentchat/            # Python SDK package
-    google_places.py      # Photo enrichment for result items
-    requirements.txt      # Python dependencies (httpx, websockets)
-    pyproject.toml        # pip-installable SDK config
-    tests/                # SDK test suite
+bridge/                   # Python agent runtime (self-contained)
+  agent_bridge.py         # Universal agent bridge — spawned per agent
+  agentchat/              # Python SDK package
+  google_places.py        # Photo enrichment for result items
+  requirements.txt        # Python dependencies (httpx, websockets)
+  pyproject.toml          # pip-installable SDK config
+  tests/                  # SDK test suite
+src/
+  components/             # React components (Dashboard, AgentRow, LoginScreen, etc.)
+  lib/
+    api.ts                # Backend API client
+    models.ts             # LLM provider & model definitions
+    utils.ts              # Shared utilities
+  stores/
+    agentStore.ts         # Agent state, process management, health polling
+    authStore.ts          # Auth token, profile, login/signup
+    llmKeyStore.ts        # LLM API key management per provider
+  App.tsx                 # Root component
+  main.tsx                # Entry point
+src-tauri/
   src/
-    components/           # React components (Dashboard, AgentRow, LoginScreen, etc.)
-    lib/
-      api.ts              # Backend API client
-      models.ts           # LLM provider & model definitions
-      utils.ts            # Shared utilities
-    stores/
-      agentStore.ts       # Agent state, process management, health polling
-      authStore.ts        # Auth token, profile, login/signup
-      llmKeyStore.ts      # LLM API key management per provider
-    App.tsx               # Root component
-    main.tsx              # Entry point
-  src-tauri/
-    src/
-      lib.rs              # Tauri command handlers
-      main.rs             # App entry point
-      process_manager.rs  # Agent process lifecycle (start, stop, logs, venv)
-    tauri.conf.json       # Tauri window & plugin config
-  package.json
-  vite.config.ts
-  tsconfig.json
+    lib.rs                # Tauri command handlers
+    main.rs               # App entry point
+    process_manager.rs    # Agent process lifecycle (start, stop, logs, venv)
+  tauri.conf.json         # Tauri window & plugin config
+package.json
+vite.config.ts
+tsconfig.json
 ```
 
 ## License
 
-See the root [LICENSE](../LICENSE) file.
+See the [LICENSE](LICENSE) file.
