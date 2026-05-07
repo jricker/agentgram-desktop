@@ -5,7 +5,6 @@ import {
   deleteAgentPermanently,
   listConnections,
   revokeConnection,
-  presignAvatarUpload,
   updateAgent,
   getAgentHealthDetail,
   forceResetAgent,
@@ -27,6 +26,8 @@ import {
   type Agent,
   type AgentHostedLimits,
 } from "../lib/api";
+import { uploadProcessedBlob } from "../lib/imageProcessor";
+import { useFieldLimits } from "../lib/fieldLimits";
 import { LogViewer } from "./LogViewer";
 import { SoulEditor } from "./SoulEditor";
 import { TemplateGallery } from "./TemplateGallery";
@@ -1738,6 +1739,7 @@ function ProfileSection({
   agent: Agent;
 }) {
   const { fetchAgents } = useAgentStore();
+  const limits = useFieldLimits();
   const [name, setName] = useState(agent.displayName);
   const [desc, setDesc] = useState(agent.description ?? "");
   const [agentType, setAgentType] = useState(agent.agentType || "worker");
@@ -1828,15 +1830,7 @@ function ProfileSection({
     setCropImage(null);
     setUploadingAvatar(true);
     try {
-      const filename = `avatars/${agent.id}.jpg`;
-      const contentType = "image/jpeg";
-      const { url: uploadUrl, publicUrl } = await presignAvatarUpload(filename, contentType);
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: blob,
-        headers: { "Content-Type": contentType },
-      });
-      const newUrl = `${publicUrl}?t=${Date.now()}`;
+      const newUrl = await uploadProcessedBlob(blob, blob.type || "image/jpeg", `avatars/${agent.id}`);
       await updateAgent(agent.id, { avatarUrl: newUrl });
       await fetchAgents();
     } catch (e) {
@@ -1859,7 +1853,7 @@ function ProfileSection({
           >
             <Avatar className="h-16 w-16 rounded-lg">
               {agent.avatarUrl && (
-                <AvatarImage src={agent.avatarUrl} className="rounded-lg" />
+                <AvatarImage src={agent.avatarUrl} className="rounded-lg" displaySize={64} />
               )}
               <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-lg font-semibold">
                 {agent.displayName.charAt(0).toUpperCase()}
@@ -1879,22 +1873,34 @@ function ProfileSection({
         </div>
 
         <div className="space-y-1.5">
-          <Label className="text-xs">Display Name</Label>
+          <div className="flex items-baseline justify-between">
+            <Label className="text-xs">Display Name</Label>
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              {name.length}/{limits.agent.displayName}
+            </span>
+          </div>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="My Agent"
             className="text-sm"
+            maxLength={limits.agent.displayName}
           />
         </div>
 
         <div className="space-y-1.5 mt-4">
-          <Label className="text-xs">Description</Label>
+          <div className="flex items-baseline justify-between">
+            <Label className="text-xs">Description</Label>
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              {desc.length}/{limits.agent.description}
+            </span>
+          </div>
           <Input
             value={desc}
             onChange={(e) => setDesc(e.target.value)}
             placeholder="What this agent does"
             className="text-sm"
+            maxLength={limits.agent.description}
           />
         </div>
 

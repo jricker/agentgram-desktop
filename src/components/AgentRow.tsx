@@ -176,7 +176,7 @@ export function AgentRow({
         {/* Agent */}
         <div className="flex items-center gap-2.5 min-w-0">
           <Avatar className="h-8 w-8 rounded-lg shrink-0">
-            {managed.agent.avatarUrl && <AvatarImage src={managed.agent.avatarUrl} className="rounded-lg" />}
+            {managed.agent.avatarUrl && <AvatarImage src={managed.agent.avatarUrl} className="rounded-lg" displaySize={32} />}
             <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
               {managed.agent.displayName.charAt(0).toUpperCase()}
             </AvatarFallback>

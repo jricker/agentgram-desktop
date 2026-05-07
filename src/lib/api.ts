@@ -163,12 +163,23 @@ export interface Connection {
 export async function presignAvatarUpload(
   filename: string,
   contentType: string,
-  fileSize?: number
+  fileSize: number
 ): Promise<{ url: string; publicUrl: string }> {
   return request("/api/storage/presign", {
     method: "POST",
     body: JSON.stringify({ filename, contentType, fileSize }),
   });
+}
+
+export interface AvatarPolicy {
+  maxBytes: number;
+  targetSize: number;
+  format: string;
+  quality: number;
+}
+
+export async function fetchAvatarPolicy(): Promise<AvatarPolicy> {
+  return request("/api/storage/avatar-policy");
 }
 
 export async function regenerateApiKey(

@@ -245,7 +245,7 @@ function LeftRail({
         >
           <Avatar className="h-7 w-7">
             {participant?.avatarUrl ? (
-              <AvatarImage src={participant.avatarUrl} alt={participant.displayName} />
+              <AvatarImage src={participant.avatarUrl} alt={participant.displayName} displaySize={28} />
             ) : null}
             <AvatarFallback>
               <User className="w-3.5 h-3.5" />

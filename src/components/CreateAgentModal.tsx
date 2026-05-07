@@ -7,12 +7,13 @@ import {
 } from "../lib/models";
 import { useModelCatalog } from "../stores/modelCatalogStore";
 import {
-  presignAvatarUpload,
   updateAgent,
   listSkills,
   assignSkill,
   type Skill,
 } from "../lib/api";
+import { uploadProcessedBlob } from "../lib/imageProcessor";
+import { useFieldLimits } from "../lib/fieldLimits";
 import { Bot, Workflow, Camera, Eye, EyeOff, ShieldOff, Sparkles, Check, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "../lib/utils";
@@ -55,6 +56,11 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const [availableSkills, setAvailableSkills] = useState<Skill[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  // Tracks the agent created in a partial-success run so a Retry click
+  // doesn't double-create. Set after createAgent succeeds; persists for
+  // the lifetime of the modal.
+  const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
+  const limits = useFieldLimits();
   const [error, setError] = useState<string | null>(null);
 
   // Fetch available skills on mount
@@ -168,70 +174,74 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      // If user entered an API key, save it as the provider default.
-      // Awaited and hard-fail — a created agent without a resolvable
-      // key 401s on first run.
-      if (apiKey.trim() && needsApiKey) {
-        const provider = PROVIDERS.find((p) => p.id === backend);
-        const label = `${provider?.label || backend} Key`;
-        try {
-          await llmKeyStore.addKey(backend, label, apiKey.trim(), {
-            makeDefault: true,
-          });
-        } catch (e) {
-          setError(
-            e instanceof Error
-              ? `Couldn't save API key: ${e.message}`
-              : "Couldn't save API key. The agent has not been created."
+      let id = createdAgentId;
+
+      // First attempt: actually create. Re-runs after a partial success
+      // (agent created, avatar failed) skip this — `createdAgentId` is set.
+      if (!id) {
+        // If user entered an API key, save it as the provider default.
+        // Awaited and hard-fail — a created agent without a resolvable
+        // key 401s on first run.
+        if (apiKey.trim() && needsApiKey) {
+          const provider = PROVIDERS.find((p) => p.id === backend);
+          const label = `${provider?.label || backend} Key`;
+          try {
+            await llmKeyStore.addKey(backend, label, apiKey.trim(), {
+              makeDefault: true,
+            });
+          } catch (e) {
+            setError(
+              e instanceof Error
+                ? `Couldn't save API key: ${e.message}`
+                : "Couldn't save API key. The agent has not been created."
+            );
+            setLoading(false);
+            return;
+          }
+        }
+
+        id = await createAgent({
+          displayName: name.trim(),
+          description: description.trim() || undefined,
+          agentType,
+          backend,
+          model,
+          executionMode,
+          effort: effort || undefined,
+          dangerouslySkipPermissions: skipPermissions,
+        });
+        setCreatedAgentId(id);
+
+        // Skill assignment also belongs to first-attempt only.
+        if (selectedSkillIds.size > 0) {
+          await Promise.allSettled(
+            Array.from(selectedSkillIds).map((skillId) => assignSkill(skillId, id!))
           );
-          setLoading(false);
-          return;
         }
       }
 
-      const id = await createAgent({
-        displayName: name.trim(),
-        description: description.trim() || undefined,
-        agentType,
-        backend,
-        model,
-        executionMode,
-        effort: effort || undefined,
-        dangerouslySkipPermissions: skipPermissions,
-      });
-
-      // Upload avatar if one was selected
+      // Avatar is the most likely thing to fail (network/encoder hiccup);
+      // it's also retry-safe because Supabase PUTs to a deterministic key.
+      let avatarUploadFailed: string | null = null;
       if (avatarFile) {
         try {
-          const filename = `avatars/${id}.jpg`;
-          const contentType = "image/jpeg";
-          const { url: uploadUrl, publicUrl } = await presignAvatarUpload(
-            filename,
-            contentType
-          );
-          await fetch(uploadUrl, {
-            method: "PUT",
-            body: avatarFile,
-            headers: { "Content-Type": contentType },
-          });
-          await updateAgent(id, {
-            avatarUrl: `${publicUrl}?t=${Date.now()}`,
-          });
+          const newUrl = await uploadProcessedBlob(avatarFile, avatarFile.type || "image/jpeg", `avatars/${id}`);
+          await updateAgent(id, { avatarUrl: newUrl });
           await fetchAgents();
-        } catch {
-          // Avatar upload is non-fatal — agent is still created
-          console.error("Avatar upload failed, agent created without avatar");
+        } catch (e) {
+          avatarUploadFailed =
+            e instanceof Error ? e.message : "Avatar upload failed";
         }
-      }
-
-      // Assign selected optional skills
-      if (selectedSkillIds.size > 0) {
-        await Promise.allSettled(
-          Array.from(selectedSkillIds).map((skillId) => assignSkill(skillId, id))
-        );
       }
 
       selectAgent(id);
+
+      if (avatarUploadFailed) {
+        setError(`${avatarUploadFailed} The agent was created — click Create again to retry the avatar, or close to skip.`);
+        setLoading(false);
+        return;
+      }
+
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create agent");
@@ -298,7 +308,12 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                 </div>
               </button>
               <div className="flex-1 space-y-1.5">
-                <Label htmlFor="agent-name">Name</Label>
+                <div className="flex items-baseline justify-between">
+                  <Label htmlFor="agent-name">Name</Label>
+                  <span className="text-xs text-text-muted tabular-nums">
+                    {name.length}/{limits.agent.displayName}
+                  </span>
+                </div>
                 <Input
                   id="agent-name"
                   type="text"
@@ -307,18 +322,25 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                   placeholder="Scout"
                   required
                   autoFocus
+                  maxLength={limits.agent.displayName}
                 />
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label htmlFor="agent-desc">Description</Label>
+              <div className="flex items-baseline justify-between">
+                <Label htmlFor="agent-desc">Description</Label>
+                <span className="text-xs text-text-muted tabular-nums">
+                  {description.length}/{limits.agent.description}
+                </span>
+              </div>
               <Input
                 id="agent-desc"
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Research assistant"
+                maxLength={limits.agent.description}
               />
             </div>
 

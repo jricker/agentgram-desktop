@@ -301,7 +301,7 @@ function ActiveConversation({
         >
           {conversation?.avatarUrl ? (
             <Avatar className="h-9 w-9 shrink-0">
-              <AvatarImage src={conversation.avatarUrl} alt={headerTitle} />
+              <AvatarImage src={conversation.avatarUrl} alt={headerTitle} displaySize={36} />
               <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
                 {headerTitle.charAt(0).toUpperCase()}
               </AvatarFallback>
@@ -311,7 +311,7 @@ function ActiveConversation({
           ) : (
             <Avatar className="h-9 w-9 shrink-0">
               {otherParticipant?.avatarUrl ? (
-                <AvatarImage src={otherParticipant.avatarUrl} alt={headerTitle} />
+                <AvatarImage src={otherParticipant.avatarUrl} alt={headerTitle} displaySize={36} />
               ) : null}
               <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
                 {headerTitle.charAt(0).toUpperCase()}

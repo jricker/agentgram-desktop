@@ -2,6 +2,7 @@ import * as React from "react"
 import { Avatar as AvatarPrimitive } from "@base-ui/react/avatar"
 
 import { cn } from "@/lib/utils"
+import { avatarUrl } from "@/lib/avatarUrl"
 
 function Avatar({
   className,
@@ -23,10 +24,26 @@ function Avatar({
   )
 }
 
-function AvatarImage({ className, ...props }: AvatarPrimitive.Image.Props) {
+/**
+ * `displaySize` (CSS px) opts into Supabase Storage's render-image transform
+ * so we don't ship a full-size original to a 32px slot. We request 2× to
+ * stay sharp on retina. Pass-through for non-Supabase URLs.
+ */
+function AvatarImage({
+  className,
+  src,
+  displaySize,
+  ...props
+}: AvatarPrimitive.Image.Props & { displaySize?: number }) {
+  const resolvedSrc =
+    typeof src === "string" && displaySize
+      ? avatarUrl(src, displaySize * 2)
+      : src
+
   return (
     <AvatarPrimitive.Image
       data-slot="avatar-image"
+      src={resolvedSrc}
       className={cn(
         "aspect-square size-full rounded-full object-cover",
         className

@@ -6,7 +6,7 @@ import { useAgentStore } from "../../stores/agentStore";
 // external agents owned by other users); useAgentStore is still needed for
 // the "add member" picker which lists this user's own agents.
 import { useMemoryStore } from "../../stores/memoryStore";
-import * as api from "../../lib/api";
+import { uploadAvatar } from "../../lib/imageProcessor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -73,30 +73,16 @@ export function ConversationDetailsPanel({
       const file = e.target.files?.[0];
       e.target.value = "";
       if (!file) return;
-      if (file.size > 2 * 1024 * 1024) {
-        setAvatarError("Image must be under 2 MB");
-        return;
-      }
       setAvatarError(null);
       setUploadingAvatar(true);
       try {
-        const contentType = file.type || "image/jpeg";
-        const ext = contentType.split("/")[1]?.split("+")[0] ?? "jpg";
-        const presigned = await api.presignAvatarUpload(
-          `conversations/${conversation.id}.${ext}`,
-          contentType,
-          file.size
-        );
-        const uploadRes = await fetch(presigned.url, {
-          method: "PUT",
-          headers: { "Content-Type": contentType },
-          body: file,
-        });
-        if (!uploadRes.ok) throw new Error("Upload failed");
-        await updateAvatar(
-          conversation.id,
-          `${presigned.publicUrl}?t=${Date.now()}`
-        );
+        // Desktop's group-photo path doesn't have a crop UI like agent
+        // avatars do — but uploadAvatar handles policy fetch + the PUT, and
+        // the canvas-based square crop lives one layer deeper if we ever
+        // add a cropper here. Until then, the raw file resizes via the
+        // imageProcessor pipeline before upload.
+        const newUrl = await uploadAvatar(file as Blob, `conversations/${conversation.id}`);
+        await updateAvatar(conversation.id, newUrl);
       } catch (err) {
         setAvatarError(
           err instanceof Error ? err.message : "Failed to upload photo"

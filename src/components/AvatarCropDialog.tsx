@@ -9,8 +9,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut } from "lucide-react";
-
-const MAX_DIMENSION = 512;
+import { getAvatarPolicy } from "../lib/imageProcessor";
 
 interface AvatarCropDialogProps {
   open: boolean;
@@ -19,22 +18,32 @@ interface AvatarCropDialogProps {
   onConfirm: (blob: Blob) => void;
 }
 
-async function cropImage(
-  imageSrc: string,
-  pixelCrop: Area
-): Promise<Blob> {
+const SUPPORTED_FORMATS = ["image/jpeg", "image/png", "image/webp"];
+
+async function cropImage(imageSrc: string, pixelCrop: Area): Promise<Blob> {
+  const policy = await getAvatarPolicy();
+  // Tauri webviews (WebKit on macOS, WebView2 on Windows) don't all support
+  // every encoding format. Whitelist what we know works; fall back to JPEG.
+  const format = SUPPORTED_FORMATS.includes(policy.format)
+    ? policy.format
+    : "image/jpeg";
+
   const image = new Image();
-  image.crossOrigin = "anonymous";
   await new Promise<void>((resolve, reject) => {
     image.onload = () => resolve();
-    image.onerror = reject;
+    image.onerror = () => reject(new Error("Could not read image"));
     image.src = imageSrc;
   });
 
   const canvas = document.createElement("canvas");
-  canvas.width = MAX_DIMENSION;
-  canvas.height = MAX_DIMENSION;
-  const ctx = canvas.getContext("2d")!;
+  canvas.width = policy.targetSize;
+  canvas.height = policy.targetSize;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2d context unavailable");
+
+  // Flatten alpha to white so PNG sources don't render black on JPEG.
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, policy.targetSize, policy.targetSize);
 
   ctx.drawImage(
     image,
@@ -44,17 +53,27 @@ async function cropImage(
     pixelCrop.height,
     0,
     0,
-    MAX_DIMENSION,
-    MAX_DIMENSION
+    policy.targetSize,
+    policy.targetSize
   );
 
-  return new Promise((resolve, reject) => {
-    canvas.toBlob(
-      (blob) => (blob ? resolve(blob) : reject(new Error("Canvas toBlob failed"))),
-      "image/jpeg",
-      0.85
-    );
-  });
+  const encode = (q: number) =>
+    new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error(`Couldn't encode ${format}`))),
+        format,
+        q
+      );
+    });
+
+  let blob = await encode(policy.quality);
+  if (blob.size > policy.maxBytes) blob = await encode(0.7);
+  if (blob.size > policy.maxBytes) {
+    const limitKb = Math.round(policy.maxBytes / 1000);
+    throw new Error(`Avatar exceeds ${limitKb} KB after compression — try a smaller or simpler image.`);
+  }
+
+  return blob;
 }
 
 export function AvatarCropDialog({
@@ -67,19 +86,24 @@ export function AvatarCropDialog({
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const onCropComplete = useCallback((_: Area, pixels: Area) => {
     setCroppedAreaPixels(pixels);
+    // Clear stale error so the user gets a clean state when they adjust
+    // crop/zoom after a previous failed save.
+    setError(null);
   }, []);
 
   const handleSave = async () => {
     if (!croppedAreaPixels) return;
+    setError(null);
     setSaving(true);
     try {
       const blob = await cropImage(imageSrc, croppedAreaPixels);
       onConfirm(blob);
     } catch (e) {
-      console.error("Crop failed:", e);
+      setError(e instanceof Error ? e.message : "Crop failed");
     } finally {
       setSaving(false);
     }
@@ -119,6 +143,10 @@ export function AvatarCropDialog({
           />
           <ZoomIn className="w-4 h-4 text-muted-foreground flex-shrink-0" />
         </div>
+
+        {error && (
+          <p className="text-xs text-destructive px-1">{error}</p>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>
