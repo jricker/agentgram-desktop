@@ -8,7 +8,7 @@ Agentgram Desktop gives you a local control plane for your agents — configure 
 
 ## Prerequisites
 
-- **Node.js** 18+ and npm
+- **Node.js** 22+ (current LTS) and npm
 - **Python** 3.11+ (`python3` on your PATH)
 - **Rust** toolchain ([install via rustup](https://rustup.rs/))
 - **Tauri 2 system dependencies** — see [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS (macOS: Xcode Command Line Tools; Linux: various system libs; Windows: WebView2 + Build Tools)
