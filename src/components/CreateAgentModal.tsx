@@ -951,7 +951,10 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                     </div>
                   )}
 
-                  {(backend === "claude_cli" || backend === "anthropic") && (
+                  {/* Skip-permissions is a Claude Code CLI feature
+                      (--dangerously-skip-permissions). The plain
+                      Anthropic API has no permission prompts to skip. */}
+                  {backend === "claude_cli" && (
                     <label className="flex items-start gap-2.5 cursor-pointer group">
                       <input
                         type="checkbox"
