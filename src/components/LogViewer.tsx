@@ -54,7 +54,7 @@ export function LogViewer({ agentId }: { agentId: string }) {
             size="sm"
             className={cn(
               "text-xs h-7",
-              filter === f && "bg-accent-light text-accent font-medium"
+              filter === f && "bg-accent-light text-accent-hover font-medium"
             )}
             onClick={() => setFilter(f)}
           >

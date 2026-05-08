@@ -194,6 +194,9 @@ interface AgentState {
     executionMode?: string;
     effort?: string;
     dangerouslySkipPermissions?: boolean;
+    /** Pin the agent to a specific saved LLM key. Omit to resolve to the
+     *  user's default for the provider at runtime. */
+    llmApiKeyId?: string | null;
   }) => Promise<string>;
   regenerateKey: (id: string) => Promise<string>;
   refreshProcessStatuses: () => Promise<void>;
@@ -673,7 +676,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   createAgent: async (data) => {
-    const { backend: selectedBackend, model: selectedModel, executionMode: selectedMode, effort: selectedEffort, dangerouslySkipPermissions: skipPerms, ...apiData } = data;
+    const {
+      backend: selectedBackend,
+      model: selectedModel,
+      executionMode: selectedMode,
+      effort: selectedEffort,
+      dangerouslySkipPermissions: skipPerms,
+      llmApiKeyId: selectedKeyId,
+      ...apiData
+    } = data;
     const result = await api.createAgent(apiData);
     const config = {
       ...DEFAULT_CONFIG,
@@ -682,6 +693,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       ...(selectedMode ? { executionMode: selectedMode } : {}),
       ...(selectedEffort ? { effort: selectedEffort } : {}),
       ...(skipPerms ? { dangerouslySkipPermissions: true } : {}),
+      ...(selectedKeyId ? { llmApiKeyId: selectedKeyId } : {}),
     };
 
     set({
@@ -707,12 +719,14 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     saveApiKey(result.agent.id, result.apiKey);
     saveLocalConfig(result.agent.id, config);
 
-    // Sync model_config to backend (backend, model, execution_mode, effort)
+    // Sync model_config to backend (backend, model, execution_mode, effort,
+    // llm_api_key_id when the agent is pinned to a specific saved key)
     const modelConfigPatch: Record<string, unknown> = {};
     if (selectedBackend) modelConfigPatch.backend = selectedBackend;
     if (selectedModel) modelConfigPatch.model = selectedModel;
     if (selectedMode) modelConfigPatch.execution_mode = selectedMode;
     if (selectedEffort) modelConfigPatch.effort = selectedEffort;
+    if (selectedKeyId) modelConfigPatch.llm_api_key_id = selectedKeyId;
     if (Object.keys(modelConfigPatch).length > 0) {
       api.updateModelConfig(result.agent.id, modelConfigPatch).catch((err) =>
         console.warn(`[agentStore] Failed to sync model_config on create:`, err)

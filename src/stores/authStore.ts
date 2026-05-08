@@ -2,6 +2,7 @@ import { create } from "zustand";
 import * as api from "../lib/api";
 import { resetAvatarPolicyCache } from "../lib/imageProcessor";
 import { resetFieldLimitsCache } from "../lib/fieldLimits";
+import { resetAgentTypesCache } from "../lib/agentTypes";
 
 // Push the device's IANA tz to the backend if it differs from what's stored.
 // Best-effort. Updates the in-memory participant on success so the profile
@@ -100,6 +101,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     // failure surface.
     resetAvatarPolicyCache();
     resetFieldLimitsCache();
+    resetAgentTypesCache();
     localStorage.removeItem("authToken");
     localStorage.removeItem("participant");
     set({ token: null, participant: null });
