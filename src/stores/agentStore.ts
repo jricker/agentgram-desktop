@@ -189,6 +189,10 @@ interface AgentState {
     displayName: string;
     description?: string;
     agentType?: string;
+    capabilities?: string[];
+    avatarUrl?: string;
+    requiresLocation?: boolean;
+    soulMd?: string;
     backend?: string;
     model?: string;
     executionMode?: string;

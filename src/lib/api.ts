@@ -105,6 +105,10 @@ export async function createAgent(data: {
   displayName: string;
   description?: string;
   agentType?: string;
+  capabilities?: string[];
+  avatarUrl?: string;
+  requiresLocation?: boolean;
+  soulMd?: string;
   modelConfig?: Record<string, unknown>;
 }): Promise<{ agent: Agent; apiKey: string }> {
   // Backend returns flat: { id, displayName, ..., apiKey }
