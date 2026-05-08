@@ -12,7 +12,7 @@ import {
   Plus,
   Loader2,
   MapPin,
-  Check,
+  ShieldOff,
 } from "lucide-react";
 import { useAgentStore } from "../stores/agentStore";
 import { useLlmKeyStore } from "../stores/llmKeyStore";
@@ -20,6 +20,7 @@ import { useModelCatalog } from "../stores/modelCatalogStore";
 import { useAgentTypes } from "../lib/agentTypes";
 import { useFieldLimits } from "../lib/fieldLimits";
 import { uploadAvatar } from "../lib/imageProcessor";
+import { EXECUTION_MODES, EFFORT_LEVELS } from "../lib/models";
 import {
   TONES,
   SPECIALTIES_BY_ROLE,
@@ -68,6 +69,7 @@ const STEPS = [
   "tone",
   "specialties",
   "details",
+  "brain",
   "review",
 ] as const;
 type WizardStep = (typeof STEPS)[number];
@@ -79,6 +81,7 @@ const STEP_TITLES: Record<WizardStep, string> = {
   tone: "How should they talk?",
   specialties: "What are they good at?",
   details: "Any extra details?",
+  brain: "Pick a brain",
   review: "Ready to launch?",
 };
 
@@ -89,6 +92,7 @@ const STEP_SUBTITLES: Record<WizardStep, string> = {
   tone: "How they sound when they talk to you.",
   specialties: "The things they should be good at.",
   details: "Anything else worth telling them up front.",
+  brain: "Which AI model powers them.",
   review: "Last look before we bring them online.",
 };
 
@@ -137,11 +141,19 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   // details
   const [customInstructions, setCustomInstructions] = useState("");
   const [requiresLocation, setRequiresLocation] = useState(false);
-  // review — backend / model / key
+  // brain — backend / model / execution mode / effort / key / safety
   const [backend, setBackend] = useState("claude_cli");
   const [model, setModel] = useState("");
+  const [executionMode, setExecutionMode] = useState("tool_use");
+  const [effort, setEffort] = useState<string | null>(null);
+  const [skipPermissions, setSkipPermissions] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
+  // Three-way: "__default__" = use provider default (no llmApiKeyId on
+  // the agent), "__custom__" = a brand-new key entered below + saved
+  // for this agent only, "<existing-id>" = pin to a saved non-default
+  // key. Reset to "__default__" whenever the backend flips.
+  const [keySelection, setKeySelection] = useState<string>("__default__");
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,12 +179,45 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
     () => (backend ? catalog.modelsFor(backend) : []),
     [catalog, backend]
   );
+  const supportedModes = useMemo(
+    () => (backend ? catalog.supportedModesFor(backend) : []),
+    [catalog, backend]
+  );
   const needsApiKey = backend ? catalog.requiresLlmKey(backend) : false;
   const hasDefaultKey = useMemo(
     () => llmKeyStore.getDefaultKey(backend) !== null,
     [llmKeyStore, backend]
   );
-  const showApiKeyInput = needsApiKey && !hasDefaultKey;
+  const providerKeys = useMemo(
+    () => llmKeyStore.getKeysForProvider(backend),
+    [llmKeyStore, backend]
+  );
+  // Show the raw API-key input either:
+  //   - the user has no default for this provider (the entered key BECOMES the default), or
+  //   - they explicitly chose "Custom Key for this agent" from the picker.
+  const showApiKeyInput =
+    needsApiKey && (!hasDefaultKey || keySelection === "__custom__");
+  const showEffort = backend === "claude_cli";
+
+  const handleBackendChange = (next: string) => {
+    if (!next) return;
+    setBackend(next);
+    const newModels = catalog.modelsFor(next);
+    if (newModels.length > 0) {
+      setModel(newModels[0]?.id ?? "");
+    } else {
+      setModel("");
+    }
+    const newModes = catalog.supportedModesFor(next);
+    if (!newModes.includes(executionMode)) {
+      setExecutionMode(newModes.includes("tool_use") ? "tool_use" : newModes[0] ?? "");
+    }
+    if (next !== "claude_cli") {
+      setEffort(null);
+    }
+    setApiKey("");
+    setKeySelection("__default__");
+  };
 
   const specialtyCatalog = SPECIALTIES_BY_ROLE[agentRole];
   const allSpecialties = useMemo(
@@ -276,20 +321,32 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
     setCreating(true);
     setError(null);
     try {
-      // Save the entered key as the provider default first so the
-      // agent resolves through it on first run.
+      // Resolve the key choice:
+      //   * No default exists + key entered → save it AS the default.
+      //   * Default exists + custom key entered → save as a non-default
+      //     credential and pin this agent to it via llmApiKeyId.
+      //   * "__default__" → use the provider default (no pin).
+      //   * "<id>" → pin to an existing saved key.
+      let llmApiKeyIdPin: string | null = null;
       if (apiKey.trim() && needsApiKey) {
         const provider = PROVIDERS.find((p) => p.id === backend);
         const label = `${provider?.label || backend} Key`;
         try {
-          await llmKeyStore.addKey(backend, label, apiKey.trim(), {
-            makeDefault: true,
+          const newId = await llmKeyStore.addKey(backend, label, apiKey.trim(), {
+            makeDefault: !hasDefaultKey,
           });
+          if (hasDefaultKey) llmApiKeyIdPin = newId;
         } catch (e) {
           setError(e instanceof Error ? e.message : "Failed to save the API key");
           setCreating(false);
           return;
         }
+      } else if (
+        keySelection !== "__default__" &&
+        keySelection !== "__custom__"
+      ) {
+        // User picked an existing non-default saved key — pin to it.
+        llmApiKeyIdPin = keySelection;
       }
 
       const allSpecialtiesList = [...specialties, ...customSpecialties];
@@ -316,6 +373,10 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
         ...(soulMd ? { soulMd } : {}),
         ...(backend ? { backend } : {}),
         ...(model ? { model } : {}),
+        ...(executionMode ? { executionMode } : {}),
+        ...(effort ? { effort } : {}),
+        ...(skipPermissions ? { dangerouslySkipPermissions: true } : {}),
+        ...(llmApiKeyIdPin ? { llmApiKeyId: llmApiKeyIdPin } : {}),
       });
       if (newId) await selectAgent(newId);
       onClose();
@@ -337,7 +398,12 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
     agentRole,
     backend,
     model,
+    executionMode,
+    effort,
+    skipPermissions,
     apiKey,
+    keySelection,
+    hasDefaultKey,
     needsApiKey,
     showApiKeyInput,
     PROVIDERS,
@@ -714,6 +780,199 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                 </div>
               )}
 
+              {step === "brain" && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label>Provider</Label>
+                      <Select
+                        value={backend}
+                        onValueChange={(v) => handleBackendChange(v ?? "")}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PROVIDERS.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Model</Label>
+                      <Select
+                        value={model}
+                        onValueChange={(v) => v && setModel(v)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {models.map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div
+                    className={cn(
+                      "grid gap-3",
+                      showEffort ? "grid-cols-2" : "grid-cols-1"
+                    )}
+                  >
+                    <div className="space-y-1.5">
+                      <Label>Execution Mode</Label>
+                      <Select
+                        value={executionMode}
+                        onValueChange={(v) => v && setExecutionMode(v)}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {EXECUTION_MODES.filter((m) =>
+                            supportedModes.includes(m.id)
+                          ).map((m) => (
+                            <SelectItem key={m.id} value={m.id}>
+                              {m.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {showEffort && (
+                      <div className="space-y-1.5">
+                        <Label>Effort</Label>
+                        <Select
+                          value={effort || "high"}
+                          onValueChange={(v) => v && setEffort(v)}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {EFFORT_LEVELS.map((e) => (
+                              <SelectItem key={e.id} value={e.id}>
+                                {e.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                  </div>
+
+                  {needsApiKey && hasDefaultKey && (
+                    <div className="space-y-1.5">
+                      <Label>{providerLabel} API Key</Label>
+                      <Select
+                        value={keySelection}
+                        onValueChange={(v) => {
+                          setKeySelection(String(v));
+                          if (v !== "__custom__") setApiKey("");
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue>
+                            {(val: unknown) => {
+                              const v = String(val);
+                              if (v === "__default__") return "Provider Default";
+                              if (v === "__custom__") return "Custom Key for this agent…";
+                              return providerKeys.find((k) => k.id === v)?.label ?? v;
+                            }}
+                          </SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__default__">Provider Default</SelectItem>
+                          {providerKeys
+                            .filter((k) => !k.isDefault)
+                            .map((k) => (
+                              <SelectItem key={k.id} value={k.id}>
+                                {k.label}
+                              </SelectItem>
+                            ))}
+                          <SelectItem value="__custom__">Custom Key for this agent…</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {keySelection === "__default__" && (
+                        <p className="text-xs text-text-muted">
+                          Uses your saved default — won't be changed.
+                        </p>
+                      )}
+                      {keySelection !== "__default__" && keySelection !== "__custom__" && (
+                        <p className="text-xs text-text-muted">
+                          This agent will use the selected key. Default unchanged.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {showApiKeyInput && (
+                    <div className="space-y-1.5">
+                      <Label htmlFor="llm-api-key">
+                        {hasDefaultKey
+                          ? "New API Key (this agent only)"
+                          : `${providerLabel} API Key`}
+                      </Label>
+                      <div className="relative">
+                        <Input
+                          id="llm-api-key"
+                          type={showApiKey ? "text" : "password"}
+                          value={apiKey}
+                          onChange={(e) => setApiKey(e.target.value)}
+                          placeholder="sk-..."
+                          required
+                          className="pr-10 font-mono text-xs"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowApiKey((v) => !v)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-foreground"
+                        >
+                          {showApiKey ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                      <p className="text-xs text-text-muted">
+                        {hasDefaultKey
+                          ? "Saved for this agent only — your provider default stays as-is."
+                          : `Saved as your default key for ${providerLabel}.`}
+                      </p>
+                    </div>
+                  )}
+
+                  {(backend === "claude_cli" || backend === "anthropic") && (
+                    <label className="flex items-start gap-2.5 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={skipPermissions}
+                        onChange={(e) => setSkipPermissions(e.target.checked)}
+                        className="mt-0.5 rounded border-border"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-foreground group-hover:text-accent-hover transition-colors">
+                          <ShieldOff className="w-3.5 h-3.5" />
+                          Skip permission prompts
+                        </div>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          Faster but less safe — agents won't ask before running tools.
+                        </p>
+                      </div>
+                    </label>
+                  )}
+                </div>
+              )}
+
               {step === "review" && (
                 <div className="space-y-4">
                   <div className="rounded-lg border border-border p-3">
@@ -769,87 +1028,37 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="space-y-1.5">
-                      <Label>Provider</Label>
-                      <Select
-                        value={backend}
-                        onValueChange={(v) => {
-                          if (!v) return;
-                          setBackend(v);
-                          setModel(catalog.modelsFor(v)[0]?.id ?? "");
-                          setApiKey("");
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {PROVIDERS.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    {models.length > 0 && (
-                      <div className="space-y-1.5">
-                        <Label>Model</Label>
-                        <Select
-                          value={model}
-                          onValueChange={(v) => v && setModel(v)}
-                        >
-                          <SelectTrigger className="w-full">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {models.map((m) => (
-                              <SelectItem key={m.id} value={m.id}>
-                                {m.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                  <div className="rounded-lg border border-border p-3 space-y-1.5 text-xs">
+                    <ReviewRow label="Brain" value={`${providerLabel ?? "—"} · ${models.find((m) => m.id === model)?.label ?? model ?? "—"}`} />
+                    <ReviewRow
+                      label="Mode"
+                      value={
+                        EXECUTION_MODES.find((m) => m.id === executionMode)
+                          ?.label ?? executionMode
+                      }
+                    />
+                    {showEffort && (
+                      <ReviewRow
+                        label="Effort"
+                        value={
+                          EFFORT_LEVELS.find((e) => e.id === (effort || "high"))
+                            ?.label ?? effort ?? "high"
+                        }
+                      />
                     )}
-
-                    {showApiKeyInput && (
-                      <div className="space-y-1.5">
-                        <Label htmlFor="llm-api-key">{providerLabel} API Key</Label>
-                        <div className="relative">
-                          <Input
-                            id="llm-api-key"
-                            type={showApiKey ? "text" : "password"}
-                            value={apiKey}
-                            onChange={(e) => setApiKey(e.target.value)}
-                            placeholder="sk-..."
-                            className="pr-10 font-mono text-xs"
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowApiKey((v) => !v)}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-foreground"
-                          >
-                            {showApiKey ? (
-                              <EyeOff className="h-4 w-4" />
-                            ) : (
-                              <Eye className="h-4 w-4" />
-                            )}
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-text-muted">
-                          Saved as your default key for {providerLabel}.
-                        </p>
-                      </div>
-                    )}
-
-                    {needsApiKey && hasDefaultKey && (
-                      <p className="inline-flex items-center gap-1 rounded-md bg-accent px-2 py-1 text-[10px] text-text-muted">
-                        <Check className="h-3 w-3" /> Using your saved {providerLabel} key.
-                      </p>
+                    <ReviewRow
+                      label="Key"
+                      value={
+                        keySelection === "__custom__" || (showApiKeyInput && !hasDefaultKey)
+                          ? "Custom (this agent)"
+                          : keySelection === "__default__"
+                            ? `${providerLabel ?? backend} default`
+                            : providerKeys.find((k) => k.id === keySelection)?.label ??
+                              "Pinned key"
+                      }
+                    />
+                    {skipPermissions && (
+                      <ReviewRow label="Safety" value="Skip permission prompts" />
                     )}
                   </div>
                 </div>
@@ -903,5 +1112,14 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ReviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-text-muted">{label}</span>
+      <span className="font-medium truncate ml-3">{value}</span>
+    </div>
   );
 }
