@@ -916,6 +916,19 @@ export interface ActiveStream {
   phase: StreamPhase;
   phaseDetail?: string;
   recentSteps: string[];
+  /**
+   * Prose the agent emitted during prior `writing` bursts in this same
+   * stream. Snapshotted on phase transitions away from `writing` so the
+   * user can read what the agent thought before pivoting to a tool call.
+   */
+  thoughts: string[];
+  /**
+   * Cumulative bridge-emitted content already committed into `thoughts`.
+   * The bridge sends `content` as a running transcript (each writing event
+   * is the full text-so-far), so without stripping this prefix each
+   * snapshot would contain every prior thought.
+   */
+  thoughtPrefix: string;
   lastUpdateAt: number;
 }
 

@@ -42,6 +42,19 @@ export function StreamingBubble({ stream }: { stream: ActiveStream }) {
         </div>
 
         <div className="rounded-2xl rounded-bl-sm bg-bubble-agent text-bubble-agent-foreground ring-1 ring-bubble-agent-accent/20 px-3.5 py-2 text-sm">
+          {/* Preserved thoughts from prior writing bursts in this stream.
+              Same styling as live writing so prose doesn't visually shift
+              when a burst transitions into a preserved thought. */}
+          {stream.thoughts && stream.thoughts.length > 0 && (
+            <div className="mb-1.5 space-y-1.5">
+              {stream.thoughts.map((t, i) => (
+                <p key={i} className="whitespace-pre-wrap break-words">
+                  {t}
+                </p>
+              ))}
+            </div>
+          )}
+
           <div className="mb-1 flex items-center gap-1.5 text-xs text-muted-foreground">
             <Icon className={cn("h-3 w-3", animated && "animate-pulse")} />
             <span>{label}</span>

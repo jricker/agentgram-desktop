@@ -20,6 +20,9 @@ import type { ActiveStream, StreamPhase } from "../lib/api";
  */
 
 const STALE_STREAM_MS = 110_000;
+const MAX_STREAM_THOUGHTS = 6;
+/** Don't preserve trivial fragments (single tokens, partial words). */
+const MIN_THOUGHT_CHARS = 12;
 
 interface StreamEventInput {
   streamId: string;
@@ -157,6 +160,9 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
 
       const isNewStream = existing != null && existing.streamId !== streamId;
       let recentSteps = isNewStream ? [] : existing?.recentSteps ?? [];
+      let thoughts = isNewStream ? [] : (existing?.thoughts ?? []);
+      let thoughtPrefix = isNewStream ? "" : (existing?.thoughtPrefix ?? "");
+
       if (
         existing &&
         existing.phase !== phase &&
@@ -166,13 +172,41 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
         recentSteps = [...recentSteps, label].slice(-8);
       }
 
-      // Clear content when switching away from writing
-      const updatedContent =
-        phase === "writing"
-          ? content
-          : existing?.phase === "writing"
-          ? ""
-          : content;
+      // The bridge emits cumulative content (each writing event is the full
+      // transcript-so-far). Reconstruct what it has emitted total: either
+      // the incoming content if this event carries it, or `prefix + live
+      // buffer` from the existing stream state.
+      const rawCurrent = input.content !== undefined
+        ? content
+        : existing
+          ? (existing.thoughtPrefix ?? "") + (existing.content ?? "")
+          : "";
+
+      // When phase transitions away from `writing`, snapshot the new portion
+      // of the buffer (everything past `thoughtPrefix`) onto thoughts, then
+      // advance the prefix so future writing events strip it cleanly. This
+      // preserves prose the agent emitted before pivoting to a tool call.
+      const phaseChanged = existing?.phase === "writing" && phase !== "writing";
+      if (phaseChanged) {
+        const newPortion = rawCurrent.startsWith(thoughtPrefix)
+          ? rawCurrent.slice(thoughtPrefix.length)
+          : rawCurrent;
+        const trimmed = newPortion.trim();
+        if (
+          trimmed &&
+          trimmed.length >= MIN_THOUGHT_CHARS &&
+          trimmed !== thoughts[thoughts.length - 1]
+        ) {
+          thoughts = [...thoughts.slice(-(MAX_STREAM_THOUGHTS - 1)), trimmed];
+        }
+        thoughtPrefix = rawCurrent;
+      }
+
+      // Live content buffer for display: only the post-prefix portion during
+      // writing; empty in non-writing phases for a clean indicator.
+      const updatedContent = phase === "writing"
+        ? (rawCurrent.startsWith(thoughtPrefix) ? rawCurrent.slice(thoughtPrefix.length) : rawCurrent)
+        : "";
 
       return {
         streams: {
@@ -185,6 +219,8 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
             phase,
             phaseDetail,
             recentSteps,
+            thoughts,
+            thoughtPrefix,
             lastUpdateAt: Date.now(),
           },
         },
