@@ -18,7 +18,12 @@ export function getConversationTitle(
   const others = (conversation.members ?? [])
     .filter((m) => m.participantId !== currentUserId)
     .map((m) => m.participant?.displayName ?? "Unknown");
-  return others.length > 0 ? others.join(", ") : "Conversation";
+  if (others.length > 0) return others.join(", ");
+  // Direct DMs cascade-delete the peer's ConversationMember row when the
+  // peer participant is deleted, leaving only the current user. Surface
+  // that as "Deleted Agent" rather than a generic "Conversation".
+  if (conversation.type === "direct") return "Deleted Agent";
+  return "Conversation";
 }
 
 /**
