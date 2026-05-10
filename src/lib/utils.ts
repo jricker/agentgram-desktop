@@ -19,10 +19,12 @@ export function getConversationTitle(
     .filter((m) => m.participantId !== currentUserId)
     .map((m) => m.participant?.displayName ?? "Unknown");
   if (others.length > 0) return others.join(", ");
-  // Direct DMs cascade-delete the peer's ConversationMember row when the
-  // peer participant is deleted, leaving only the current user. Surface
-  // that as "Deleted Agent" rather than a generic "Conversation".
+  // ConversationMember rows cascade-delete when a participant is hard-
+  // deleted, so a DM/group can be left with only the current user as a
+  // member. Surface that as "Deleted Agent(s)" rather than a generic
+  // "Conversation".
   if (conversation.type === "direct") return "Deleted Agent";
+  if (conversation.type === "group") return "Deleted Agents";
   return "Conversation";
 }
 
