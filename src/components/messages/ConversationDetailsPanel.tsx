@@ -544,7 +544,7 @@ function MemberRow({
           )}
         </div>
         <p className="text-[11px] text-muted-foreground">
-          {isAgent ? "Agent" : "Human"} · {isHosted ? "Hosted" : isOnline ? "Online" : "Offline"}
+          {isAgent ? "Agent" : "Human"} · {isHosted ? "Cloud" : isOnline ? "Online" : "Offline"}
         </p>
       </div>
 

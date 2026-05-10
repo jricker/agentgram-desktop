@@ -16,11 +16,14 @@ import {
   XCircle,
   Zap,
   AlertTriangle,
+  MessageSquarePlus,
 } from "lucide-react";
 import { cn, formatClockTime } from "../../lib/utils";
 import type { Message } from "../../lib/api";
 import { useTaskStore } from "../../stores/taskStore";
 import { useNavStore } from "../../stores/navStore";
+import { useChatStore } from "../../stores/chatStore";
+import { useAgentStore } from "../../stores/agentStore";
 import { MarkdownContent } from "./MarkdownContent";
 
 /**
@@ -48,6 +51,9 @@ interface StatusPayload {
   agent_avatar_url?: string;
   assignee_name?: string;
   assignee_avatar_url?: string;
+  /** Present on lifecycle payloads when the task spawned a work
+   *  sub-conversation (DM tasks). The "Open work room" affordance links to it. */
+  work_conversation_id?: string;
   /** Present on `task_request_failed` payloads — the agent's create_task
    *  call was rejected by the backend. No `task_id` exists. */
   error_kind?: string;
@@ -526,6 +532,42 @@ function CapabilityWarningCard({
  *  (misroute / bad assignee / unauthorized). No `task_id` exists since the
  *  task was never persisted — without this card the only signal is the
  *  LLM's narration, which often glosses over the failure. */
+/** Server-side error_kind → user-facing label + next-step hint. Source
+ *  of truth for the kinds is `Agentchat.Tasks.FailureArtifact.classify/1`.
+ *  Keep in parity with mobile/web's `humanizeRequestFailure` (same
+ *  content, duplicated because the three clients don't share a package). */
+function humanizeRequestFailure(kind?: string): { label: string; hint?: string } {
+  switch (kind) {
+    case "misrouted_task":
+      return {
+        label: "Wrong conversation",
+        hint: "The agent tried to put this task somewhere it can't reach. It usually self-corrects on retry — or ask again.",
+      };
+    case "invalid_assignees_not_uuid":
+      return {
+        label: "Bad assignee",
+        hint: "The agent referenced an ID that isn't a real agent. Mention the assignee by name and ask again.",
+      };
+    case "invalid_assignees_not_found":
+      return {
+        label: "Unknown assignee",
+        hint: "The target agent has been removed or renamed.",
+      };
+    case "invalid_assignees_not_a_list":
+      return {
+        label: "Malformed request",
+        hint: "The agent sent an invalid payload. Safe to retry.",
+      };
+    case "unauthorized":
+      return {
+        label: "Permission denied",
+        hint: "The agent doesn't have access to that conversation.",
+      };
+    default:
+      return { label: "Task creation failed" };
+  }
+}
+
 function RequestFailedCard({
   payload,
   message,
@@ -535,30 +577,44 @@ function RequestFailedCard({
 }) {
   const agentName = resolveAgentName(payload, message);
   const avatarUrl = resolveAvatarUrl(payload, message);
-  const title = payload.attempted_title || "Task creation attempt";
   const error = payload.error;
-  const reason = payload.error_kind ? payload.error_kind.replace(/_/g, " ") : "rejected";
+  const { label, hint } = humanizeRequestFailure(payload.error_kind);
+  const agents = useAgentStore((s) => s.agents);
+  const resolvedAssignees =
+    payload.attempted_assignees && payload.attempted_assignees.length > 0
+      ? payload.attempted_assignees.map(
+          (id) => agents[id]?.agent.displayName || `${id.slice(0, 8)}…`
+        )
+      : null;
 
   return (
     <div className="my-2 w-full">
       <div className="flex w-full items-start gap-3 rounded-xl border border-destructive/20 border-l-4 border-l-destructive bg-destructive/5 px-4 py-2.5">
         <AgentAvatar name={agentName} avatarUrl={avatarUrl} size={20} />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-0.5">
           <div className="flex items-center gap-1.5">
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-            <span className="text-xs font-semibold text-destructive dark:text-destructive">
-              Task not created
+            <span className="text-xs font-semibold text-destructive">
+              {label}
             </span>
           </div>
-          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-            {agentName} &middot; {title} &middot; {reason}
+          <p className="text-xs text-muted-foreground">
+            {agentName} couldn't create this task
           </p>
-          {error && (
+          {payload.attempted_title && (
+            <p className="line-clamp-2 text-xs font-medium text-foreground">
+              "{payload.attempted_title}"
+            </p>
+          )}
+          {hint && (
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{hint}</p>
+          )}
+          {error && !hint && (
             <p className="mt-1 text-xs leading-relaxed text-foreground">{error}</p>
           )}
-          {payload.attempted_assignees && payload.attempted_assignees.length > 0 && (
-            <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground/80">
-              attempted assignees: {payload.attempted_assignees.join(", ")}
+          {resolvedAssignees && (
+            <p className="mt-1 truncate text-xs text-muted-foreground/80">
+              Tried to assign: {resolvedAssignees.join(", ")}
             </p>
           )}
         </div>
@@ -676,8 +732,36 @@ function LifecycleCard({
           <Icon className={cn("h-5 w-5 shrink-0", c.iconColor)} />
         </div>
         {payload.task_id && <CopyableTaskId taskId={payload.task_id} />}
+        {payload.work_conversation_id && (
+          <WorkRoomLink workConversationId={payload.work_conversation_id} />
+        )}
       </div>
     </div>
+  );
+}
+
+/** Inline footer link that switches the active conversation to the
+ *  task's work sub-conversation. Conversation channel auto-adds the
+ *  human as a read-only observer on join — without this affordance the
+ *  work conv is only discoverable via the SubConversationList accordion
+ *  or the busy-redirect alert. */
+function WorkRoomLink({ workConversationId }: { workConversationId: string }) {
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const setView = useNavStore((s) => s.setView);
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        setActiveConversation(workConversationId);
+        setView("chat");
+      }}
+      className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-primary/10 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/15"
+    >
+      <MessageSquarePlus className="h-3 w-3" />
+      Open work room
+      <ChevronRight className="h-3 w-3" />
+    </button>
   );
 }
 

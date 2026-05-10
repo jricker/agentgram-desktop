@@ -28,6 +28,7 @@ export const PROVIDERS: ProviderConfig[] = [
     supportedModes: ["single_shot", "tool_use", "code_action"],
     models: [
       // Current (latest generation)
+      { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
       { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
       { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
       { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
@@ -87,6 +88,7 @@ export const PROVIDERS: ProviderConfig[] = [
     requiresLlmKey: false,
     supportedModes: ["single_shot", "tool_use", "code_action"],
     models: [
+      { id: "claude-opus-4-7", label: "Claude Opus 4.7" },
       { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
       { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
       { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
@@ -99,7 +101,9 @@ export const PROVIDERS: ProviderConfig[] = [
  *  so "claude-opus-4-6" matches "claude-opus-4-6-20260101" too.
  */
 const MODEL_DISPLAY_NAMES: Record<string, string> = {
-  // Claude 4.6 (current)
+  // Claude 4.7 (current)
+  "claude-opus-4-7": "Claude Opus 4.7",
+  // Claude 4.6
   "claude-opus-4-6": "Claude Opus 4.6",
   "claude-sonnet-4-6": "Claude Sonnet 4.6",
   // Claude 4.5

@@ -1,11 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { formatModelLabel, formatBackendLabel } from "../lib/models";
 import { formatUptime, cn } from "../lib/utils";
-import { Play, Square, RotateCcw, Crown, Cloud } from "lucide-react";
+import { Play, Square, RotateCcw, Crown, Cloud, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const ACTIVITY_COLORS = {
   idle: "",
@@ -44,6 +50,47 @@ function hostedModeLabel(
   }
 }
 
+// Small overlay dot on the avatar that mirrors the conversation list
+// pattern. `processStatus === "running"` is locally known the moment
+// the desktop kicks off the agent, so we trust it ahead of the WS
+// presence flag (which can lag ~60s on the executor heartbeat).
+function PresenceDot({
+  processStatus,
+  presence,
+  online,
+}: {
+  processStatus: ManagedAgent["processStatus"];
+  presence: "online_local" | "online_hosted" | "offline" | undefined;
+  online: boolean | undefined;
+}) {
+  const locallyRunning = processStatus === "running";
+  const effective: "online_local" | "online_hosted" | "offline" =
+    locallyRunning
+      ? "online_local"
+      : presence ?? (online ? "online_local" : "offline");
+
+  if (effective === "online_hosted") {
+    return (
+      <span
+        className="absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border-2 border-card bg-sky-500"
+        aria-label="Cloud"
+      >
+        <Cloud className="h-1.5 w-1.5 text-white" />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card",
+        effective === "online_local" ? "bg-success" : "bg-muted-foreground"
+      )}
+      aria-label={effective === "online_local" ? "Online" : "Offline"}
+    />
+  );
+}
+
 function StatusBadge({
   status,
   uptimeSecs,
@@ -62,7 +109,7 @@ function StatusBadge({
     return (
       <Badge variant="outline" className="border-info/30 text-info bg-info/10 gap-1.5">
         <Cloud className="w-3 h-3" />
-        Hosted
+        Cloud
       </Badge>
     );
   }
@@ -107,18 +154,22 @@ function StatusBadge({
   );
 }
 
-function HealthBadge({ health }: { health: ManagedAgent["health"] }) {
-  if (!health) {
-    return <span className="text-xs text-muted-foreground">—</span>;
-  }
+// Surfaces non-healthy states inline beneath the status badge. "Healthy"
+// is the expected state for a running agent and adds noise when shown.
+function HealthHint({ health }: { health: ManagedAgent["health"] }) {
+  if (!health || health.healthStatus === "healthy") return null;
   const colors: Record<string, string> = {
-    healthy: "text-success",
     degraded: "text-warning",
     stuck: "text-warning",
     offline: "text-muted-foreground",
   };
   return (
-    <span className={cn("text-xs capitalize", colors[health.healthStatus] || "text-muted-foreground")}>
+    <span
+      className={cn(
+        "text-[10px] capitalize leading-tight",
+        colors[health.healthStatus] || "text-muted-foreground"
+      )}
+    >
       {health.healthStatus}
     </span>
   );
@@ -141,6 +192,22 @@ export function AgentRow({
 
   const isRunning = managed.processStatus === "running";
 
+  // Live-tick uptime locally instead of waiting for the 60s
+  // refreshProcessStatuses poll, so the status badge actually advances
+  // from "0s" the moment the agent starts. `startedAt` is set by the
+  // store when the desktop kicks off the agent; for agents started on
+  // another device we fall back to the server-reported `uptimeSecs`.
+  const [now, setNow] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!isRunning || managed.startedAt == null) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isRunning, managed.startedAt]);
+  const liveUptimeSecs =
+    isRunning && managed.startedAt != null
+      ? Math.max(0, Math.floor((now - managed.startedAt) / 1000))
+      : managed.uptimeSecs;
+
   const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setError(null);
@@ -156,8 +223,15 @@ export function AgentRow({
     }
   };
 
+  // Reasons the start action can't fire. Surfaced as a warning icon in
+  // place of the play button so the user sees something is wrong without
+  // clicking through. `starting` is transient and already reflected in the
+  // Status column — not a true blocker.
+  const startBlockedReason: string | null = !managed.apiKey
+    ? "No API key — open agent to generate one"
+    : null;
   const canStart =
-    managed.apiKey != null && managed.processStatus !== "starting";
+    startBlockedReason === null && managed.processStatus !== "starting";
   const modelLabel =
     formatModelLabel(managed.config.model) ||
     managed.config.model;
@@ -172,15 +246,22 @@ export function AgentRow({
       onClick={onSelect}
     >
       {/* Main row */}
-      <div className="grid grid-cols-[1fr_100px_140px_150px_120px_80px_60px] gap-3 px-5 py-2.5 items-center">
+      <div className="grid grid-cols-[1fr_180px_140px_140px_56px] gap-3 px-4 py-2.5 items-center">
         {/* Agent */}
         <div className="flex items-center gap-2.5 min-w-0">
-          <Avatar className="h-8 w-8 rounded-lg shrink-0">
-            {managed.agent.avatarUrl && <AvatarImage src={managed.agent.avatarUrl} className="rounded-lg" displaySize={32} />}
-            <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
-              {managed.agent.displayName.charAt(0).toUpperCase()}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative shrink-0">
+            <Avatar className="h-8 w-8 rounded-lg">
+              {managed.agent.avatarUrl && <AvatarImage src={managed.agent.avatarUrl} className="rounded-lg" displaySize={32} />}
+              <AvatarFallback className="rounded-lg bg-primary/10 text-primary text-xs font-semibold">
+                {managed.agent.displayName.charAt(0).toUpperCase()}
+              </AvatarFallback>
+            </Avatar>
+            <PresenceDot
+              processStatus={managed.processStatus}
+              presence={managed.agent.presence}
+              online={managed.agent.online}
+            />
+          </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <p className="text-sm font-medium truncate flex-shrink-0">
@@ -223,14 +304,12 @@ export function AgentRow({
           </div>
         </div>
 
-        {/* Backend */}
-        <div className="truncate">
-          <span className="text-xs text-muted-foreground">{backendLabel || "—"}</span>
-        </div>
-
-        {/* Model */}
-        <div className="truncate">
-          <span className="text-xs text-muted-foreground">{modelLabel}</span>
+        {/* Engine — backend + model on two lines so the row stays compact */}
+        <div className="min-w-0 leading-tight">
+          <div className="text-xs text-foreground/90 truncate">{modelLabel || "—"}</div>
+          {backendLabel && (
+            <div className="text-[10px] text-muted-foreground truncate">{backendLabel}</div>
+          )}
         </div>
 
         {/* Hosted */}
@@ -267,7 +346,7 @@ export function AgentRow({
           )}
         </div>
 
-        {/* Status */}
+        {/* Status (+ health hint when non-healthy) */}
         <div>
           {error ? (
             <span className="text-xs text-destructive truncate block" title={error}>
@@ -277,9 +356,10 @@ export function AgentRow({
             <div className="flex flex-col gap-0.5">
               <StatusBadge
                 status={managed.processStatus}
-                uptimeSecs={managed.uptimeSecs}
+                uptimeSecs={liveUptimeSecs}
                 presence={managed.agent.presence}
               />
+              <HealthHint health={managed.health} />
               {managed.processStatus === "crashed" && managed.crashReason && (
                 <span
                   className="text-[10px] text-destructive/80 line-clamp-2 block leading-tight"
@@ -294,11 +374,6 @@ export function AgentRow({
           )}
         </div>
 
-        {/* Health */}
-        <div>
-          <HealthBadge health={managed.health} />
-        </div>
-
         {/* Actions */}
         <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
           {managed.processStatus === "crashed" ? (
@@ -309,8 +384,31 @@ export function AgentRow({
             <Button variant="ghost" size="icon-sm" className="text-destructive hover:text-destructive/90" onClick={handleToggle} title="Stop">
               <Square className="w-3.5 h-3.5" />
             </Button>
+          ) : startBlockedReason ? (
+            <TooltipProvider delay={150}>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-warning hover:text-warning/90"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect();
+                      }}
+                    >
+                      <AlertTriangle className="w-4 h-4" />
+                    </Button>
+                  }
+                />
+                <TooltipContent side="left" className="text-xs">
+                  {startBlockedReason}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           ) : (
-            <Button variant="ghost" size="icon-sm" className="text-success hover:text-success/90" onClick={handleToggle} disabled={!canStart} title={canStart ? "Start" : "Configure first"}>
+            <Button variant="ghost" size="icon-sm" className="text-success hover:text-success/90" onClick={handleToggle} disabled={!canStart} title="Start">
               <Play className="w-4 h-4" />
             </Button>
           )}

@@ -121,7 +121,7 @@ const SECTIONS = [
   { value: "region", label: "Region", icon: Globe },
   { value: "memory", label: "Memory", icon: Brain },
   { value: "llm-keys", label: "LLM Keys", icon: Key },
-  { value: "hosted", label: "Hosted", icon: Cloud },
+  { value: "hosted", label: "Cloud", icon: Cloud },
   { value: "connections", label: "Connections", icon: Link2 },
 ] as const;
 
@@ -2077,7 +2077,7 @@ function HostedExecutionSection() {
   if (loading) {
     return (
       <section>
-        <SectionHeader title="Hosted Execution" />
+        <SectionHeader title="Cloud Execution" />
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
       </section>
     );
@@ -2087,8 +2087,8 @@ function HostedExecutionSection() {
     return (
       <section>
         <SectionHeader
-          title="Hosted Execution"
-          subtitle="Backend doesn't support hosted limits yet."
+          title="Cloud Execution"
+          subtitle="Backend doesn't support cloud limits yet."
         />
       </section>
     );
@@ -2106,7 +2106,7 @@ function HostedExecutionSection() {
   return (
     <section>
       <SectionHeader
-        title="Hosted Execution"
+        title="Cloud Execution"
         subtitle={`Token budget for backend agent runs. Resets at UTC midnight (${formatResetsAt(limits.resetsAt)}).`}
       />
 
@@ -2114,7 +2114,7 @@ function HostedExecutionSection() {
         When your desktop bridge is offline for more than 2 minutes, agents
         with API-based backends fall back to running on the server using
         your stored Anthropic / OpenAI key. This budget caps cumulative
-        spend across all hosted runs.
+        spend across all cloud runs.
       </p>
 
       <div className="space-y-3">
@@ -2147,7 +2147,7 @@ function HostedExecutionSection() {
           </div>
           {isAtCap && (
             <p className="mt-2 text-xs text-destructive">
-              Cap reached. Hosted agents won't reply until reset or until
+              Cap reached. Cloud agents won't reply until reset or until
               you raise the cap.
             </p>
           )}

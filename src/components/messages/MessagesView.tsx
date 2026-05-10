@@ -274,7 +274,7 @@ function ActiveConversation({
     ).length;
     const isDM = conversation.type === "direct" || others.length === 1;
     if (isDM) {
-      if (dmAgentPresence === "online_hosted") return "Hosted";
+      if (dmAgentPresence === "online_hosted") return "Cloud";
       return onlineCount > 0 ? "Online" : "Offline";
     }
     if (conversation.type === "channel" || conversation.type === "group") {

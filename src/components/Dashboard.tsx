@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { useAuthStore } from "../stores/authStore";
 import { useAgentStore, type ManagedAgent } from "../stores/agentStore";
 import { AgentRow } from "./AgentRow";
 import { AgentConfig } from "./AgentConfig";
 import { CreateAgentModal } from "./CreateAgentModal";
-import { Profile } from "./Profile";
 import { cn } from "../lib/utils";
 import {
   Bot,
@@ -12,15 +10,11 @@ import {
   Search,
   Play,
   Square,
-  User,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 export function Dashboard() {
-  const { participant } = useAuthStore();
   const {
     agents,
     selectedAgentId,
@@ -35,7 +29,6 @@ export function Dashboard() {
     stopAgent,
   } = useAgentStore();
   const [showCreate, setShowCreate] = useState(false);
-  const [showProfile, setShowProfile] = useState(false);
   const [search, setSearch] = useState("");
   const [startingAll, setStartingAll] = useState(false);
   const [stoppingAll, setStoppingAll] = useState(false);
@@ -92,17 +85,14 @@ export function Dashboard() {
   const displayAgent = selectedAgent || lastAgentRef.current;
   const drawerOpen = !!selectedAgent;
 
-  // Close drawers on Escape key
+  // Close drawer on Escape key
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (showProfile) setShowProfile(false);
-        else if (drawerOpen) selectAgent(null);
-      }
+      if (e.key === "Escape" && drawerOpen) selectAgent(null);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [drawerOpen, showProfile, selectAgent]);
+  }, [drawerOpen, selectAgent]);
 
   const runningCount = Object.values(agents).filter(
     (m) => m.processStatus === "running"
@@ -173,17 +163,17 @@ export function Dashboard() {
           </div>
 
           <div
-            className="flex items-center gap-3"
+            className="flex items-center gap-2"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           >
             <div className="relative">
-              <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-muted-foreground absolute left-2.5 top-1/2 -translate-y-1/2" />
               <Input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search agents..."
-                className="pl-9 w-[200px]"
+                className="h-8 pl-8 w-[180px] text-xs"
               />
             </div>
             {runningCount < totalCount && stoppedWithKeys.length > 0 && (
@@ -214,90 +204,60 @@ export function Dashboard() {
               <Plus className="w-3.5 h-3.5" />
               New Agent
             </Button>
-
-            <div className="flex items-center gap-1.5 ml-1 pl-2 border-l border-border">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowProfile(true)}
-                className="text-muted-foreground hover:text-foreground gap-1.5"
-                title="Profile & Settings"
-              >
-                <Avatar size="sm">
-                  {participant?.avatarUrl ? (
-                    <AvatarImage src={participant.avatarUrl} alt={participant.displayName} />
-                  ) : null}
-                  <AvatarFallback>
-                    <User className="w-3 h-3" />
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-xs truncate max-w-[100px]">
-                  {participant?.displayName}
-                </span>
-              </Button>
-            </div>
           </div>
         </header>
 
         {/* Content area */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Agent list + hex board */}
-          <div className="flex-1 overflow-y-auto">
-            {error && (
-              <div className="mx-6 mt-4 text-sm text-destructive bg-destructive/10 border border-destructive/20 px-4 py-3 rounded-md">
-                {error}
-              </div>
-            )}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {error && (
+            <div className="mx-4 mt-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 px-4 py-3 rounded-md">
+              {error}
+            </div>
+          )}
 
-            {loading && totalCount === 0 ? (
-              <div className="text-center text-muted-foreground py-20">
-                Loading agents...
+          {loading && totalCount === 0 ? (
+            <div className="text-center text-muted-foreground py-20">
+              Loading agents...
+            </div>
+          ) : totalCount === 0 && !error ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+              <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
+                <Bot className="w-7 h-7 text-primary" />
               </div>
-            ) : totalCount === 0 && !error ? (
-              <div className="text-center py-20">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-                  <Bot className="w-8 h-8 text-primary" />
-                </div>
-                <p className="text-muted-foreground mb-4">No agents yet</p>
-                <Button onClick={() => setShowCreate(true)}>
-                  <Plus className="w-4 h-4" />
-                  Create Your First Agent
-                </Button>
+              <p className="text-sm font-medium text-foreground">No agents yet</p>
+              <p className="text-xs text-muted-foreground mt-1 mb-4 max-w-xs">
+                Create your first agent to start delegating work.
+              </p>
+              <Button size="sm" onClick={() => setShowCreate(true)}>
+                <Plus className="w-3.5 h-3.5" />
+                Create Agent
+              </Button>
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              <div className="sticky top-0 z-10 grid grid-cols-[1fr_180px_140px_140px_56px] gap-3 px-4 py-2 border-b border-border bg-card/95 backdrop-blur text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                <span>Agent</span>
+                <span>Engine</span>
+                <span>Mode</span>
+                <span>Status</span>
+                <span className="text-right">Actions</span>
               </div>
-            ) : (
-              <>
-                {/* Hex activity board + Agent list share same container */}
-                <div className="p-6">
-                  <Card className="overflow-hidden">
-                    <div className="grid grid-cols-[1fr_100px_140px_150px_120px_80px_60px] gap-3 px-5 py-3 border-b border-border text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      <span>Agent</span>
-                      <span>Backend</span>
-                      <span>Model</span>
-                      <span>Hosted</span>
-                      <span>Status</span>
-                      <span>Health</span>
-                      <span className="text-right">Actions</span>
-                    </div>
-                    {agentList.map((managed) => (
-                      <AgentRow
-                        key={managed.agent.id}
-                        managed={managed}
-                        selected={managed.agent.id === selectedAgentId}
-                        onSelect={() =>
-                          selectAgent(
-                            managed.agent.id === selectedAgentId
-                              ? null
-                              : managed.agent.id
-                          )
-                        }
-                      />
-                    ))}
-                  </Card>
-                </div>
-              </>
-            )}
-          </div>
-
+              {agentList.map((managed) => (
+                <AgentRow
+                  key={managed.agent.id}
+                  managed={managed}
+                  selected={managed.agent.id === selectedAgentId}
+                  onSelect={() =>
+                    selectAgent(
+                      managed.agent.id === selectedAgentId
+                        ? null
+                        : managed.agent.id
+                    )
+                  }
+                />
+              ))}
+            </div>
+          )}
         </div>
       </main>
 
@@ -317,24 +277,6 @@ export function Dashboard() {
         )}
       >
         {displayAgent && <AgentConfig managed={displayAgent} />}
-      </div>
-
-      {/* Profile drawer — overlay from the right */}
-      <div
-        className={cn(
-          "fixed inset-0 bg-black/20 z-40 transition-opacity duration-200",
-          showProfile ? "opacity-100" : "opacity-0 pointer-events-none"
-        )}
-        onClick={() => setShowProfile(false)}
-      />
-      <div
-        className={cn(
-          "fixed top-0 right-0 h-full w-[640px] max-w-[85vw] bg-card border-l border-border shadow-2xl z-50 overflow-hidden",
-          "transition-transform duration-300 ease-out",
-          showProfile ? "translate-x-0" : "translate-x-full"
-        )}
-      >
-        {showProfile && <Profile onClose={() => setShowProfile(false)} />}
       </div>
 
       {showCreate && (

@@ -2371,8 +2371,8 @@ function HostedRunControls({
           <Label className="text-xs">Paused</Label>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
             {paused
-              ? "Hosted runs are held. Bridge-mode delivery is unaffected."
-              : "Temporary stop for hosted runs without changing the mode above."}
+              ? "Cloud runs are held. Bridge-mode delivery is unaffected."
+              : "Temporary stop for cloud runs without changing the mode above."}
           </p>
         </div>
         <Switch checked={paused} onCheckedChange={togglePause} disabled={pausing} />
