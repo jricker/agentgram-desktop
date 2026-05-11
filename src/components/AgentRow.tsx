@@ -156,8 +156,20 @@ function StatusBadge({
 
 // Surfaces non-healthy states inline beneath the status badge. "Healthy"
 // is the expected state for a running agent and adds noise when shown.
-function HealthHint({ health }: { health: ManagedAgent["health"] }) {
+// "Offline" while the local process is running is stale (the backend
+// hasn't yet received the executor's 60s heartbeat) — suppressing it
+// avoids the contradictory "Running 3s / offline" combo.
+function HealthHint({
+  health,
+  processStatus,
+}: {
+  health: ManagedAgent["health"];
+  processStatus: ManagedAgent["processStatus"];
+}) {
   if (!health || health.healthStatus === "healthy") return null;
+  if (health.healthStatus === "offline" && processStatus === "running") {
+    return null;
+  }
   const colors: Record<string, string> = {
     degraded: "text-warning",
     stuck: "text-warning",
@@ -359,7 +371,7 @@ export function AgentRow({
                 uptimeSecs={liveUptimeSecs}
                 presence={managed.agent.presence}
               />
-              <HealthHint health={managed.health} />
+              <HealthHint health={managed.health} processStatus={managed.processStatus} />
               {managed.processStatus === "crashed" && managed.crashReason && (
                 <span
                   className="text-[10px] text-destructive/80 line-clamp-2 block leading-tight"
