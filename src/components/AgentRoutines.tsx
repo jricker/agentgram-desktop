@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { useAgentStore } from "../stores/agentStore";
+import { useChatStore } from "../stores/chatStore";
+import { useAuthStore } from "../stores/authStore";
 import {
   type Routine,
   listRoutines,
@@ -43,73 +45,172 @@ const HOURS = Array.from({ length: 24 }, (_, i) => ({
   label: i === 0 ? "12:00 AM" : i < 12 ? `${i}:00 AM` : i === 12 ? "12:00 PM" : `${i - 12}:00 PM`,
 }));
 
-// Minutes are entered directly as a number input (0-59) for fine-grained control
+const SHORT_DOW_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-const DAYS_OF_WEEK = [
-  { value: "*", label: "Every day" },
-  { value: "1-5", label: "Weekdays (Mon–Fri)" },
-  { value: "0,6", label: "Weekends (Sat–Sun)" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-  { value: "0", label: "Sunday" },
-];
-
-function buildSchedule(
-  frequency: string,
-  intervalMinutes: number,
-  cronMinute: string,
-  cronHour: string,
-  cronDow: string,
-  customCron: string,
-): { scheduleType: string; scheduleConfig: Record<string, unknown> } {
-  if (frequency === "interval") {
-    return { scheduleType: "interval", scheduleConfig: { every_minutes: intervalMinutes } };
+// Parse a cron day-of-week field ("*", "1-5", "0,6", "1,3,5") into a sorted
+// list of 0..6 (Sunday=0).
+function parseDowField(field: string): number[] {
+  if (!field || field === "*") return [0, 1, 2, 3, 4, 5, 6];
+  const set = new Set<number>();
+  for (const part of field.split(",")) {
+    const trimmed = part.trim();
+    if (trimmed.includes("-")) {
+      const [a, b] = trimmed.split("-").map((x) => parseInt(x, 10));
+      if (!isNaN(a) && !isNaN(b)) {
+        for (let i = Math.min(a, b); i <= Math.max(a, b); i++) {
+          if (i >= 0 && i <= 6) set.add(i);
+        }
+      }
+    } else {
+      const n = parseInt(trimmed, 10);
+      if (!isNaN(n) && n >= 0 && n <= 6) set.add(n);
+    }
   }
-  if (frequency === "custom") {
-    return { scheduleType: "cron", scheduleConfig: { expression: customCron || "0 * * * *" } };
-  }
-  // hourly / daily / weekly → build cron expression
-  if (frequency === "hourly") {
-    return { scheduleType: "cron", scheduleConfig: { expression: `${cronMinute} * * * *` } };
-  }
-  // daily or weekly
-  const expression = `${cronMinute} ${cronHour} * * ${cronDow}`;
-  return { scheduleType: "cron", scheduleConfig: { expression } };
+  return Array.from(set).sort((a, b) => a - b);
 }
 
-function describeSchedule(
-  frequency: string,
-  intervalMinutes: number,
-  cronMinute: string,
-  cronHour: string,
-  cronDow: string,
-): string {
-  if (frequency === "interval") {
-    if (intervalMinutes >= 1440) return `Every ${Math.round(intervalMinutes / 1440)} day(s)`;
-    if (intervalMinutes >= 60 && intervalMinutes % 60 === 0) return `Every ${intervalMinutes / 60} hour(s)`;
-    return `Every ${intervalMinutes} minute(s)`;
+function buildDowField(days: number[]): string {
+  if (days.length === 7) return "*";
+  return [...days].sort((a, b) => a - b).join(",");
+}
+
+type ScheduleMode = "interval" | "hourly" | "datetime" | "custom";
+
+interface ScheduleState {
+  mode: ScheduleMode;
+  intervalMinutes: number;
+  cronHour: string;
+  cronMinute: string;
+  selectedDays: number[];
+  customCron: string;
+}
+
+function defaultScheduleState(): ScheduleState {
+  return {
+    mode: "datetime",
+    intervalMinutes: 60,
+    cronHour: "9",
+    cronMinute: "0",
+    selectedDays: [0, 1, 2, 3, 4, 5, 6],
+    customCron: "",
+  };
+}
+
+function parseRoutineSchedule(routine: Routine): ScheduleState {
+  const base = defaultScheduleState();
+  if (routine.scheduleType === "interval") {
+    const mins = Number(
+      routine.scheduleConfig.every_minutes ??
+        routine.scheduleConfig.minutes ??
+        60,
+    );
+    return { ...base, mode: "interval", intervalMinutes: mins };
   }
-  if (frequency === "custom") return "Custom cron expression";
-  const hour = HOURS.find((h) => h.value === cronHour)?.label || `${cronHour}:00`;
-  const minute = cronMinute !== "0" ? cronMinute : "";
-  const time = minute ? hour.replace(":00", `:${cronMinute.padStart(2, "0")}`) : hour;
-  if (frequency === "hourly") return `Every hour at :${cronMinute.padStart(2, "0")}`;
-  const day = DAYS_OF_WEEK.find((d) => d.value === cronDow)?.label || "Every day";
-  return `${day} at ${time} (UTC)`;
+  const expr = String(
+    routine.scheduleConfig.expression || routine.scheduleConfig.cron || "0 9 * * *",
+  );
+  const parts = expr.split(/\s+/);
+  if (parts.length !== 5) return { ...base, mode: "custom", customCron: expr };
+  const [min, hour, dom, mon, dow] = parts;
+  if (hour === "*" && dom === "*" && mon === "*" && dow === "*") {
+    return { ...base, mode: "hourly", cronMinute: min };
+  }
+  const minN = parseInt(min, 10);
+  const hourN = parseInt(hour, 10);
+  if (!isNaN(minN) && !isNaN(hourN) && dom === "*" && mon === "*") {
+    return {
+      ...base,
+      mode: "datetime",
+      cronHour: String(hourN),
+      cronMinute: String(minN),
+      selectedDays: parseDowField(dow),
+    };
+  }
+  return { ...base, mode: "custom", customCron: expr };
+}
+
+function buildScheduleConfig(state: ScheduleState): {
+  scheduleType: string;
+  scheduleConfig: Record<string, unknown>;
+} {
+  switch (state.mode) {
+    case "interval":
+      return {
+        scheduleType: "interval",
+        scheduleConfig: { every_minutes: state.intervalMinutes || 1 },
+      };
+    case "hourly":
+      return {
+        scheduleType: "cron",
+        scheduleConfig: { expression: `${state.cronMinute || "0"} * * * *` },
+      };
+    case "custom":
+      return {
+        scheduleType: "cron",
+        scheduleConfig: { expression: state.customCron.trim() || "0 9 * * *" },
+      };
+    case "datetime":
+    default: {
+      const dow = buildDowField(state.selectedDays);
+      return {
+        scheduleType: "cron",
+        scheduleConfig: {
+          expression: `${state.cronMinute || "0"} ${state.cronHour || "0"} * * ${dow}`,
+        },
+      };
+    }
+  }
+}
+
+const SCHEDULE_MODES: Array<{ key: ScheduleMode; label: string }> = [
+  { key: "interval", label: "Interval" },
+  { key: "hourly", label: "Hourly" },
+  { key: "datetime", label: "Day & Time" },
+  { key: "custom", label: "Custom cron" },
+];
+
+const DAY_PRESETS: Array<{ key: string; label: string; days: number[] }> = [
+  { key: "all", label: "Every day", days: [0, 1, 2, 3, 4, 5, 6] },
+  { key: "weekdays", label: "Weekdays", days: [1, 2, 3, 4, 5] },
+  { key: "weekends", label: "Weekends", days: [0, 6] },
+];
+
+function describeSchedule(state: ScheduleState): string {
+  switch (state.mode) {
+    case "interval": {
+      const m = state.intervalMinutes;
+      if (m >= 1440) return `Every ${Math.round(m / 1440)} day(s)`;
+      if (m >= 60 && m % 60 === 0) return `Every ${m / 60} hour(s)`;
+      return `Every ${m} minute(s)`;
+    }
+    case "hourly":
+      return `Every hour at :${(state.cronMinute || "0").padStart(2, "0")}`;
+    case "custom":
+      return "Custom cron expression";
+    case "datetime":
+    default: {
+      const hourLabel =
+        HOURS.find((h) => h.value === state.cronHour)?.label.replace(
+          ":00",
+          `:${(state.cronMinute || "0").padStart(2, "0")}`,
+        ) || `${state.cronHour}:${(state.cronMinute || "0").padStart(2, "0")}`;
+      const days = state.selectedDays;
+      let dayLabel: string;
+      if (days.length === 7) dayLabel = "Every day";
+      else if (days.length === 5 && [1, 2, 3, 4, 5].every((d) => days.includes(d)))
+        dayLabel = "Weekdays";
+      else if (days.length === 2 && days.includes(0) && days.includes(6))
+        dayLabel = "Weekends";
+      else if (days.length === 0) dayLabel = "(no days selected)";
+      else dayLabel = days.map((d) => SHORT_DOW_NAMES[d]).join(", ");
+      return `${dayLabel} at ${hourLabel} (UTC)`;
+    }
+  }
 }
 
 interface AgentRoutinesProps {
   agentId: string;
 }
-
-const CRON_DOW_NAMES: Record<string, string> = {
-  "0": "Sunday", "1": "Monday", "2": "Tuesday", "3": "Wednesday",
-  "4": "Thursday", "5": "Friday", "6": "Saturday",
-};
 
 function formatHourMinute12h(hour: number, minute: number): string {
   const period = hour < 12 ? "AM" : "PM";
@@ -132,16 +233,298 @@ function humanizeCron(expr: string): string {
   if (isNaN(hour) || isNaN(minute)) return expr;
   const time = formatHourMinute12h(hour, minute);
 
-  if (dom === "*" && mon === "*" && dow === "*") return `Daily at ${time}`;
-
   if (dom === "*" && mon === "*") {
+    if (dow === "*") return `Every day at ${time}`;
     if (dow === "1-5") return `Weekdays at ${time}`;
     if (dow === "0,6" || dow === "6,0") return `Weekends at ${time}`;
-    const name = CRON_DOW_NAMES[dow];
-    if (name) return `${name}s at ${time}`;
+    const days = parseDowField(dow);
+    if (days.length > 0) {
+      const labels = days.map((d) => SHORT_DOW_NAMES[d]).join(", ");
+      return `${labels} at ${time}`;
+    }
   }
 
   return expr;
+}
+
+function ScheduleFields({
+  state,
+  setState,
+}: {
+  state: ScheduleState;
+  setState: (next: ScheduleState) => void;
+}) {
+  const setMode = (mode: ScheduleMode) => setState({ ...state, mode });
+  const toggleDay = (d: number) => {
+    if (state.selectedDays.includes(d)) {
+      setState({ ...state, selectedDays: state.selectedDays.filter((x) => x !== d) });
+    } else {
+      setState({
+        ...state,
+        selectedDays: [...state.selectedDays, d].sort((a, b) => a - b),
+      });
+    }
+  };
+  const matchesPreset = (days: number[]) =>
+    days.length === state.selectedDays.length &&
+    days.every((d) => state.selectedDays.includes(d));
+  const clampMinute = (v: string) =>
+    String(Math.min(59, Math.max(0, parseInt(v, 10) || 0)));
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label className="text-xs">Schedule</Label>
+        <div className="grid grid-cols-4 gap-1.5">
+          {SCHEDULE_MODES.map((opt) => {
+            const active = state.mode === opt.key;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setMode(opt.key)}
+                className={[
+                  "rounded-md border px-2 py-2 text-xs font-medium transition-colors",
+                  active
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border bg-background text-foreground hover:bg-accent/40",
+                ].join(" ")}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {state.mode === "interval" && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Run every</Label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={1}
+              value={state.intervalMinutes}
+              onChange={(e) =>
+                setState({ ...state, intervalMinutes: parseInt(e.target.value) || 1 })
+              }
+              className="w-24"
+            />
+            <span className="text-xs text-muted-foreground">minutes</span>
+          </div>
+        </div>
+      )}
+
+      {state.mode === "hourly" && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">At minute</Label>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground">:</span>
+            <Input
+              type="number"
+              min={0}
+              max={59}
+              value={state.cronMinute}
+              onChange={(e) =>
+                setState({ ...state, cronMinute: clampMinute(e.target.value) })
+              }
+              className="w-16 text-center"
+            />
+          </div>
+        </div>
+      )}
+
+      {state.mode === "datetime" && (
+        <>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Days</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {DAY_PRESETS.map((p) => {
+                const active = matchesPreset(p.days);
+                return (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => setState({ ...state, selectedDays: p.days })}
+                    className={[
+                      "rounded-full border px-3 py-1 text-xs",
+                      active
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border bg-background text-foreground hover:bg-accent/40",
+                    ].join(" ")}
+                  >
+                    {p.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex gap-1.5">
+              {SHORT_DOW_NAMES.map((label, idx) => {
+                const active = state.selectedDays.includes(idx);
+                return (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleDay(idx)}
+                    className={[
+                      "flex-1 aspect-square rounded-full border text-xs font-semibold transition-colors",
+                      active
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-background text-foreground hover:bg-accent/40",
+                    ].join(" ")}
+                    aria-pressed={active}
+                    aria-label={label}
+                  >
+                    {label[0]}
+                  </button>
+                );
+              })}
+            </div>
+            {state.selectedDays.length === 0 && (
+              <p className="text-[11px] text-warning">
+                Pick at least one day for this routine to run.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Time of day (UTC)</Label>
+            <div className="flex items-center gap-2">
+              <Select
+                value={state.cronHour}
+                onValueChange={(v) => setState({ ...state, cronHour: v ?? "9" })}
+              >
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HOURS.map((h) => (
+                    <SelectItem key={h.value} value={h.value}>
+                      {h.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-muted-foreground">:</span>
+                <Input
+                  type="number"
+                  min={0}
+                  max={59}
+                  value={state.cronMinute}
+                  onChange={(e) =>
+                    setState({ ...state, cronMinute: clampMinute(e.target.value) })
+                  }
+                  className="w-16 text-center"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {state.mode === "custom" && (
+        <div className="space-y-1.5">
+          <Label className="text-xs">Cron expression</Label>
+          <Input
+            value={state.customCron}
+            onChange={(e) => setState({ ...state, customCron: e.target.value })}
+            placeholder="0 8 * * 1-5"
+            className="font-mono text-xs"
+          />
+          <p className="text-[11px] text-muted-foreground">
+            5-field cron: minute hour day-of-month month day-of-week
+          </p>
+        </div>
+      )}
+
+      <p className="text-[11px] text-muted-foreground">{describeSchedule(state)}</p>
+    </div>
+  );
+}
+
+// Friendly label for a conversation in the "Report to" picker. For direct
+// conversations, this is the name of the other participant.
+function conversationDisplayLabel(
+  conv: {
+    title?: string;
+    type?: string;
+    members?: { participantId: string; participant?: { displayName?: string } }[];
+  },
+  currentParticipantId: string | undefined,
+): string {
+  if (conv.title) return conv.title;
+  const others = (conv.members || []).filter(
+    (m) => m.participantId !== currentParticipantId,
+  );
+  const names = others
+    .map((m) => m.participant?.displayName)
+    .filter(Boolean) as string[];
+  if (names.length > 0) return names.join(", ");
+  return conv.type === "group" ? "Group" : "Direct message";
+}
+
+function ReportToPicker({
+  agentId,
+  agentName,
+  value,
+  onChange,
+}: {
+  agentId: string;
+  agentName?: string;
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const conversations = useChatStore((s) => s.conversations);
+  const currentParticipantId = useAuthStore((s) => s.participant?.id);
+  const ownerDmId = useMemo(
+    () =>
+      conversations.find(
+        (c) =>
+          c.type === "direct" &&
+          (c.members || []).some((m) => m.participantId === currentParticipantId) &&
+          (c.members || []).some((m) => m.participantId === agentId),
+      )?.id,
+    [conversations, currentParticipantId, agentId],
+  );
+  const options = useMemo(
+    () =>
+      conversations
+        .filter((c) => c.type === "direct" && c.id !== ownerDmId)
+        .slice(0, 30)
+        .map((c) => ({
+          id: c.id,
+          label: conversationDisplayLabel(c, currentParticipantId),
+        })),
+    [conversations, currentParticipantId, ownerDmId],
+  );
+  const defaultLabel = `Your DM with ${agentName || "this agent"} (default)`;
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Where to report</Label>
+      <Select
+        value={value || "__default__"}
+        onValueChange={(v) => onChange(v === "__default__" ? "" : (v ?? ""))}
+      >
+        <SelectTrigger>
+          <SelectValue placeholder={defaultLabel} />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="__default__">{defaultLabel}</SelectItem>
+          {options.map((opt) => (
+            <SelectItem key={opt.id} value={opt.id}>
+              {opt.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-[11px] text-muted-foreground">
+        By default, each run's result posts to your DM with{" "}
+        {agentName || "this agent"}. Pick another conversation to override.
+      </p>
+    </div>
+  );
 }
 
 function formatSchedule(scheduleType: string, scheduleConfig: Record<string, unknown>): string {
@@ -413,12 +796,7 @@ function CreateRoutineDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [frequency, setFrequency] = useState("interval");
-  const [intervalMinutes, setIntervalMinutes] = useState(60);
-  const [cronMinute, setCronMinute] = useState("0");
-  const [cronHour, setCronHour] = useState("8");
-  const [cronDow, setCronDow] = useState("*");
-  const [customCron, setCustomCron] = useState("");
+  const [schedule, setSchedule] = useState<ScheduleState>(() => defaultScheduleState());
   const [reportTo, setReportTo] = useState("");
   const [maxRuns, setMaxRuns] = useState("");
   const [responseTemplate, setResponseTemplate] = useState("");
@@ -427,22 +805,24 @@ function CreateRoutineDialog({
 
   // Get available templates from the agent's structured_capabilities
   const { agents } = useAgentStore();
+  const agentName = useMemo(
+    () => Object.values(agents).find((m) => m.agent.id === agentId)?.agent.displayName,
+    [agents, agentId],
+  );
   const templateNames = useMemo(() => {
     const managed = Object.values(agents).find((m) => m.agent.id === agentId);
     const templates = managed?.agent.structuredCapabilities?.detail_templates;
     return templates ? Object.keys(templates).sort() : [];
   }, [agents, agentId]);
 
+  const scheduleValid =
+    schedule.mode !== "datetime" || schedule.selectedDays.length > 0;
+
   const resetForm = () => {
     setName("");
     setDescription("");
     setInstructions("");
-    setFrequency("interval");
-    setIntervalMinutes(60);
-    setCronMinute("0");
-    setCronHour("8");
-    setCronDow("*");
-    setCustomCron("");
+    setSchedule(defaultScheduleState());
     setReportTo("");
     setMaxRuns("");
     setResponseTemplate("");
@@ -453,7 +833,7 @@ function CreateRoutineDialog({
     setCreating(true);
     setError(null);
     try {
-      const { scheduleType, scheduleConfig } = buildSchedule(frequency, intervalMinutes, cronMinute, cronHour, cronDow, customCron);
+      const { scheduleType, scheduleConfig } = buildScheduleConfig(schedule);
 
       await createRoutine({
         agent_id: agentId,
@@ -482,11 +862,11 @@ function CreateRoutineDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[90vw] sm:max-w-3xl max-h-[85vh] flex flex-col gap-0 p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle>Create Routine</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Name</Label>
             <Input
@@ -508,137 +888,22 @@ function CreateRoutineDialog({
           <div className="space-y-1.5">
             <Label className="text-xs">Instructions</Label>
             <Textarea
-              className="min-h-[120px] font-mono text-sm leading-relaxed resize-y"
+              className="min-h-[220px] font-mono text-sm leading-relaxed resize-y"
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               placeholder="Check the status of all pending tasks and send a summary..."
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Frequency</Label>
-            <Select value={frequency} onValueChange={(v) => setFrequency(v ?? "interval")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="interval">Every X minutes</SelectItem>
-                <SelectItem value="hourly">Hourly</SelectItem>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="custom">Custom cron</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {frequency === "interval" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Run every</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  value={intervalMinutes}
-                  onChange={(e) => setIntervalMinutes(parseInt(e.target.value) || 1)}
-                  className="w-20"
-                />
-                <span className="text-xs text-muted-foreground">minutes</span>
-              </div>
-            </div>
-          )}
-
-          {frequency === "hourly" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">At minute</Label>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">:</span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={cronMinute}
-                  onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
-                  className="w-16 text-center"
-                />
-              </div>
-            </div>
-          )}
-
-          {(frequency === "daily" || frequency === "weekly") && (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Time (UTC)</Label>
-                <div className="flex items-center gap-2">
-                  <Select value={cronHour} onValueChange={(v) => setCronHour(v ?? "8")}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {HOURS.map((h) => (
-                        <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-muted-foreground">:</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={cronMinute}
-                      onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
-                      className="w-16 text-center"
-                    />
-                  </div>
-                </div>
-              </div>
-              {frequency === "weekly" && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Day</Label>
-                  <Select value={cronDow} onValueChange={(v) => setCronDow(v ?? "*")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DAYS_OF_WEEK.map((d) => (
-                        <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          )}
-
-          {frequency === "custom" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Cron Expression</Label>
-              <Input
-                value={customCron}
-                onChange={(e) => setCustomCron(e.target.value)}
-                placeholder="0 8 * * 1-5"
-                className="font-mono text-xs"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                5-field cron: minute hour day-of-month month day-of-week
-              </p>
-            </div>
-          )}
-
-          <p className="text-[11px] text-muted-foreground">
-            {describeSchedule(frequency, intervalMinutes, cronMinute, cronHour, cronDow)}
-          </p>
+          <ScheduleFields state={schedule} setState={setSchedule} />
 
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Report To (optional)</Label>
-              <Input
-                value={reportTo}
-                onChange={(e) => setReportTo(e.target.value)}
-                placeholder="Conversation ID"
-                className="font-mono text-xs"
-              />
-            </div>
+            <ReportToPicker
+              agentId={agentId}
+              agentName={agentName}
+              value={reportTo}
+              onChange={setReportTo}
+            />
             <div className="space-y-1.5">
               <Label className="text-xs">Max Runs (optional)</Label>
               <Input
@@ -674,11 +939,15 @@ function CreateRoutineDialog({
           )}
 
           {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
 
+        <div className="px-6 py-4 border-t shrink-0 flex gap-2 justify-end">
+          <Button variant="outline" onClick={handleClose}>
+            Cancel
+          </Button>
           <Button
             onClick={handleCreate}
-            disabled={creating || !name || !instructions}
-            className="w-full"
+            disabled={creating || !name || !instructions || !scheduleValid}
           >
             {creating ? "Creating..." : "Create Routine"}
           </Button>
@@ -700,12 +969,7 @@ function EditRoutineDialog({
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [frequency, setFrequency] = useState("interval");
-  const [intervalMinutes, setIntervalMinutes] = useState(60);
-  const [cronMinute, setCronMinute] = useState("0");
-  const [cronHour, setCronHour] = useState("8");
-  const [cronDow, setCronDow] = useState("*");
-  const [customCron, setCustomCron] = useState("");
+  const [schedule, setSchedule] = useState<ScheduleState>(() => defaultScheduleState());
   const [responseTemplate, setResponseTemplate] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -724,43 +988,43 @@ function EditRoutineDialog({
       setDescription(routine.description || "");
       setInstructions(routine.instructions);
       setResponseTemplate(routine.responseTemplate || "");
-      if (routine.scheduleType === "interval") {
-        setFrequency("interval");
-        setIntervalMinutes(Number(routine.scheduleConfig.every_minutes || routine.scheduleConfig.minutes || 60));
-      } else {
-        // Parse cron expression into visual fields
-        const expr = String(routine.scheduleConfig.expression || routine.scheduleConfig.cron || "0 8 * * *");
-        const parts = expr.split(/\s+/);
-        if (parts.length === 5) {
-          const [min, hour, , , dow] = parts;
-          if (hour === "*" && dow === "*") {
-            setFrequency("hourly");
-            setCronMinute(min);
-          } else if (dow !== "*") {
-            setFrequency("weekly");
-            setCronMinute(min);
-            setCronHour(hour);
-            setCronDow(dow);
-          } else {
-            setFrequency("daily");
-            setCronMinute(min);
-            setCronHour(hour);
-          }
-        } else {
-          setFrequency("custom");
-          setCustomCron(expr);
-        }
-      }
+      setSchedule(parseRoutineSchedule(routine));
       setError(null);
     }
   }, [routine]);
+
+  const scheduleValid =
+    schedule.mode !== "datetime" || schedule.selectedDays.length > 0;
+
+  const isDirty = useMemo(() => {
+    if (!routine) return false;
+    if (name !== routine.name) return true;
+    if (instructions !== routine.instructions) return true;
+    if ((description || "") !== (routine.description || "")) return true;
+    if ((responseTemplate || "") !== (routine.responseTemplate || "")) return true;
+    const built = buildScheduleConfig(schedule);
+    if (built.scheduleType !== routine.scheduleType) return true;
+    const cfg = routine.scheduleConfig as {
+      every_minutes?: number;
+      minutes?: number;
+      expression?: string;
+      cron?: string;
+    };
+    const origEvery = cfg.every_minutes ?? cfg.minutes ?? null;
+    const origExpr = cfg.expression ?? cfg.cron ?? null;
+    const newEvery =
+      (built.scheduleConfig as { every_minutes?: number }).every_minutes ?? null;
+    const newExpr = (built.scheduleConfig as { expression?: string }).expression ?? null;
+    if (origEvery !== newEvery || origExpr !== newExpr) return true;
+    return false;
+  }, [routine, name, instructions, description, responseTemplate, schedule]);
 
   const handleSave = async () => {
     if (!routine) return;
     setSaving(true);
     setError(null);
     try {
-      const { scheduleType, scheduleConfig } = buildSchedule(frequency, intervalMinutes, cronMinute, cronHour, cronDow, customCron);
+      const { scheduleType, scheduleConfig } = buildScheduleConfig(schedule);
 
       await updateRoutine(routine.id, {
         name,
@@ -780,11 +1044,11 @@ function EditRoutineDialog({
 
   return (
     <Dialog open={!!routine} onOpenChange={() => onClose()}>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="w-[90vw] sm:max-w-3xl max-h-[85vh] flex flex-col gap-0 p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b shrink-0">
           <DialogTitle>Edit Routine</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">
           <div className="space-y-1.5">
             <Label className="text-xs">Name</Label>
             <Input
@@ -805,92 +1069,13 @@ function EditRoutineDialog({
           <div className="space-y-1.5">
             <Label className="text-xs">Instructions</Label>
             <Textarea
-              className="min-h-[120px] font-mono text-sm leading-relaxed resize-y"
+              className="min-h-[220px] font-mono text-sm leading-relaxed resize-y"
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs">Frequency</Label>
-            <Select value={frequency} onValueChange={(v) => setFrequency(v ?? "interval")}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="interval">Every X minutes</SelectItem>
-                <SelectItem value="hourly">Hourly</SelectItem>
-                <SelectItem value="daily">Daily</SelectItem>
-                <SelectItem value="weekly">Weekly</SelectItem>
-                <SelectItem value="custom">Custom cron</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {frequency === "interval" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Run every</Label>
-              <div className="flex items-center gap-2">
-                <Input type="number" min={1} value={intervalMinutes} onChange={(e) => setIntervalMinutes(parseInt(e.target.value) || 1)} className="w-20" />
-                <span className="text-xs text-muted-foreground">minutes</span>
-              </div>
-            </div>
-          )}
-          {frequency === "hourly" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">At minute</Label>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground">:</span>
-                <Input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={cronMinute}
-                  onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
-                  className="w-16 text-center"
-                />
-              </div>
-            </div>
-          )}
-          {(frequency === "daily" || frequency === "weekly") && (
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Time (UTC)</Label>
-                <div className="flex items-center gap-2">
-                  <Select value={cronHour} onValueChange={(v) => setCronHour(v ?? "8")}>
-                    <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                    <SelectContent>{HOURS.map((h) => <SelectItem key={h.value} value={h.value}>{h.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs text-muted-foreground">:</span>
-                    <Input
-                      type="number"
-                      min={0}
-                      max={59}
-                      value={cronMinute}
-                      onChange={(e) => setCronMinute(String(Math.min(59, Math.max(0, parseInt(e.target.value) || 0))))}
-                      className="w-16 text-center"
-                    />
-                  </div>
-                </div>
-              </div>
-              {frequency === "weekly" && (
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Day</Label>
-                  <Select value={cronDow} onValueChange={(v) => setCronDow(v ?? "*")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>{DAYS_OF_WEEK.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-          )}
-          {frequency === "custom" && (
-            <div className="space-y-1.5">
-              <Label className="text-xs">Cron Expression</Label>
-              <Input value={customCron} onChange={(e) => setCustomCron(e.target.value)} placeholder="0 8 * * 1-5" className="font-mono text-xs" />
-              <p className="text-[11px] text-muted-foreground">5-field cron: minute hour day-of-month month day-of-week</p>
-            </div>
-          )}
-          <p className="text-[11px] text-muted-foreground">{describeSchedule(frequency, intervalMinutes, cronMinute, cronHour, cronDow)}</p>
+          <ScheduleFields state={schedule} setState={setSchedule} />
 
           {templateNames.length > 0 && (
             <div className="space-y-1.5">
@@ -908,19 +1093,18 @@ function EditRoutineDialog({
           )}
 
           {error && <p className="text-xs text-destructive">{error}</p>}
+        </div>
 
-          <div className="flex gap-2">
-            <Button
-              onClick={handleSave}
-              disabled={saving || !name || !instructions}
-              className="flex-1"
-            >
-              {saving ? "Saving..." : "Save Changes"}
-            </Button>
-            <Button variant="outline" onClick={onClose} className="flex-1">
-              Cancel
-            </Button>
-          </div>
+        <div className="px-6 py-4 border-t shrink-0 flex gap-2 justify-end">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={saving || !name || !instructions || !scheduleValid || !isDirty}
+          >
+            {saving ? "Saving..." : "Save Changes"}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
