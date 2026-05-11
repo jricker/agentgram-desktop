@@ -106,15 +106,54 @@ interface AgentRoutinesProps {
   agentId: string;
 }
 
+const CRON_DOW_NAMES: Record<string, string> = {
+  "0": "Sunday", "1": "Monday", "2": "Tuesday", "3": "Wednesday",
+  "4": "Thursday", "5": "Friday", "6": "Saturday",
+};
+
+function formatHourMinute12h(hour: number, minute: number): string {
+  const period = hour < 12 ? "AM" : "PM";
+  const h = hour === 0 ? 12 : hour <= 12 ? hour : hour - 12;
+  const m = String(minute).padStart(2, "0");
+  return `${h}:${m} ${period}`;
+}
+
+function humanizeCron(expr: string): string {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return expr;
+  const [minStr, hourStr, dom, mon, dow] = parts;
+  const minute = parseInt(minStr, 10);
+  const hour = parseInt(hourStr, 10);
+
+  if (hourStr === "*" && dom === "*" && mon === "*" && dow === "*" && !isNaN(minute)) {
+    return minute === 0 ? "Every hour" : `Every hour at :${String(minute).padStart(2, "0")}`;
+  }
+
+  if (isNaN(hour) || isNaN(minute)) return expr;
+  const time = formatHourMinute12h(hour, minute);
+
+  if (dom === "*" && mon === "*" && dow === "*") return `Daily at ${time}`;
+
+  if (dom === "*" && mon === "*") {
+    if (dow === "1-5") return `Weekdays at ${time}`;
+    if (dow === "0,6" || dow === "6,0") return `Weekends at ${time}`;
+    const name = CRON_DOW_NAMES[dow];
+    if (name) return `${name}s at ${time}`;
+  }
+
+  return expr;
+}
+
 function formatSchedule(scheduleType: string, scheduleConfig: Record<string, unknown>): string {
   if (scheduleType === "interval") {
-    const minutes = Number(scheduleConfig.minutes || scheduleConfig.interval_minutes || 0);
+    const minutes = Number(scheduleConfig.minutes || scheduleConfig.interval_minutes || scheduleConfig.every_minutes || 0);
     if (minutes === 60) return "Every hour";
     if (minutes > 60 && minutes % 60 === 0) return `Every ${minutes / 60} hours`;
     return `Every ${minutes} minute${minutes !== 1 ? "s" : ""}`;
   }
   if (scheduleType === "cron") {
-    return String(scheduleConfig.expression || scheduleConfig.cron || "");
+    const expr = String(scheduleConfig.expression || scheduleConfig.cron || "");
+    return expr ? humanizeCron(expr) : "Custom";
   }
   return scheduleType;
 }
