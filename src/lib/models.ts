@@ -94,6 +94,17 @@ export const PROVIDERS: ProviderConfig[] = [
       { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5" },
     ],
   },
+  {
+    id: "codex_cli",
+    label: "OpenAI Codex",
+    requiresLlmKey: false,
+    supportedModes: ["single_shot", "tool_use", "code_action"],
+    models: [
+      { id: "gpt-5.5", label: "GPT-5.5" },
+      { id: "gpt-5.4", label: "GPT-5.4" },
+      { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+    ],
+  },
 ];
 
 /** Known model ID patterns -> friendly display names.
@@ -122,6 +133,9 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
   "claude-3-haiku": "Claude 3 Haiku",
   "claude-3-sonnet": "Claude 3 Sonnet",
   // OpenAI
+  "gpt-5.5": "GPT-5.5",
+  "gpt-5.4": "GPT-5.4",
+  "gpt-5.3-codex": "GPT-5.3 Codex",
   "gpt-4o": "GPT-4o",
   "gpt-4o-mini": "GPT-4o Mini",
   "gpt-4-turbo": "GPT-4 Turbo",
@@ -146,6 +160,7 @@ const MODEL_DISPLAY_NAMES: Record<string, string> = {
 
 const BACKEND_DISPLAY_NAMES: Record<string, string> = {
   claude_cli: "Claude Code",
+  codex_cli: "OpenAI Codex",
   openclaw: "OpenClaw",
 };
 

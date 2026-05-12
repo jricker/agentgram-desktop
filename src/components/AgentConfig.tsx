@@ -530,14 +530,15 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                     .modelsFor(target)
                     .filter(() => hostedTargetHasKey);
                   const SAME_AS_LOCAL = "__same_as_local__";
-                  // Local-runtime backends like claude_cli can't actually run
-                  // server-side — picking "hosted only" would silently swap
-                  // them onto the plain Anthropic API, which changes tools /
-                  // MCP / behavior. Hide the option for CLI agents so users
-                  // don't end up there by accident. Show it if it's already
-                  // the saved value (e.g. set from web before this guard
-                  // existed) so the user can switch off.
-                  const isLocalRuntime = backend === "claude_cli";
+                  // Local-runtime backends like claude_cli / codex_cli can't
+                  // actually run server-side — picking "hosted only" would
+                  // silently swap them onto the plain Anthropic / OpenAI
+                  // API, which changes tools / MCP / behavior. Hide the
+                  // option for CLI agents so users don't end up there by
+                  // accident. Show it if it's already the saved value (e.g.
+                  // set from web before this guard existed) so the user
+                  // can switch off.
+                  const isLocalRuntime = backend === "claude_cli" || backend === "codex_cli";
                   const allowHostedOnly = !isLocalRuntime || mode === "hosted_only";
                   // base-ui's Select.Value renders the raw `value` string
                   // when it can't introspect the matched Item's label —
@@ -780,7 +781,7 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   <div>
                     <Label className="text-sm">Skip permissions</Label>
                     <p className="text-xs text-muted-foreground">
-                      Claude Code only
+                      Claude Code &amp; OpenAI Codex
                     </p>
                   </div>
                   <Switch
