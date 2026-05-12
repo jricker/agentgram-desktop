@@ -1,0 +1,932 @@
+import { useState, useCallback } from "react";
+import type { Message } from "../../lib/api";
+import { cn } from "../../lib/utils";
+import { MarkdownContent } from "./MarkdownContent";
+import {
+  Star,
+  MapPin,
+  ExternalLink,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Bed,
+  Utensils,
+  Plane,
+  Calendar,
+  ShoppingBag,
+  Package,
+  Clock,
+  DollarSign,
+  Mail,
+  Send,
+  Tag,
+  CheckCircle,
+  User,
+  ShieldCheck,
+  Navigation,
+  TrendingUp,
+  TrendingDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  Phone,
+  Globe,
+  Briefcase,
+  CircleDot,
+  Contact,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface ResultPrice {
+  amount: number;
+  currency?: string;
+  per?: string;
+  original_amount?: number;
+  discount_pct?: number;
+}
+
+interface ResultCTA {
+  label: string;
+  url?: string;
+  action?: string;
+}
+
+interface DetailFieldDescriptor {
+  key: string;
+  display: "row" | "chip" | "highlight" | "body" | "sparkline" | "change";
+  label?: string;
+  icon?: string;
+  color?: string;
+  format?: string;
+  hidden?: boolean;
+  link?: "tel" | "mailto" | "url" | "map";
+}
+
+function resolveFieldLink(
+  field: DetailFieldDescriptor,
+  rawValue: unknown,
+): string | null {
+  if (!field.link || rawValue == null) return null;
+  const value = String(rawValue).trim();
+  if (!value) return null;
+
+  switch (field.link) {
+    case "tel": {
+      const digits = value.replace(/(?!^\+)[^\d]/g, "");
+      if (!digits) return null;
+      return `tel:${digits}`;
+    }
+    case "mailto":
+      return `mailto:${value}`;
+    case "url":
+      return /^https?:\/\//i.test(value) ? value : `https://${value}`;
+    case "map":
+      return `https://maps.google.com/?q=${encodeURIComponent(value)}`;
+    default:
+      return null;
+  }
+}
+
+interface ResultItem {
+  type?: string;
+  title?: string;
+  subtitle?: string;
+  image_url?: string;
+  gallery_images?: string[];
+  rating?: number;
+  rating_count?: number;
+  rating_source?: string;
+  price?: ResultPrice;
+  amenities?: string[];
+  highlights?: string[];
+  booking_url?: string;
+  cta?: { primary?: ResultCTA; secondary?: ResultCTA[] };
+  details?: Record<string, unknown>;
+  detail_schema?: DetailFieldDescriptor[];
+  detail_template?: string;
+  [key: string]: unknown;
+}
+
+interface RPData {
+  result_type?: string;
+  title?: string;
+  items?: ResultItem[];
+  citations?: Array<{
+    source_name?: string;
+    url?: string;
+    confidence?: number;
+  }>;
+}
+
+// ---------------------------------------------------------------------------
+// Icon registry
+// ---------------------------------------------------------------------------
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  bed: Bed,
+  "map-pin": MapPin,
+  clock: Clock,
+  plane: Plane,
+  utensils: Utensils,
+  calendar: Calendar,
+  navigation: Navigation,
+  "shield-check": ShieldCheck,
+  "shopping-bag": ShoppingBag,
+  "dollar-sign": DollarSign,
+  mail: Mail,
+  send: Send,
+  tag: Tag,
+  "check-circle": CheckCircle,
+  user: User,
+  star: Star,
+  package: Package,
+  "external-link": ExternalLink,
+  "trending-up": TrendingUp,
+  "trending-down": TrendingDown,
+  phone: Phone,
+  globe: Globe,
+  briefcase: Briefcase,
+  "circle-dot": CircleDot,
+};
+
+const RESULT_TYPE_ICONS: Record<string, LucideIcon> = {
+  hotel: Bed,
+  restaurant: Utensils,
+  flight: Plane,
+  event: Calendar,
+  product: ShoppingBag,
+  finance: DollarSign,
+  email: Mail,
+  contact: Contact,
+  generic: Package,
+};
+
+function resolveIcon(name?: string): LucideIcon | null {
+  if (!name) return null;
+  return ICON_MAP[name] ?? null;
+}
+
+function resultTypeIcon(type?: string): LucideIcon {
+  if (!type) return Package;
+  return RESULT_TYPE_ICONS[type] ?? Package;
+}
+
+// ---------------------------------------------------------------------------
+// Currency helper
+// ---------------------------------------------------------------------------
+
+const CURRENCY_SYMBOLS: Record<string, string> = {
+  USD: "$",
+  EUR: "\u20AC",
+  GBP: "\u00A3",
+};
+
+function currencySymbol(code?: string): string {
+  if (!code) return "$";
+  return CURRENCY_SYMBOLS[code.toUpperCase()] ?? code;
+}
+
+// ---------------------------------------------------------------------------
+// Format helper for detail fields
+// ---------------------------------------------------------------------------
+
+function formatValue(
+  field: DetailFieldDescriptor,
+  details: Record<string, unknown>,
+): string {
+  const raw = details[field.key];
+  if (raw == null) return "";
+
+  if (field.format === "route") {
+    const arrival = details["arrival"] ?? details["to"];
+    return arrival ? `${raw} \u2192 ${arrival}` : String(raw);
+  }
+
+  if (field.format === "stops") {
+    const n = Number(raw);
+    if (n === 0) return "Nonstop";
+    return `${n} stop${n > 1 ? "s" : ""}`;
+  }
+
+  return String(raw);
+}
+
+// ---------------------------------------------------------------------------
+// Sparkline SVG
+// ---------------------------------------------------------------------------
+
+function Sparkline({
+  data,
+  color = "currentColor",
+}: {
+  data: number[];
+  color?: string;
+}) {
+  if (!data || data.length < 2) return null;
+  const w = 80;
+  const h = 24;
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const points = data
+    .map(
+      (v, i) =>
+        `${(i / (data.length - 1)) * w},${h - ((v - min) / range) * h}`,
+    )
+    .join(" ");
+  return (
+    <svg width={w} height={h} className="inline-block align-middle">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+      />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Star Rating
+// ---------------------------------------------------------------------------
+
+function StarRating({
+  rating,
+  count,
+  source,
+}: {
+  rating: number;
+  count?: number;
+  source?: string;
+}) {
+  const stars = [];
+  for (let i = 1; i <= 5; i++) {
+    const filled = rating >= i;
+    const half = !filled && rating >= i - 0.5;
+    stars.push(
+      <Star
+        key={i}
+        className={cn(
+          "h-3 w-3",
+          filled
+            ? "fill-warning text-warning"
+            : half
+              ? "fill-warning/50 text-warning/50"
+              : "text-muted-foreground/30",
+        )}
+      />,
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      <div className="flex items-center gap-0.5">{stars}</div>
+      <span className="font-medium">{rating.toFixed(1)}</span>
+      {count != null && (
+        <span className="text-muted-foreground">({count.toLocaleString()})</span>
+      )}
+      {source && (
+        <span className="text-muted-foreground">{source}</span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Price Badge
+// ---------------------------------------------------------------------------
+
+function PriceBadge({ price }: { price: ResultPrice }) {
+  const sym = currencySymbol(price.currency);
+
+  return (
+    <div className="flex items-baseline gap-1.5">
+      <span className="text-base font-bold">
+        {sym}
+        {price.amount.toLocaleString()}
+      </span>
+      {price.per && (
+        <span className="text-xs text-muted-foreground">/{price.per}</span>
+      )}
+      {price.original_amount != null && (
+        <span className="text-xs text-muted-foreground line-through">
+          {sym}
+          {price.original_amount.toLocaleString()}
+        </span>
+      )}
+      {price.discount_pct != null && (
+        <span className="rounded-full bg-success/10 px-1.5 py-0.5 text-[10px] font-semibold text-success">
+          -{price.discount_pct}%
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Amenity Chips
+// ---------------------------------------------------------------------------
+
+function AmenityChips({ amenities }: { amenities: string[] }) {
+  const MAX_VISIBLE = 6;
+  const visible = amenities.slice(0, MAX_VISIBLE);
+  const overflow = amenities.length - MAX_VISIBLE;
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {visible.map((a) => (
+        <span
+          key={a}
+          className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+        >
+          {a}
+        </span>
+      ))}
+      {overflow > 0 && (
+        <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+          +{overflow} more
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Highlights
+// ---------------------------------------------------------------------------
+
+function Highlights({ highlights }: { highlights: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {highlights.map((h) => (
+        <span
+          key={h}
+          className="inline-flex items-center rounded-full bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success"
+        >
+          {h}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Highlight color mapping
+// ---------------------------------------------------------------------------
+
+// Callout (magazine-style) border + accent color for `display: "highlight"`
+// fields. The pill / badge styling was too small and "chip-like" for what
+// agents actually use highlight for — the headline at the top of a brief
+// card, or a punchy talking-point at the bottom. Callouts get a 4px colored
+// left rule, larger semibold text, and the same color tint on the icon.
+const CALLOUT_ACCENT: Record<string, { border: string; text: string }> = {
+  success: { border: "border-success", text: "text-success" },
+  warning: { border: "border-warning", text: "text-warning" },
+  destructive: { border: "border-destructive", text: "text-destructive" },
+  primary: { border: "border-primary", text: "text-primary" },
+};
+
+// ---------------------------------------------------------------------------
+// Collapsible Body
+// ---------------------------------------------------------------------------
+
+function isHtml(text: string): boolean {
+  return /<[a-z][\s\S]*>/i.test(text);
+}
+
+function RichBody({ content }: { content: string }) {
+  if (isHtml(content)) {
+    return (
+      <div
+        className="text-sm leading-relaxed [&_p]:mb-1 [&_p:last-child]:mb-0 [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:my-0.5 [&_strong]:font-semibold [&_b]:font-semibold [&_a]:underline [&_h1]:text-base [&_h1]:font-bold [&_h2]:text-[15px] [&_h2]:font-bold [&_h3]:text-sm [&_h3]:font-semibold [&_blockquote]:border-l-2 [&_blockquote]:border-current/30 [&_blockquote]:pl-2"
+        dangerouslySetInnerHTML={{ __html: content }}
+      />
+    );
+  }
+  return <MarkdownContent content={content} />;
+}
+
+function CollapsibleBody({
+  content,
+  label,
+  icon: IconComp,
+  disableCollapse,
+}: {
+  content: string;
+  label?: string;
+  icon?: LucideIcon | null;
+  disableCollapse?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = !disableCollapse && content.length > 200;
+
+  return (
+    <div
+      className={cn(
+        "relative",
+        label && "mt-2 pt-2 border-t border-border/60",
+      )}
+    >
+      {label && (
+        <div className="mb-1 flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+          {IconComp && <IconComp className="h-3 w-3" />}
+          <span>{label}</span>
+        </div>
+      )}
+      <div
+        className={cn(
+          !expanded && isLong && "max-h-[200px] overflow-hidden",
+        )}
+      >
+        <RichBody content={content} />
+      </div>
+      {isLong && !expanded && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />
+      )}
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80"
+        >
+          {expanded ? (
+            <>
+              <ChevronDown className="h-3 w-3" /> Show less
+            </>
+          ) : (
+            <>
+              <ChevronRight className="h-3 w-3" /> Show more
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Detail Section — renders fields from detail_schema
+// ---------------------------------------------------------------------------
+
+function DetailSection({
+  schema,
+  details,
+  disableBodyCollapse,
+}: {
+  schema: DetailFieldDescriptor[];
+  details: Record<string, unknown>;
+  disableBodyCollapse?: boolean;
+}) {
+  // Group consecutive chip fields together
+  const elements: React.ReactNode[] = [];
+  let chipBuffer: DetailFieldDescriptor[] = [];
+
+  function flushChips() {
+    if (chipBuffer.length === 0) return;
+    const chips = chipBuffer;
+    chipBuffer = [];
+    elements.push(
+      <div key={`chips-${chips[0]?.key ?? "buf"}`} className="flex flex-wrap gap-1">
+        {chips.map((f) => {
+          const val = details[f.key];
+          if (val == null) return null;
+          const url = resolveFieldLink(f, val);
+          const text = `${f.label ? `${f.label}: ` : ""}${String(val)}`;
+          if (url) {
+            return (
+              <a
+                key={f.key}
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-primary underline"
+              >
+                {text}
+              </a>
+            );
+          }
+          return (
+            <span
+              key={f.key}
+              className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+            >
+              {text}
+            </span>
+          );
+        })}
+      </div>,
+    );
+  }
+
+  for (const field of schema) {
+    if (field.hidden) continue;
+    const val = details[field.key];
+    if (val == null && field.display !== "body") continue;
+
+    if (field.display === "chip") {
+      chipBuffer.push(field);
+      continue;
+    }
+
+    flushChips();
+
+    if (field.display === "row") {
+      const IconComp = resolveIcon(field.icon);
+      const url = resolveFieldLink(field, val);
+      const valueText = formatValue(field, details);
+      elements.push(
+        <div
+          key={field.key}
+          className="flex items-center gap-2 text-xs"
+        >
+          {IconComp && (
+            <IconComp className="h-3.5 w-3.5 text-muted-foreground" />
+          )}
+          {field.label && (
+            <span className="text-muted-foreground">{field.label}:</span>
+          )}
+          {url ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-primary underline hover:text-primary/80"
+            >
+              {valueText}
+            </a>
+          ) : (
+            <span className="font-medium">{valueText}</span>
+          )}
+        </div>,
+      );
+    } else if (field.display === "highlight") {
+      const accent =
+        CALLOUT_ACCENT[field.color ?? "primary"] ?? CALLOUT_ACCENT.primary!;
+      const IconComp = resolveIcon(field.icon);
+      const url = resolveFieldLink(field, val);
+      const text = `${field.label ? `${field.label}: ` : ""}${String(val)}`;
+
+      const callout = (
+        <div
+          className={cn(
+            "flex items-start gap-2 border-l-4 pl-3 py-1 text-[15px] font-semibold leading-snug text-foreground",
+            accent.border,
+          )}
+        >
+          {IconComp && (
+            <IconComp className={cn("mt-0.5 h-4 w-4 shrink-0", accent.text)} />
+          )}
+          <span className="min-w-0">{text}</span>
+        </div>
+      );
+
+      if (url) {
+        elements.push(
+          <a
+            key={field.key}
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block hover:opacity-80 transition-opacity"
+          >
+            {callout}
+          </a>,
+        );
+      } else {
+        elements.push(<div key={field.key}>{callout}</div>);
+      }
+    } else if (field.display === "body") {
+      const text = val != null ? String(val) : "";
+      if (!text) continue;
+      const BodyIcon = resolveIcon(field.icon);
+      elements.push(
+        <CollapsibleBody
+          key={field.key}
+          content={text}
+          label={field.label}
+          icon={BodyIcon}
+          disableCollapse={disableBodyCollapse}
+        />,
+      );
+    } else if (field.display === "change") {
+      const num = Number(val);
+      const positive = num >= 0;
+      elements.push(
+        <div key={field.key} className="flex items-center gap-1.5 text-xs">
+          {field.label && (
+            <span className="text-muted-foreground">{field.label}:</span>
+          )}
+          <span
+            className={cn(
+              "inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[10px] font-medium",
+              positive
+                ? "bg-success/10 text-success"
+                : "bg-destructive/10 text-destructive",
+            )}
+          >
+            {positive ? (
+              <ArrowUpRight className="h-3 w-3" />
+            ) : (
+              <ArrowDownRight className="h-3 w-3" />
+            )}
+            {positive ? "\u2191" : "\u2193"} {Math.abs(num)}
+            {field.format === "percent" ? "%" : ""}
+          </span>
+        </div>,
+      );
+    } else if (field.display === "sparkline") {
+      const arr = Array.isArray(val) ? (val as number[]) : [];
+      if (arr.length < 2) continue;
+      elements.push(
+        <div key={field.key} className="flex items-center gap-2 text-xs">
+          {field.label && (
+            <span className="text-muted-foreground">{field.label}:</span>
+          )}
+          <Sparkline data={arr} color={field.color} />
+        </div>,
+      );
+    }
+  }
+
+  flushChips();
+
+  if (elements.length === 0) return null;
+  return <div className="space-y-2">{elements}</div>;
+}
+
+// ---------------------------------------------------------------------------
+// CTA Buttons
+// ---------------------------------------------------------------------------
+
+function CTAButtons({
+  cta,
+}: {
+  cta: { primary?: ResultCTA; secondary?: ResultCTA[] };
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {cta.primary && (
+        <a
+          href={cta.primary.url ?? "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+        >
+          {cta.primary.label}
+          <ExternalLink className="h-3 w-3" />
+        </a>
+      )}
+      {cta.secondary?.map((s, i) => (
+        <a
+          key={i}
+          href={s.url ?? "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted"
+        >
+          {s.label}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Citations
+// ---------------------------------------------------------------------------
+
+function Citations({
+  citations,
+}: {
+  citations: Array<{
+    source_name?: string;
+    url?: string;
+    confidence?: number;
+  }>;
+}) {
+  if (citations.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-muted-foreground">
+      <span>Sources:</span>
+      {citations.map((c, i) => (
+        <span key={i}>
+          {c.url ? (
+            <a
+              href={c.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
+              {c.source_name ?? c.url}
+            </a>
+          ) : (
+            c.source_name ?? "Unknown"
+          )}
+          {i < citations.length - 1 && ","}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Single Result Card
+// ---------------------------------------------------------------------------
+
+function ResultCard({
+  item,
+  resultType,
+}: {
+  item: ResultItem;
+  resultType?: string;
+}) {
+  const TypeIcon = resultTypeIcon(item.type ?? resultType);
+  const details = (item.details ?? {}) as Record<string, unknown>;
+  const schema = item.detail_schema;
+
+  // Magazine-style card: 2+ body sections in a single item (sports brief,
+  // daily digest). Disable per-section "Show more" so the whole card is
+  // visible at once — the card IS the deliverable, no point hiding parts.
+  const bodyFieldCount = schema?.filter((f) => f.display === "body").length ?? 0;
+  const isEmailCard = item.detail_template?.startsWith("email_") ?? false;
+  const isMagazineCard = bodyFieldCount >= 2 && !isEmailCard;
+
+  return (
+    <div className="rounded-lg border border-border bg-card overflow-hidden shadow-sm">
+      {/* Hero image */}
+      {item.image_url && (
+        <img
+          src={item.image_url}
+          alt={item.title ?? "Result image"}
+          className="w-full h-[200px] object-cover"
+        />
+      )}
+
+      {/* Content */}
+      <div className="space-y-3 p-3">
+        {/* Header: icon + title + subtitle */}
+        {(item.title || item.subtitle) && (
+          <div className="flex items-start gap-2">
+            <TypeIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              {item.title && (
+                <h4 className="text-sm font-semibold leading-tight">
+                  {item.title}
+                </h4>
+              )}
+              {item.subtitle && (
+                <p className="text-xs text-muted-foreground">{item.subtitle}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Star rating */}
+        {item.rating != null && (
+          <StarRating
+            rating={item.rating}
+            count={item.rating_count}
+            source={item.rating_source}
+          />
+        )}
+
+        {/* Price */}
+        {item.price && <PriceBadge price={item.price} />}
+
+        {/* Amenities */}
+        {item.amenities && item.amenities.length > 0 && (
+          <AmenityChips amenities={item.amenities} />
+        )}
+
+        {/* Highlights */}
+        {item.highlights && item.highlights.length > 0 && (
+          <Highlights highlights={item.highlights} />
+        )}
+
+        {/* Dynamic detail section */}
+        {schema && schema.length > 0 && (
+          <DetailSection
+            schema={schema}
+            details={details}
+            disableBodyCollapse={isMagazineCard}
+          />
+        )}
+
+        {/* CTA buttons */}
+        {item.cta && <CTAButtons cta={item.cta} />}
+
+        {/* Fallback booking URL when no CTA provided */}
+        {!item.cta && item.booking_url && (
+          <a
+            href={item.booking_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:text-primary/80"
+          >
+            View details <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main export
+// ---------------------------------------------------------------------------
+
+export function ResultPresentationMessage({
+  message,
+}: {
+  message: Message;
+}) {
+  const data = (message.contentStructured?.data ?? {}) as RPData;
+  const items = data.items ?? [];
+
+  if (items.length === 0) {
+    return <p className="text-sm">{message.content}</p>;
+  }
+
+  const singleItem = items.length === 1;
+
+  return (
+    <div className="space-y-2">
+      {/* Overall result title */}
+      {data.title && (
+        <div className="flex items-center gap-2 px-1">
+          <h3 className="text-sm font-semibold">{data.title}</h3>
+          {!singleItem && (
+            <span className="text-xs text-muted-foreground">
+              {items.length} results
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Cards — single item stacks, multiple items carousel */}
+      {singleItem ? (
+        <ResultCard item={items[0]!} resultType={data.result_type} />
+      ) : (
+        <Carousel items={items} resultType={data.result_type} />
+      )}
+
+      {/* Citations */}
+      {data.citations && data.citations.length > 0 && (
+        <div className="px-1 pt-1">
+          <Citations citations={data.citations} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Carousel (arrow navigation + counter for web)
+// ---------------------------------------------------------------------------
+
+function Carousel({
+  items,
+  resultType,
+}: {
+  items: ResultItem[];
+  resultType?: string;
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+
+  const prev = useCallback(() => setActiveIndex((i) => Math.max(0, i - 1)), []);
+  const next = useCallback(
+    () => setActiveIndex((i) => Math.min(items.length - 1, i + 1)),
+    [items.length],
+  );
+
+  return (
+    <div>
+      <ResultCard item={items[activeIndex]!} resultType={resultType} />
+
+      {/* Navigation bar */}
+      <div className="flex items-center justify-between pt-2 px-1">
+        <button
+          onClick={prev}
+          disabled={activeIndex === 0}
+          className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 disabled:invisible"
+        >
+          <ChevronLeft className="h-3.5 w-3.5" /> Prev
+        </button>
+
+        <span className="text-xs text-muted-foreground">
+          {activeIndex + 1} / {items.length}
+        </span>
+
+        <button
+          onClick={next}
+          disabled={activeIndex === items.length - 1}
+          className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 disabled:invisible"
+        >
+          Next <ChevronRight className="h-3.5 w-3.5" />
+        </button>
+      </div>
+    </div>
+  );
+}

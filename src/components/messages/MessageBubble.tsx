@@ -12,7 +12,14 @@ import {
   isStatusUpdateMessage,
   StatusUpdateMessage,
 } from "./StatusUpdateMessage";
+import { ResultPresentationMessage } from "./ResultPresentationMessage";
 import type { Message } from "../../lib/api";
+
+function isResultPresentationMessage(message: Message): boolean {
+  // Backend sets messageType="ResultPresentation" when forwarding extracted
+  // <result_presentation> envelopes (see Gateway.maybe_forward_result_presentations).
+  return message.messageType === "ResultPresentation";
+}
 
 export function MessageBubble({
   message,
@@ -209,6 +216,8 @@ export function MessageBubble({
             <ToolMessage message={message} />
           ) : isFileMessage(message) ? (
             <FileMessage message={message} />
+          ) : isResultPresentationMessage(message) ? (
+            <ResultPresentationMessage message={message} />
           ) : (
             <MarkdownContent content={message.content} />
           )}
