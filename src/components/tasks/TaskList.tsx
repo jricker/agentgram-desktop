@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Loader2, Search, Zap } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn, formatRelativeShort } from "../../lib/utils";
 import { useTaskStore } from "../../stores/taskStore";
@@ -130,23 +137,23 @@ export function TaskList() {
             className="h-8 pl-8 text-xs"
           />
         </div>
-        <div className="flex flex-wrap gap-1">
-          {FILTERS.map((f) => (
-            <button
-              key={f.value}
-              type="button"
-              onClick={() => setFilter(f.value)}
-              className={cn(
-                "rounded-md px-2 py-1 text-[11px] font-medium transition-colors",
-                filter === f.value
-                  ? "bg-primary/10 text-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              )}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
+        <Select
+          value={filter}
+          onValueChange={(v) => v && setFilter(v as Filter)}
+        >
+          <SelectTrigger className="h-8 w-full text-xs">
+            <SelectValue>
+              {(v: Filter) => FILTERS.find((f) => f.value === v)?.label ?? v}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {FILTERS.map((f) => (
+              <SelectItem key={f.value} value={f.value} className="text-xs">
+                {f.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       <div
