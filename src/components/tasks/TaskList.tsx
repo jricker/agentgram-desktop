@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Loader2, Search, Zap } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -65,11 +65,19 @@ export function TaskList() {
 
   // If a task is selected externally (e.g. via "View Full Details" from a
   // chat card) and its status doesn't match the current filter, switch the
-  // filter so the row is visible in the list.
+  // filter so the row is visible in the list. Only fires once per selection
+  // change — otherwise the user couldn't change the filter while a task is
+  // selected (the effect would snap it right back).
+  const syncedSelectionRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId) {
+      syncedSelectionRef.current = null;
+      return;
+    }
+    if (syncedSelectionRef.current === selectedId) return;
     const task = tasks.find((t) => t.id === selectedId);
     if (!task) return;
+    syncedSelectionRef.current = selectedId;
     const current = FILTERS.find((x) => x.value === filter) ?? FILTERS[0];
     if (current.matches(task.status)) return;
     const next = FILTERS.find((f) => f.value !== filter && f.matches(task.status));
