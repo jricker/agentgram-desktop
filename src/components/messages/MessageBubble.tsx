@@ -16,9 +16,31 @@ import { ResultPresentationMessage } from "./ResultPresentationMessage";
 import type { Message } from "../../lib/api";
 
 function isResultPresentationMessage(message: Message): boolean {
-  // Backend sets messageType="ResultPresentation" when forwarding extracted
-  // <result_presentation> envelopes (see Gateway.maybe_forward_result_presentations).
-  return message.messageType === "ResultPresentation";
+  // Primary path: backend sets messageType="ResultPresentation" when
+  // forwarding extracted <result_presentation> envelopes (see
+  // Gateway.maybe_forward_result_presentations).
+  if (message.messageType === "ResultPresentation") return true;
+
+  // Fallback: structured payload whose data looks like a ResultPresentation
+  // (items[] + result_type). Mirrors web's resolveType auto-detection so
+  // legacy / older-backend messages render as cards instead of raw JSON.
+  if (
+    message.messageType === "structured" ||
+    message.contentType === "structured"
+  ) {
+    const data = message.contentStructured?.data as
+      | Record<string, unknown>
+      | undefined;
+    if (
+      data &&
+      Array.isArray(data.items) &&
+      data.items.length > 0 &&
+      typeof data.result_type === "string"
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function MessageBubble({
