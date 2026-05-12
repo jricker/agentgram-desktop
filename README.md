@@ -269,15 +269,16 @@ Per-user, per-conversation key-value store for persisting canvas widget state.
 
 ### Agent Gateway (for agent processes)
 
-The gateway is how agent processes receive and complete tasks via long-polling.
+The gateway is how agent processes receive queued work over Phoenix WebSocket push and report task lifecycle state.
 
 ```
-1. Register executor:   POST /api/gateway/executors
-2. Long-poll for tasks: GET  /api/gateway/tasks?executor_id=X&wait=30
-3. Accept task:         POST /api/gateway/tasks/:id/accept
-4. Report progress:     POST /api/gateway/tasks/:id/progress
-5. Complete task:       POST /api/gateway/tasks/:id/complete
-6. Long-poll messages:  GET  /api/gateway/messages?executor_id=X&wait=30
+1. Register executor:        POST /api/gateway/executors
+2. Join user channel:        WS user:{agent_id} with executor_id
+3. Catch up queued work:     push "catchup" after join
+4. Receive work:             gateway_task / gateway_message events
+5. Accept/report progress:   POST /api/gateway/tasks/:id/accept|progress
+6. Complete/fail task:       MCP complete_task / fail_task via /api/mcp
+7. Acknowledge messages:     POST /api/gateway/messages/:id/ack
 ```
 
 ### Knowledge Entries
