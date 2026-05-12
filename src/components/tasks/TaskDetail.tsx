@@ -8,6 +8,7 @@ import {
   XCircle,
   Ban,
   MessageSquare,
+  MessageSquarePlus,
   Send,
   Zap,
 } from "lucide-react";
@@ -68,6 +69,13 @@ export function TaskDetail({
     STATUS_CHIP_CLASS[effectiveStatus] ?? STATUS_CHIP_CLASS.cancelled;
 
   const assignees = task.assignees ?? [];
+
+  const workConversationId =
+    (task.metadata as Record<string, unknown> | undefined)?.work_conversation_id;
+  const workConvId =
+    typeof workConversationId === "string" && workConversationId
+      ? workConversationId
+      : null;
 
   const recentSteps = useMemo(
     () => progress?.recentSteps ?? [],
@@ -140,17 +148,29 @@ export function TaskDetail({
             <h1 className="text-lg font-semibold leading-tight">{task.title}</h1>
           </div>
 
-          {task.conversationId && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => onOpenConversation(task.conversationId)}
-              title="Open the conversation this task lives in"
-            >
-              <MessageSquare className="w-3.5 h-3.5" />
-              Open chat
-            </Button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {workConvId && (
+              <Button
+                size="sm"
+                onClick={() => onOpenConversation(workConvId)}
+                title="Open the task's work sub-conversation"
+              >
+                <MessageSquarePlus className="w-3.5 h-3.5" />
+                Open work room
+              </Button>
+            )}
+            {task.conversationId && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => onOpenConversation(task.conversationId)}
+                title="Open the conversation this task lives in"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                Open chat
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
