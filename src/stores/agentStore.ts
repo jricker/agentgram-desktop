@@ -203,7 +203,7 @@ interface AgentState {
     llmApiKeyId?: string | null;
   }) => Promise<string>;
   regenerateKey: (id: string) => Promise<string>;
-  refreshProcessStatuses: () => Promise<void>;
+  refreshProcessStatuses: () => Promise<boolean>;
   /** Subscribe to WS events that mutate agent state (online toggle,
    *  health updates). Returns an unsub. */
   initWsListeners: () => () => void;
@@ -895,9 +895,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }
 
       if (changed) set({ agents });
+      return true;
     } catch {
       // Non-fatal
+      return false;
     }
   },
 }));
-

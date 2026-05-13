@@ -28,9 +28,6 @@ export function useWebSocket() {
   useEffect(() => {
     if (!token || !participantId) return;
 
-    ws.connect(token);
-    ws.joinUserChannel(participantId);
-
     const unsubChat = useChatStore.getState().initWsListeners();
     const unsubPresence = usePresenceStore.getState().initWsListeners();
     const unsubStreaming = useStreamingStore.getState().initWsListeners();
@@ -48,7 +45,32 @@ export function useWebSocket() {
       const activeId = useChatStore.getState().activeConversationId;
       if (activeId) ws.joinConversation(activeId);
     };
-    joinActiveIfAny();
+
+    // Agents bootstrap sequence:
+    //   1. fetchAgents — create ManagedAgent rows from the backend payload.
+    //   2. refreshProcessStatuses — overlay local Rust ProcessManager state.
+    //      This must run *after* fetchAgents on desktop reload. The Rust side
+    //      still knows about running bridge processes, but the fresh Zustand
+    //      store starts empty; refreshing first has nowhere to apply statuses.
+    //   3. reconcileStaleExecutors — only now mark backend-online agents
+    //      offline when no local bridge is running.
+    const syncAgents = async (reason: string) => {
+      const agentStore = useAgentStore.getState();
+      try {
+        await agentStore.fetchAgents();
+        const refreshed = await agentStore.refreshProcessStatuses();
+        if (refreshed) {
+          await agentStore.reconcileStaleExecutors();
+        } else {
+          console.warn(
+            `[useWebSocket] skipped stale-executor reconciliation; local status refresh failed (${reason})`
+          );
+        }
+        await agentStore.fetchHealth();
+      } catch (e) {
+        console.warn(`[useWebSocket] agent sync failed (${reason})`, e);
+      }
+    };
 
     // Resync on every reconnect. WS has an auto-rejoin under the hood, but
     // any events the server pushed during the gap (while the socket was
@@ -70,7 +92,12 @@ export function useWebSocket() {
       useChatStore.getState().fetchUnreadCounts();
       const activeId = useChatStore.getState().activeConversationId;
       if (activeId) useChatStore.getState().fetchMessages(activeId);
+      syncAgents("reconnect");
     });
+
+    ws.connect(token);
+    ws.joinUserChannel(participantId);
+    joinActiveIfAny();
 
     // Fire initial loads — UI renders loading states from the store.
     // fetchTasks() also seeds taskLifecycleMeta[id].effectiveStatus from
@@ -82,23 +109,7 @@ export function useWebSocket() {
     useChatStore.getState().fetchConversations();
     useChatStore.getState().fetchUnreadCounts();
     useTaskStore.getState().fetchTasks();
-    // Agents bootstrap sequence:
-    //   1. refreshProcessStatuses — populate local `processStatus` from Rust
-    //      so we know which bridges are actually running on this machine.
-    //   2. fetchAgents — pull the backend's view (may include stale
-    //      `online: true` from last session's ExecutorRegistry entries).
-    //   3. reconcileStaleExecutors — any agent the server thinks is online
-    //      that has no local bridge is stale; call markAgentOffline. The
-    //      backend then broadcasts `agent_status_changed online: false`,
-    //      which the presence store applies to clear any leftover green dots.
-    const agentStore = useAgentStore.getState();
-    agentStore
-      .refreshProcessStatuses()
-      .then(() => agentStore.fetchAgents())
-      .then(() => agentStore.reconcileStaleExecutors())
-      .catch((e) =>
-        console.warn("[useWebSocket] agent bootstrap failed", e)
-      );
+    syncAgents("initial");
 
     return () => {
       unsubReconnect();
