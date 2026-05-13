@@ -23,6 +23,14 @@ const STALE_STREAM_MS = 75_000;
 const MAX_STREAM_THOUGHTS = 6;
 /** Don't preserve trivial fragments (single tokens, partial words). */
 const MIN_THOUGHT_CHARS = 12;
+const FINAL_DELIVERY_PHASE_DETAILS = new Set([
+  "send message",
+  "sending message",
+  "complete task",
+  "completing task",
+  "fail task",
+  "failing task",
+]);
 
 /**
  * Grace period for signal-originated "thinking" bubbles. InstantAgentSignal
@@ -69,6 +77,16 @@ function phaseLabel(phase: StreamPhase, detail?: string): string {
     waiting: "Waiting for turn",
   };
   return labels[phase] ?? phase;
+}
+
+function isFinalDeliveryToolPhase(phase: StreamPhase, detail?: string): boolean {
+  if (phase !== "tool_call" || !detail) return false;
+  const normalized = detail
+    .trim()
+    .toLowerCase()
+    .replace(/[-_]/g, " ")
+    .replace(/[.…]+$/g, "");
+  return FINAL_DELIVERY_PHASE_DETAILS.has(normalized);
 }
 
 function clearPendingSignal(convId: string) {
@@ -281,16 +299,18 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
       // replacing Agent A's "writing" stream snapshots A's content into B's thoughts.
       const phaseChanged = !isNewStream && existing?.phase === "writing" && phase !== "writing";
       if (phaseChanged) {
-        const newPortion = rawCurrent.startsWith(thoughtPrefix)
-          ? rawCurrent.slice(thoughtPrefix.length)
-          : rawCurrent;
-        const trimmed = newPortion.trim();
-        if (
-          trimmed &&
-          trimmed.length >= MIN_THOUGHT_CHARS &&
-          trimmed !== thoughts[thoughts.length - 1]
-        ) {
-          thoughts = [...thoughts.slice(-(MAX_STREAM_THOUGHTS - 1)), trimmed];
+        if (!isFinalDeliveryToolPhase(phase, phaseDetail)) {
+          const newPortion = rawCurrent.startsWith(thoughtPrefix)
+            ? rawCurrent.slice(thoughtPrefix.length)
+            : rawCurrent;
+          const trimmed = newPortion.trim();
+          if (
+            trimmed &&
+            trimmed.length >= MIN_THOUGHT_CHARS &&
+            trimmed !== thoughts[thoughts.length - 1]
+          ) {
+            thoughts = [...thoughts.slice(-(MAX_STREAM_THOUGHTS - 1)), trimmed];
+          }
         }
         thoughtPrefix = rawCurrent;
       }
