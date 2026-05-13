@@ -1,5 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, User, UserPlus, Loader2, MessageCircle, UserMinus, ShieldOff } from "lucide-react";
+import {
+  Search,
+  User,
+  UserPlus,
+  Loader2,
+  MessageCircle,
+  UserMinus,
+  ShieldOff,
+  X,
+  Info,
+  Bot,
+  AtSign,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +25,7 @@ import { useNavStore } from "../stores/navStore";
 
 type Segment = "friends" | "requests" | "sent";
 const SEGMENTS: Segment[] = ["friends", "requests", "sent"];
+type FriendProfileSection = "profile" | "agents" | "connection";
 
 function otherParticipant(connection: api.UserConnection, currentUserId?: string) {
   return connection.requesterId === currentUserId ? connection.addressee : connection.requester;
@@ -45,18 +58,24 @@ function makeHandle(person?: api.Participant) {
   return fallback ? `@${fallback}` : "@friend";
 }
 
-function formatFriendsSince(connection: api.UserConnection) {
-  const value = connection.connectedAt ?? connection.respondedAt;
-  if (!value) return "Friend on Agentgram";
+function formatDateTime(value?: string) {
+  if (!value) return "—";
 
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Friend on Agentgram";
+  if (Number.isNaN(date.getTime())) return "—";
 
-  return `Friends since ${new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     year: "numeric",
-  }).format(date)}`;
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function metadataString(person: api.Participant | undefined, key: string) {
+  const value = person?.metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 export function FriendsView() {
@@ -84,6 +103,7 @@ export function FriendsView() {
   const [searching, setSearching] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -130,6 +150,20 @@ export function FriendsView() {
   );
 
   const currentList = segment === "requests" ? received : segment === "sent" ? sent : friends;
+  const selectedConnection = selectedConnectionId
+    ? connections.find((c) => c.id === selectedConnectionId && c.status === "accepted") ?? null
+    : null;
+  const lastSelectedConnectionRef = useRef<api.UserConnection | null>(null);
+  if (selectedConnection) lastSelectedConnectionRef.current = selectedConnection;
+  const displayConnection = selectedConnection ?? lastSelectedConnectionRef.current;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && selectedConnectionId) setSelectedConnectionId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedConnectionId]);
 
   const updateSearchResult = (participantId: string, patch: Partial<api.Participant>) => {
     setPeople((rows) => rows.map((p) => (p.id === participantId ? { ...p, ...patch } : p)));
@@ -301,6 +335,7 @@ export function FriendsView() {
                   busy={busyId === connection.id}
                   onRevoke={() => handleRevoke(connection)}
                   onMessage={() => handleMessage(connection)}
+                  onOpenProfile={() => setSelectedConnectionId(connection.id)}
                 />
               ))}
             </div>
@@ -323,6 +358,16 @@ export function FriendsView() {
           )}
         </section>
       </div>
+
+      <FriendProfileDrawer
+        open={!!selectedConnection}
+        connection={displayConnection}
+        currentUserId={currentUserId}
+        busy={!!selectedConnection && busyId === selectedConnection.id}
+        onClose={() => setSelectedConnectionId(null)}
+        onMessage={() => selectedConnection && handleMessage(selectedConnection)}
+        onUnfriend={() => selectedConnection && handleRevoke(selectedConnection)}
+      />
     </div>
   );
 }
@@ -380,19 +425,32 @@ function FriendRow({
   busy,
   onRevoke,
   onMessage,
+  onOpenProfile,
 }: {
   connection: api.UserConnection;
   currentUserId?: string;
   busy: boolean;
   onRevoke: () => void;
   onMessage: () => void;
+  onOpenProfile: () => void;
 }) {
   const person = otherParticipant(connection, currentUserId);
   const handle = makeHandle(person);
-  const bio = person?.description || connection.message || formatFriendsSince(connection);
+  const bio = person?.description || connection.message;
 
   return (
-    <div className="flex items-start gap-3 px-4 py-3.5">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpenProfile}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpenProfile();
+        }
+      }}
+      className="flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+    >
       <Avatar className="h-11 w-11 shrink-0">
         {person?.avatarUrl && <AvatarImage src={person.avatarUrl} />}
         <AvatarFallback>{initials(person?.displayName)}</AvatarFallback>
@@ -408,14 +466,20 @@ function FriendRow({
           ) : (
             <div className="flex shrink-0 items-center gap-1.5">
               <button
-                onClick={onMessage}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMessage();
+                }}
                 className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-80"
                 title={`Message ${person?.displayName ?? "friend"}`}
               >
                 <MessageCircle className="h-4 w-4" />
               </button>
               <button
-                onClick={onRevoke}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRevoke();
+                }}
                 className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card transition-colors hover:bg-muted"
                 title={`Unfriend ${person?.displayName ?? "friend"}`}
               >
@@ -424,8 +488,361 @@ function FriendRow({
             </div>
           )}
         </div>
-        <p className="mt-1 line-clamp-2 text-sm text-foreground/80">{bio}</p>
+        {bio && <p className="mt-1 line-clamp-2 text-sm text-foreground/80">{bio}</p>}
       </div>
+    </div>
+  );
+}
+
+function FriendProfileDrawer({
+  open,
+  connection,
+  currentUserId,
+  busy,
+  onClose,
+  onMessage,
+  onUnfriend,
+}: {
+  open: boolean;
+  connection: api.UserConnection | null;
+  currentUserId?: string;
+  busy: boolean;
+  onClose: () => void;
+  onMessage: () => void;
+  onUnfriend: () => void;
+}) {
+  const [activeSection, setActiveSection] = useState<FriendProfileSection>("profile");
+
+  useEffect(() => {
+    if (open) setActiveSection("profile");
+  }, [open, connection?.id]);
+
+  if (!connection) return null;
+
+  const person = otherParticipant(connection, currentUserId);
+  if (!person) return null;
+
+  const handle = makeHandle(person);
+  const subtitle = person.description || "No bio yet.";
+  const sections: Array<{ value: FriendProfileSection; label: string; icon: typeof User }> = [
+    { value: "profile", label: "Profile", icon: User },
+    { value: "agents", label: "Shared Agents", icon: Bot },
+    { value: "connection", label: "Connection", icon: Info },
+  ];
+
+  return (
+    <>
+      <div
+        className={cn(
+          "fixed inset-0 z-40 bg-black/20 transition-opacity duration-200",
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        )}
+        onClick={onClose}
+      />
+      <div
+        className={cn(
+          "fixed right-0 top-0 z-50 h-full w-[640px] max-w-[85vw] overflow-hidden border-l border-border bg-card shadow-2xl",
+          "transition-transform duration-300 ease-out",
+          open ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        <div className="flex h-full">
+          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-muted/30 py-3">
+            <Avatar className="mb-2 h-8 w-8 rounded-lg">
+              {person.avatarUrl && <AvatarImage src={person.avatarUrl} className="rounded-lg" displaySize={32} />}
+              <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-semibold text-primary">
+                {initials(person.displayName)}
+              </AvatarFallback>
+            </Avatar>
+
+            <div className="mb-1 h-px w-6 bg-border" />
+
+            {sections.map((section) => (
+              <button
+                key={section.value}
+                onClick={() => setActiveSection(section.value)}
+                className={cn(
+                  "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
+                  activeSection === section.value
+                    ? "bg-primary/10 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+                title={section.label}
+              >
+                <section.icon className="h-4 w-4" />
+              </button>
+            ))}
+
+            <button
+              onClick={onClose}
+              className="mt-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              title="Close"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
+              <Avatar className="h-10 w-10 rounded-lg">
+                {person.avatarUrl && <AvatarImage src={person.avatarUrl} className="rounded-lg" displaySize={40} />}
+                <AvatarFallback className="rounded-lg bg-primary/10 text-sm font-semibold text-primary">
+                  {initials(person.displayName)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold">{person.displayName}</p>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{handle}</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                ) : (
+                  <>
+                    <Button size="sm" onClick={onMessage}>
+                      <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+                      Message
+                    </Button>
+                    <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onUnfriend}>
+                      <UserMinus className="mr-1.5 h-3.5 w-3.5" />
+                      Unfriend
+                    </Button>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {activeSection === "profile" && (
+              <FriendProfileSection person={person} handle={handle} subtitle={subtitle} />
+            )}
+
+            {activeSection === "agents" && (
+              <FriendAgentsSection friend={person} />
+            )}
+
+            {activeSection === "connection" && (
+              <FriendConnectionSection connection={connection} person={person} />
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function FriendProfileSection({
+  person,
+  handle,
+  subtitle,
+}: {
+  person: api.Participant;
+  handle: string;
+  subtitle: string;
+}) {
+  const location = metadataString(person, "location");
+  const pronouns = metadataString(person, "pronouns");
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-6">
+      <ProfileSectionBlock title="Profile">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="flex items-start gap-4">
+            <Avatar className="h-20 w-20 rounded-2xl">
+              {person.avatarUrl && <AvatarImage src={person.avatarUrl} className="rounded-2xl" displaySize={80} />}
+              <AvatarFallback className="rounded-2xl bg-primary/10 text-xl font-semibold text-primary">
+                {initials(person.displayName)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="truncate text-xl font-semibold">{person.displayName}</h2>
+                <Badge variant={person.online ? "secondary" : "outline"} className={person.online ? "bg-success/10 text-success" : ""}>
+                  {person.online ? "Online" : "Friend"}
+                </Badge>
+              </div>
+              <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <AtSign className="h-3.5 w-3.5" />
+                {handle.replace(/^@/, "")}
+              </div>
+              <p className="mt-3 text-sm leading-relaxed text-foreground/80">{subtitle}</p>
+            </div>
+          </div>
+        </div>
+      </ProfileSectionBlock>
+
+      <ProfileSectionBlock title="Details">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <FriendDetailRow label="Type" value="Human" />
+          <FriendDetailRow label="Handle" value={handle} />
+          <FriendDetailRow label="Timezone" value={person.timezone || "Not shared"} />
+          {pronouns && <FriendDetailRow label="Pronouns" value={pronouns} />}
+          {location && <FriendDetailRow label="Location" value={location} />}
+          <FriendDetailRow label="Participant ID" value={<code className="font-mono text-xs">{person.id}</code>} />
+        </div>
+      </ProfileSectionBlock>
+    </div>
+  );
+}
+
+function FriendAgentsSection({ friend }: { friend: api.Participant }) {
+  const [listings, setListings] = useState<api.DirectoryListing[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api.listFriendAgents(friend.id)
+      .then((response) => {
+        if (!cancelled) setListings(response.listings ?? []);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load shared agents");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [friend.id]);
+
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-4">
+      <ProfileSectionBlock title="Shared Agents">
+        {loading ? (
+          <div className="flex items-center gap-2 rounded-lg border border-border p-4 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading shared agents...
+          </div>
+        ) : error ? (
+          <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+            {error}
+          </div>
+        ) : listings.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            {friend.displayName} has not shared any agents with friends yet.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {listings.map((listing) => {
+              const listedAgent = listing.agent;
+              const categories = listing.categories ?? [];
+              const tags = listing.tags ?? [];
+              return (
+                <div key={listing.id} className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <Avatar className="h-11 w-11 rounded-lg">
+                      {listedAgent?.avatarUrl && (
+                        <AvatarImage src={listedAgent.avatarUrl} className="rounded-lg" displaySize={44} />
+                      )}
+                      <AvatarFallback className="rounded-lg bg-primary/10 text-primary">
+                        <Bot className="h-4 w-4" />
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="truncate text-sm font-semibold">{listing.listingName}</h3>
+                        {listing.verified && <Badge variant="secondary">Verified</Badge>}
+                      </div>
+                      {(listing.listingDescription || listedAgent?.description) && (
+                        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+                          {listing.listingDescription || listedAgent?.description}
+                        </p>
+                      )}
+                      {(categories.length > 0 || tags.length > 0) && (
+                        <div className="mt-3 flex flex-wrap gap-1.5">
+                          {[...categories, ...tags].slice(0, 6).map((label) => (
+                            <Badge key={label} variant="outline" className="capitalize">
+                              {label}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <div className="rounded-md bg-muted/50 px-2 py-1.5">
+                      Rating: {listing.ratingCount > 0 ? `${listing.ratingAvg.toFixed(1)} (${listing.ratingCount})` : "Unrated"}
+                    </div>
+                    <div className="rounded-md bg-muted/50 px-2 py-1.5">
+                      Monthly tasks: {listing.monthlyTasksCompleted}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </ProfileSectionBlock>
+    </div>
+  );
+}
+
+function FriendConnectionSection({
+  connection,
+  person,
+}: {
+  connection: api.UserConnection;
+  person: api.Participant;
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto p-5 space-y-6">
+      <ProfileSectionBlock title="Connection">
+        <div className="rounded-lg border border-border bg-card p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Badge variant="secondary" className="bg-success/10 text-success">
+              Accepted
+            </Badge>
+            <span className="text-sm text-muted-foreground">You and {person.displayName} are friends.</span>
+          </div>
+          <FriendDetailRow label="Connected" value={formatDateTime(connection.connectedAt ?? connection.respondedAt)} />
+          <FriendDetailRow label="Requested" value={formatDateTime(connection.requestedAt ?? connection.insertedAt)} />
+          <FriendDetailRow label="Last updated" value={formatDateTime(connection.updatedAt)} />
+          <FriendDetailRow label="Connection ID" value={<code className="font-mono text-xs">{connection.id}</code>} />
+        </div>
+      </ProfileSectionBlock>
+
+      {connection.message && (
+        <ProfileSectionBlock title="Request note">
+          <div className="rounded-lg border border-border bg-card p-4 text-sm text-foreground/80">
+            {connection.message}
+          </div>
+        </ProfileSectionBlock>
+      )}
+    </div>
+  );
+}
+
+function ProfileSectionBlock({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {title}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function FriendDetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-b border-border py-2 last:border-b-0">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="min-w-0 truncate text-right text-sm">{value}</span>
     </div>
   );
 }
