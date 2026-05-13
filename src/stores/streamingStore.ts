@@ -33,18 +33,16 @@ const FINAL_DELIVERY_PHASE_DETAILS = new Set([
 ]);
 
 /**
- * Grace period for signal-originated "thinking" bubbles. InstantAgentSignal
- * fires ~50ms after send, but many agents get hushed/filtered 1-3s later —
- * causing a visible flash. Buffer signal streams for this duration before
- * making them visible. If cancelled within the window, the user never sees
- * the bubble. Real bridge streams (non-signal) bypass the grace period.
+ * Signal-originated "thinking" bubbles are purely speculative — the agent
+ * hasn't started real work yet. Suppress them entirely and let the real
+ * bridge/hosted stream provide the indicator when processing actually begins.
+ * Signal "queued" and "waiting" phases still pass through (useful feedback
+ * for offline/waiting agents).
+ *
+ * Previously we buffered signal "thinking" streams behind an 800ms grace
+ * period, but agent triage routinely takes >800ms, so the bubble appeared
+ * regardless — defeating the purpose. Dropping them entirely is cleaner.
  */
-const SIGNAL_GRACE_MS = 800;
-
-// Pending signal streams waiting for their grace period to expire.
-// Kept outside Zustand state to avoid triggering re-renders while pending.
-const _pendingSignals: Record<string, ActiveStream> = {};
-const _graceTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 
 interface StreamEventInput {
   streamId: string;
@@ -89,19 +87,11 @@ function isFinalDeliveryToolPhase(phase: StreamPhase, detail?: string): boolean 
   return FINAL_DELIVERY_PHASE_DETAILS.has(normalized);
 }
 
-function clearPendingSignal(convId: string) {
-  clearTimeout(_graceTimers[convId]);
-  delete _graceTimers[convId];
-  delete _pendingSignals[convId];
-}
-
 export const useStreamingStore = create<StreamingState>((set, get) => ({
   streams: {},
   _lastUpdate: {},
 
   clearStream: (conversationId) => {
-    // Also clear any pending signal that hasn't been promoted yet
-    clearPendingSignal(conversationId);
     set((s) => {
       const next = { ...s.streams };
       const nextTs = { ...s._lastUpdate };
@@ -112,11 +102,6 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
   },
 
   clearStreamBySender: (conversationId, senderId) => {
-    // Clear pending signal if sender matches
-    const pending = _pendingSignals[conversationId];
-    if (pending && pending.senderId === senderId) {
-      clearPendingSignal(conversationId);
-    }
     const active = get().streams[conversationId];
     if (active && active.senderId === senderId) {
       get().clearStream(conversationId);
@@ -124,13 +109,6 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
   },
 
   clearStreamByStreamId: (streamId) => {
-    // Check pending signals first
-    for (const [convId, pending] of Object.entries(_pendingSignals)) {
-      if (pending.streamId === streamId) {
-        clearPendingSignal(convId);
-        return;
-      }
-    }
     set((s) => {
       for (const [convId, stream] of Object.entries(s.streams)) {
         if (stream.streamId === streamId) {
@@ -160,11 +138,6 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
     const phaseDetail = input.phaseDetail;
 
     if (status === "cancelled") {
-      // Clear pending signal if sender matches
-      const pending = _pendingSignals[convId];
-      if (pending && (!pending.senderId || pending.senderId === senderId)) {
-        clearPendingSignal(convId);
-      }
       // Only clear if sender matches — prevents cancelling agent A's stream
       // when agent B's (irrelevant) stream is cancelled.
       const active = get().streams[convId];
@@ -175,7 +148,6 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
     }
 
     if (status === "complete") {
-      clearPendingSignal(convId);
       const existing = get().streams[convId];
       if (!existing) return;
       set((s) => ({
@@ -203,47 +175,13 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
 
     // started or streaming
 
-    // Grace period: signal-originated "thinking" bubbles are speculative —
-    // the agent might get hushed 1-3s later. Buffer them before making
-    // visible. Real bridge streams and non-thinking phases show immediately.
+    // Signal-originated "thinking" bubbles are speculative — the agent hasn't
+    // started real work yet. Suppress them entirely. The real bridge/hosted
+    // stream will create the bubble when processing actually begins. Signal
+    // "queued" and "waiting" phases still pass through.
     const isSignalStream = streamId.startsWith("signal:");
-    const isInitialThinking = phase === "thinking" && !input.content;
-    const hasNoVisibleStream = !get().streams[convId];
-
-    if (isSignalStream && isInitialThinking && hasNoVisibleStream && status === "started") {
-      // Buffer the signal — promote to visible after grace period
-      const pendingStream: ActiveStream = {
-        streamId,
-        senderId,
-        senderName,
-        content: "",
-        phase,
-        phaseDetail,
-        recentSteps: [],
-        thoughts: [],
-        thoughtPrefix: "",
-        lastUpdateAt: Date.now(),
-      };
-      _pendingSignals[convId] = pendingStream;
-      clearTimeout(_graceTimers[convId]);
-      _graceTimers[convId] = setTimeout(() => {
-        // Promote: only if still the same pending signal
-        if (_pendingSignals[convId]?.streamId === streamId) {
-          delete _pendingSignals[convId];
-          delete _graceTimers[convId];
-          set((s) => ({
-            streams: { ...s.streams, [convId]: pendingStream },
-            _lastUpdate: { ...s._lastUpdate, [convId]: Date.now() },
-          }));
-        }
-      }, SIGNAL_GRACE_MS);
+    if (isSignalStream && phase === "thinking") {
       return;
-    }
-
-    // Non-signal event or agent started real work — clear any pending grace
-    // and show the stream immediately.
-    if (_pendingSignals[convId]) {
-      clearPendingSignal(convId);
     }
 
     set((s) => {
