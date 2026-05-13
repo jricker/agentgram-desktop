@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import * as api from "../lib/api";
 import { ws } from "../services/websocket";
+import { useAuthStore } from "./authStore";
 
 interface FriendState {
   connections: api.UserConnection[];
@@ -24,6 +25,17 @@ function extractConnection(payload: Record<string, unknown>) {
   return payload.connection as api.UserConnection | undefined;
 }
 
+function isNotFoundError(error: unknown) {
+  return typeof error === "object" && error !== null && "status" in error
+    && (error as { status?: number }).status === 404;
+}
+
+function incomingPendingCount(connections: api.UserConnection[]) {
+  const currentUserId = useAuthStore.getState().participant?.id;
+  if (!currentUserId) return 0;
+  return connections.filter((c) => c.status === "pending" && c.addresseeId === currentUserId).length;
+}
+
 export const useFriendStore = create<FriendState>((set, get) => ({
   connections: [],
   loading: false,
@@ -33,7 +45,14 @@ export const useFriendStore = create<FriendState>((set, get) => ({
     set({ loading: true });
     try {
       const response = await api.listFriends();
-      set({ connections: response.connections ?? [] });
+      const connections = response.connections ?? [];
+      set({ connections, pendingCount: incomingPendingCount(connections) });
+    } catch (e) {
+      if (isNotFoundError(e)) {
+        set({ connections: [], pendingCount: 0 });
+      } else {
+        console.warn("[friends] fetch connections failed", e);
+      }
     } finally {
       set({ loading: false });
     }
@@ -44,7 +63,21 @@ export const useFriendStore = create<FriendState>((set, get) => ({
       const response = await api.fetchFriendPendingCount();
       set({ pendingCount: response.count ?? 0 });
     } catch (e) {
-      console.warn("[friends] pending count failed", e);
+      if (isNotFoundError(e)) {
+        try {
+          const response = await api.listFriends();
+          const connections = response.connections ?? [];
+          set({ connections, pendingCount: incomingPendingCount(connections) });
+        } catch (fallbackError) {
+          if (isNotFoundError(fallbackError)) {
+            set({ pendingCount: incomingPendingCount(get().connections) });
+          } else {
+            console.warn("[friends] pending count fallback failed", fallbackError);
+          }
+        }
+      } else {
+        console.warn("[friends] pending count failed", e);
+      }
     }
   },
 
