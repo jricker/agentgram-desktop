@@ -110,9 +110,12 @@ export function Dashboard() {
     for (let i = 0; i < stoppedWithKeys.length; i++) {
       try {
         await startAgent(stoppedWithKeys[i].agent.id);
-        // Stagger startup to avoid thundering-herd on the backend DB pool
+        // Stagger startup to avoid thundering-herd on the backend.
+        // Each agent registration triggers warmup + broadcast + backfill;
+        // 3s gap lets the previous agent's async work settle before the
+        // next one starts.
         if (i < stoppedWithKeys.length - 1) {
-          await new Promise((r) => setTimeout(r, 2000));
+          await new Promise((r) => setTimeout(r, 3000));
         }
       } catch {
         // continue starting others
