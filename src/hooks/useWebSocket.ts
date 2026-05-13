@@ -6,6 +6,7 @@ import { useStreamingStore } from "../stores/streamingStore";
 import { useTaskStore } from "../stores/taskStore";
 import { useAgentStore } from "../stores/agentStore";
 import { useMemoryStore } from "../stores/memoryStore";
+import { useFriendStore } from "../stores/friendStore";
 import { ws } from "../services/websocket";
 
 /**
@@ -34,6 +35,7 @@ export function useWebSocket() {
     const unsubTasks = useTaskStore.getState().initWsListeners();
     const unsubAgents = useAgentStore.getState().initWsListeners();
     const unsubMemory = useMemoryStore.getState().initWsListeners();
+    const unsubFriends = useFriendStore.getState().initWsListeners();
 
     // Re-join whichever conversation is currently open whenever the socket
     // comes up. Fixes a missed-message bug where `disconnect()` clears the
@@ -90,6 +92,7 @@ export function useWebSocket() {
       console.log("[ws] reconnected → resyncing");
       useChatStore.getState().fetchConversations();
       useChatStore.getState().fetchUnreadCounts();
+      useFriendStore.getState().fetchPendingCount();
       const activeId = useChatStore.getState().activeConversationId;
       if (activeId) useChatStore.getState().fetchMessages(activeId);
       syncAgents("reconnect");
@@ -109,6 +112,7 @@ export function useWebSocket() {
     useChatStore.getState().fetchConversations();
     useChatStore.getState().fetchUnreadCounts();
     useTaskStore.getState().fetchTasks();
+    useFriendStore.getState().fetchPendingCount();
     syncAgents("initial");
 
     return () => {
@@ -119,6 +123,7 @@ export function useWebSocket() {
       unsubTasks();
       unsubAgents();
       unsubMemory();
+      unsubFriends();
       ws.disconnect();
     };
   }, [token, participantId]);

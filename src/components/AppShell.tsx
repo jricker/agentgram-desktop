@@ -6,6 +6,7 @@ import {
   Zap,
   FileText,
   LayoutDashboard,
+  Users,
   Sun,
   Moon,
   Monitor,
@@ -20,6 +21,7 @@ import { useTaskStore, countActiveTasks } from "../stores/taskStore";
 import { useNavStore } from "../stores/navStore";
 import { usePresenceStore } from "../stores/presenceStore";
 import { useThemeStore } from "../stores/themeStore";
+import { useFriendStore } from "../stores/friendStore";
 import { AgentBusyToast } from "./AgentBusyToast";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dashboard } from "./Dashboard";
@@ -28,8 +30,9 @@ import { TasksView } from "./tasks/TasksView";
 import { TemplatesView } from "./templates/TemplatesView";
 import { CanvasView } from "./canvas/CanvasView";
 import { Profile } from "./Profile";
+import { FriendsView } from "./FriendsView";
 
-type View = "chat" | "tasks" | "agents" | "templates" | "canvas";
+type View = "chat" | "tasks" | "agents" | "friends" | "templates" | "canvas";
 
 export function AppShell() {
   const view = useNavStore((s) => s.view);
@@ -68,6 +71,8 @@ export function AppShell() {
         <MessagesView />
       ) : view === "tasks" ? (
         <TasksView onOpenConversation={handleOpenConversation} />
+      ) : view === "friends" ? (
+        <FriendsView />
       ) : view === "templates" ? (
         <TemplatesView />
       ) : view === "canvas" ? (
@@ -127,6 +132,7 @@ function LeftRail({
   const participant = useAuthStore((s) => s.participant);
   const logout = useAuthStore((s) => s.logout);
   const connected = usePresenceStore((s) => s.connected);
+  const pendingFriends = useFriendStore((s) => s.pendingCount);
 
   // Agent online/total — "running" is the only fully-up state; "starting"
   // and "stalled" keep a process alive but it's not actually serving, so
@@ -180,6 +186,13 @@ function LeftRail({
           onClick={() => onChange("tasks")}
           badge={activeTaskCount > 0 ? activeTaskCount : undefined}
           badgeColor="destructive"
+        />
+        <RailButton
+          icon={Users}
+          label="Friends"
+          active={view === "friends"}
+          onClick={() => onChange("friends")}
+          badge={pendingFriends > 0 ? pendingFriends : undefined}
         />
         <RailButton
           icon={Bot}

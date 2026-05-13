@@ -765,10 +765,16 @@ export interface SkillAssignment {
   updatedAt: string;
 }
 
+export type UserConnectionStatus = "none" | "pending" | "accepted" | "rejected" | "revoked" | "blocked";
+
 export interface Participant {
   id: string;
   displayName: string;
   email?: string;
+  maskedEmail?: string;
+  connectionId?: string;
+  connectionStatus?: UserConnectionStatus;
+  canRequest?: boolean;
   type: "human" | "agent";
   avatarUrl?: string;
   online?: boolean;
@@ -1087,6 +1093,60 @@ export async function createConversationRest(attrs: {
 
 export async function searchPeople(query: string): Promise<{ people: Participant[] }> {
   return request(`/api/people/search?q=${encodeURIComponent(query)}`);
+}
+
+export interface UserConnection {
+  id: string;
+  requesterId: string;
+  addresseeId: string;
+  status: Exclude<UserConnectionStatus, "none">;
+  message?: string;
+  requestedAt?: string;
+  respondedAt?: string;
+  connectedAt?: string;
+  blockedById?: string;
+  requester?: Participant;
+  addressee?: Participant;
+  blockedBy?: { id: string; displayName: string; avatarUrl?: string };
+  insertedAt: string;
+  updatedAt: string;
+}
+
+export async function listFriends(): Promise<{ connections: UserConnection[] }> {
+  return request("/api/friends");
+}
+
+export async function fetchFriendPendingCount(): Promise<{ count: number }> {
+  return request("/api/friends/pending-count");
+}
+
+export async function requestFriend(participantId: string, message?: string): Promise<{ connection: UserConnection }> {
+  return request("/api/friends", {
+    method: "POST",
+    body: JSON.stringify({ participantId, ...(message?.trim() ? { message: message.trim() } : {}) }),
+  });
+}
+
+export async function respondFriend(
+  id: string,
+  decision: "accepted" | "rejected"
+): Promise<{ connection: UserConnection }> {
+  return request(`/api/friends/${id}/respond`, {
+    method: "POST",
+    body: JSON.stringify({ decision }),
+  });
+}
+
+export async function revokeFriend(id: string): Promise<{ connection: UserConnection }> {
+  return request(`/api/friends/${id}`, { method: "DELETE" });
+}
+
+export async function blockFriend(id: string): Promise<{ connection: UserConnection }> {
+  return request(`/api/friends/${id}/block`, { method: "POST" });
+}
+
+export async function listFriendAgents(friendId: string): Promise<{ listings: DirectoryListing[] }> {
+  return request(`/api/friends/${friendId}/agents`);
 }
 
 // --- File attachments ---

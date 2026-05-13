@@ -92,6 +92,9 @@ class WebSocketService {
       "human_status_changed",
       "presence_snapshot",
       "agent_health_updated",
+      "friend_request",
+      "friend_request_responded",
+      "friend_connection_removed",
       // Task lifecycle — drives live task card status + progress.
       "task_created",
       "task_updated",

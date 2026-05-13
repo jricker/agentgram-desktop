@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentStore } from "../../stores/agentStore";
 import { useChatStore } from "../../stores/chatStore";
+import { useFriendStore } from "../../stores/friendStore";
+import { useAuthStore } from "../../stores/authStore";
 import * as api from "../../lib/api";
 import type { Agent, Participant } from "../../lib/api";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -17,6 +19,7 @@ import {
   MessageCircle,
   Users,
   User,
+  UserPlus,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 
@@ -37,6 +40,10 @@ export function NewConversationDialog({ onClose }: Props) {
   const conversations = useChatStore((s) => s.conversations);
   const createConversation = useChatStore((s) => s.createConversation);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const currentUserId = useAuthStore((s) => s.participant?.id);
+  const friendConnections = useFriendStore((s) => s.connections);
+  const fetchFriendConnections = useFriendStore((s) => s.fetchConnections);
+  const requestFriend = useFriendStore((s) => s.requestFriend);
 
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -47,6 +54,10 @@ export function NewConversationDialog({ onClose }: Props) {
   const [searchingPeople, setSearchingPeople] = useState(false);
   const [mode, setMode] = useState<Mode>("select");
   const searchTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  useEffect(() => {
+    fetchFriendConnections();
+  }, [fetchFriendConnections]);
 
   // Debounced people search
   useEffect(() => {
@@ -108,6 +119,38 @@ export function NewConversationDialog({ onClose }: Props) {
   }, [activeAgents, search]);
 
   const isGroup = selected.size > 1;
+
+  const getPersonConnection = useCallback(
+    (person: Participant) =>
+      friendConnections.find((c) => c.id === person.connectionId) ??
+      friendConnections.find(
+        (c) => c.requesterId === person.id || c.addresseeId === person.id
+      ),
+    [friendConnections]
+  );
+
+  const handleConnectPerson = useCallback(
+    async (person: Participant) => {
+      try {
+        const connection = await requestFriend(person.id);
+        setPeopleResults((rows) =>
+          rows.map((p) =>
+            p.id === person.id
+              ? {
+                  ...p,
+                  connectionId: connection?.id,
+                  connectionStatus: connection?.status ?? "pending",
+                  canRequest: false,
+                }
+              : p
+          )
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not send request");
+      }
+    },
+    [requestFriend]
+  );
 
   const toggleParticipant = useCallback((id: string) => {
     setSelected((prev) => {
@@ -345,7 +388,10 @@ export function NewConversationDialog({ onClose }: Props) {
                       key={person.id}
                       person={person}
                       isSelected={selected.has(person.id)}
-                      onClick={() => toggleParticipant(person.id)}
+                      connection={getPersonConnection(person)}
+                      currentUserId={currentUserId}
+                      onSelect={() => toggleParticipant(person.id)}
+                      onConnect={() => handleConnectPerson(person)}
                     />
                   ))}
                 </>
@@ -421,16 +467,32 @@ export function NewConversationDialog({ onClose }: Props) {
 function PersonRow({
   person,
   isSelected,
-  onClick,
+  connection,
+  currentUserId,
+  onSelect,
+  onConnect,
 }: {
   person: Participant;
   isSelected: boolean;
-  onClick: () => void;
+  connection?: api.UserConnection;
+  currentUserId?: string;
+  onSelect: () => void;
+  onConnect: () => void;
 }) {
+  const status = connection?.status ?? person.connectionStatus ?? "none";
+  const incoming = connection?.status === "pending" && connection.addresseeId === currentUserId;
+  const canChat = status === "accepted";
+  const canRequest = person.canRequest || status === "none" || status === "rejected" || status === "revoked";
+
   return (
     <button
-      onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50"
+      onClick={() => {
+        if (canChat) onSelect();
+      }}
+      className={cn(
+        "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors",
+        canChat ? "hover:bg-muted/50" : "cursor-default opacity-80"
+      )}
     >
       <Avatar className="h-8 w-8">
         {person.avatarUrl && <AvatarImage src={person.avatarUrl} />}
@@ -440,14 +502,32 @@ function PersonRow({
       </Avatar>
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{person.displayName}</p>
-        {person.email && (
-          <p className="truncate text-[11px] text-muted-foreground">{person.email}</p>
+        {(person.email || person.maskedEmail) && (
+          <p className="truncate text-[11px] text-muted-foreground">{person.email ?? person.maskedEmail}</p>
         )}
       </div>
-      {isSelected && (
-        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
-          <Check className="h-3 w-3 text-primary-foreground" />
-        </div>
+      {canChat ? (
+        isSelected && (
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-primary">
+            <Check className="h-3 w-3 text-primary-foreground" />
+          </div>
+        )
+      ) : canRequest ? (
+        <Button
+          size="sm"
+          className="h-7 px-2 text-xs"
+          onClick={(e) => {
+            e.stopPropagation();
+            onConnect();
+          }}
+        >
+          <UserPlus className="mr-1 h-3 w-3" />
+          Connect
+        </Button>
+      ) : (
+        <span className="rounded-full border border-border px-2 py-0.5 text-[11px] capitalize text-muted-foreground">
+          {incoming ? "respond in Friends" : status === "pending" ? "pending" : status}
+        </span>
       )}
     </button>
   );
