@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Search, User, UserPlus, Loader2, MessageCircle, ShieldOff } from "lucide-react";
+import { Search, User, UserPlus, Loader2, MessageCircle, UserMinus, ShieldOff } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,8 @@ import { useChatStore } from "../stores/chatStore";
 import { useFriendStore } from "../stores/friendStore";
 import { useNavStore } from "../stores/navStore";
 
-type Segment = "requests" | "friends" | "sent";
+type Segment = "friends" | "requests" | "sent";
+const SEGMENTS: Segment[] = ["friends", "requests", "sent"];
 
 function otherParticipant(connection: api.UserConnection, currentUserId?: string) {
   return connection.requesterId === currentUserId ? connection.addressee : connection.requester;
@@ -24,6 +25,38 @@ function initials(name?: string) {
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase())
     .join("") || "?";
+}
+
+function makeHandle(person?: api.Participant) {
+  const metadataHandle = person?.metadata?.handle;
+  const metadataUsername = person?.metadata?.username;
+  const explicitHandle =
+    typeof metadataHandle === "string" && metadataHandle.trim()
+      ? metadataHandle
+      : typeof metadataUsername === "string" && metadataUsername.trim()
+        ? metadataUsername
+        : undefined;
+
+  const fallback = (explicitHandle ?? person?.displayName)
+    ?.toLowerCase()
+    .replace(/^@/, "")
+    .replace(/[^a-z0-9]+/g, "")
+    .slice(0, 24);
+  return fallback ? `@${fallback}` : "@friend";
+}
+
+function formatFriendsSince(connection: api.UserConnection) {
+  const value = connection.connectedAt ?? connection.respondedAt;
+  if (!value) return "Friend on Agentgram";
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Friend on Agentgram";
+
+  return `Friends since ${new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date)}`;
 }
 
 export function FriendsView() {
@@ -45,7 +78,7 @@ export function FriendsView() {
     blockFriend,
   } = useFriendStore();
 
-  const [segment, setSegment] = useState<Segment>("requests");
+  const [segment, setSegment] = useState<Segment>("friends");
   const [search, setSearch] = useState("");
   const [people, setPeople] = useState<api.Participant[]>([]);
   const [searching, setSearching] = useState(false);
@@ -184,20 +217,17 @@ export function FriendsView() {
     <div className="flex h-full flex-col bg-background">
       <div className="border-b border-border px-6 py-4">
         <div className="flex items-center justify-between gap-4">
-          <div>
-            <h1 className="text-lg font-semibold">Friends</h1>
-            <p className="text-sm text-muted-foreground">Find people, respond to requests, and manage connected humans.</p>
-          </div>
+          <h1 className="text-lg font-semibold">Friends</h1>
           <Button variant="outline" size="sm" onClick={() => { fetchConnections(); fetchPendingCount(); }}>
             Refresh
           </Button>
         </div>
-        <div className="relative mt-4 max-w-xl">
+        <div className="relative mt-3 max-w-xl">
           <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search people by name or exact email..."
+            placeholder="Search people by name or email..."
             className="pl-9"
           />
         </div>
@@ -233,7 +263,7 @@ export function FriendsView() {
         )}
 
         <div className="mb-4 flex gap-2">
-          {(["requests", "friends", "sent"] as Segment[]).map((value) => {
+          {SEGMENTS.map((value) => {
             const count = value === "requests" ? pendingCount || received.length : value === "friends" ? friends.length : sent.length;
             return (
               <button
@@ -259,12 +289,25 @@ export function FriendsView() {
             </div>
           ) : currentList.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              {segment === "requests" ? "No friend requests." : segment === "friends" ? "No friends yet. Search above to connect." : "No sent requests."}
+              {segment === "friends" ? "No friends yet. Search above to connect." : segment === "requests" ? "No friend requests." : "No sent requests."}
+            </div>
+          ) : segment === "friends" ? (
+            <div className="divide-y divide-border">
+              {currentList.map((connection) => (
+                <FriendRow
+                  key={connection.id}
+                  connection={connection}
+                  currentUserId={currentUserId}
+                  busy={busyId === connection.id}
+                  onRevoke={() => handleRevoke(connection)}
+                  onMessage={() => handleMessage(connection)}
+                />
+              ))}
             </div>
           ) : (
             <div className="space-y-2">
               {currentList.map((connection) => (
-                <FriendConnectionCard
+                <ConnectionCard
                   key={connection.id}
                   connection={connection}
                   currentUserId={currentUserId}
@@ -274,7 +317,6 @@ export function FriendsView() {
                   onReject={() => handleRespond(connection.id, "rejected")}
                   onRevoke={() => handleRevoke(connection)}
                   onBlock={() => handleBlock(connection)}
-                  onMessage={() => handleMessage(connection)}
                 />
               ))}
             </div>
@@ -315,9 +357,6 @@ function PersonSearchRow({
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{person.displayName}</div>
-        {(person.email || person.maskedEmail) && (
-          <div className="truncate text-xs text-muted-foreground">{person.email ?? person.maskedEmail}</div>
-        )}
       </div>
       {busy ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -334,7 +373,65 @@ function PersonSearchRow({
   );
 }
 
-function FriendConnectionCard({
+/** X-style friend row with avatar, name/handle, bio, and icon action buttons */
+function FriendRow({
+  connection,
+  currentUserId,
+  busy,
+  onRevoke,
+  onMessage,
+}: {
+  connection: api.UserConnection;
+  currentUserId?: string;
+  busy: boolean;
+  onRevoke: () => void;
+  onMessage: () => void;
+}) {
+  const person = otherParticipant(connection, currentUserId);
+  const handle = makeHandle(person);
+  const bio = person?.description || connection.message || formatFriendsSince(connection);
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3.5">
+      <Avatar className="h-11 w-11 shrink-0">
+        {person?.avatarUrl && <AvatarImage src={person.avatarUrl} />}
+        <AvatarFallback>{initials(person?.displayName)}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold">{person?.displayName ?? "Unknown"}</div>
+            <div className="truncate text-xs text-muted-foreground">{handle}</div>
+          </div>
+          {busy ? (
+            <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+          ) : (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                onClick={onMessage}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-80"
+                title={`Message ${person?.displayName ?? "friend"}`}
+              >
+                <MessageCircle className="h-4 w-4" />
+              </button>
+              <button
+                onClick={onRevoke}
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card transition-colors hover:bg-muted"
+                title={`Unfriend ${person?.displayName ?? "friend"}`}
+              >
+                <UserMinus className="h-4 w-4 text-destructive" />
+              </button>
+            </div>
+          )}
+        </div>
+        <p className="mt-1 line-clamp-2 text-sm text-foreground/80">{bio}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Card for requests and sent segments */
+function ConnectionCard({
   connection,
   currentUserId,
   segment,
@@ -343,7 +440,6 @@ function FriendConnectionCard({
   onReject,
   onRevoke,
   onBlock,
-  onMessage,
 }: {
   connection: api.UserConnection;
   currentUserId?: string;
@@ -353,7 +449,6 @@ function FriendConnectionCard({
   onReject: () => void;
   onRevoke: () => void;
   onBlock: () => void;
-  onMessage: () => void;
 }) {
   const person = otherParticipant(connection, currentUserId);
   return (
@@ -381,11 +476,6 @@ function FriendConnectionCard({
             <Button size="sm" variant="ghost" className="text-destructive" onClick={onBlock}>
               <ShieldOff className="mr-1 h-3 w-3" />Block
             </Button>
-          </>
-        ) : segment === "friends" ? (
-          <>
-            <Button size="sm" onClick={onMessage}><MessageCircle className="mr-1 h-3 w-3" />Message</Button>
-            <Button size="sm" variant="outline" onClick={onRevoke}>Unfriend</Button>
           </>
         ) : (
           <Button size="sm" variant="outline" onClick={onRevoke}>Cancel request</Button>

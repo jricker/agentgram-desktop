@@ -779,6 +779,8 @@ export interface Participant {
   avatarUrl?: string;
   online?: boolean;
   timezone?: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
 }
 
 // --- Messaging types + endpoints ---
