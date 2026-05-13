@@ -260,17 +260,26 @@ export const useStreamingStore = create<StreamingState>((set, get) => ({
       // transcript-so-far). Reconstruct what it has emitted total: either
       // the incoming content if this event carries it, or `prefix + live
       // buffer` from the existing stream state.
+      //
+      // IMPORTANT: when a different stream replaces the current one, do NOT
+      // inherit the old stream's content — that belongs to a different agent.
       const rawCurrent = input.content !== undefined
         ? content
-        : existing
-          ? (existing.thoughtPrefix ?? "") + (existing.content ?? "")
-          : "";
+        : isNewStream
+          ? ""
+          : existing
+            ? (existing.thoughtPrefix ?? "") + (existing.content ?? "")
+            : "";
 
       // When phase transitions away from `writing`, snapshot the new portion
       // of the buffer (everything past `thoughtPrefix`) onto thoughts, then
       // advance the prefix so future writing events strip it cleanly. This
       // preserves prose the agent emitted before pivoting to a tool call.
-      const phaseChanged = existing?.phase === "writing" && phase !== "writing";
+      //
+      // Skip when isNewStream — a stream replacement is NOT a phase transition
+      // within the same stream. Without this guard, Agent B's "thinking" stream
+      // replacing Agent A's "writing" stream snapshots A's content into B's thoughts.
+      const phaseChanged = !isNewStream && existing?.phase === "writing" && phase !== "writing";
       if (phaseChanged) {
         const newPortion = rawCurrent.startsWith(thoughtPrefix)
           ? rawCurrent.slice(thoughtPrefix.length)
