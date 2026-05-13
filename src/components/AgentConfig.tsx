@@ -20,11 +20,15 @@ import {
   pauseAgentHosted,
   resumeAgentHosted,
   updateAgentHostedLimits,
+  getListingByAgent,
+  createDirectoryListing,
+  deleteDirectoryListing,
   type Connection,
   type AgentHealthDetail,
   type PulseData,
   type Agent,
   type AgentHostedLimits,
+  type DirectoryListing,
 } from "../lib/api";
 import { uploadProcessedBlob } from "../lib/imageProcessor";
 import { useFieldLimits } from "../lib/fieldLimits";
@@ -89,6 +93,8 @@ import {
   Play,
   Loader2,
   User,
+  Share2,
+  Globe2,
 } from "lucide-react";
 import {
   Dialog,
@@ -210,6 +216,13 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
         { value: "templates", label: "Templates", icon: LayoutTemplate },
         { value: "routines", label: "Routines", icon: Timer },
         { value: "canvas", label: "Canvas", icon: Palette },
+      ],
+    },
+    {
+      name: "Sharing",
+      sections: [
+        { value: "share", label: "Share Agent", icon: Share2 },
+        { value: "publish", label: "Publish to Directory", icon: Globe2 },
       ],
     },
     {
@@ -1044,6 +1057,18 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
           </div>
         )}
 
+        {activeSection === "share" && (
+          <div className="flex-1 overflow-y-auto p-5">
+            <ShareSection agent={agent} />
+          </div>
+        )}
+
+        {activeSection === "publish" && (
+          <div className="flex-1 overflow-y-auto p-5">
+            <PublishSection agent={agent} />
+          </div>
+        )}
+
         {activeSection === "pulse" && (
           <PulsePanel managed={managed} />
         )}
@@ -1051,6 +1076,333 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
         {activeSection === "health" && (
           <HealthPanel managed={managed} />
         )}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Share Section — copy invite-style identifier / link
+// ---------------------------------------------------------------------------
+
+function ShareSection({ agent }: { agent: Agent }) {
+  const [copied, setCopied] = useState<"id" | "message" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const canSystemShare =
+    typeof navigator !== "undefined" && typeof navigator.share === "function";
+
+  const shareMessage = `Connect with ${agent.displayName} on Agentgram!\n\nAgent ID: ${agent.id}`;
+
+  const copy = async (kind: "id" | "message", text: string) => {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard API unavailable (use HTTPS or copy manually).");
+      }
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      setError(null);
+      setTimeout(() => setCopied(null), 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't copy to clipboard.");
+    }
+  };
+
+  const handleSystemShare = async () => {
+    if (canSystemShare) {
+      try {
+        await navigator.share({
+          title: `Connect with ${agent.displayName}`,
+          text: shareMessage,
+        });
+      } catch (e) {
+        if (e instanceof Error && e.name !== "AbortError") {
+          setError(e.message);
+        }
+      }
+    } else {
+      await copy("message", shareMessage);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 rounded-lg p-3">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{error}
+        </div>
+      )}
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Share2 className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Share Agent</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Send this agent's identifier to someone so they can connect with it through the directory.
+        </p>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Agent ID</Label>
+          <div className="flex gap-2">
+            <Input value={agent.id} readOnly className="font-mono text-xs" />
+            <Button size="sm" variant="outline" onClick={() => copy("id", agent.id)}>
+              {copied === "id" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Share Message</Label>
+          <pre className="rounded-lg border bg-muted/40 p-2.5 text-xs font-mono whitespace-pre-wrap">
+            {shareMessage}
+          </pre>
+        </div>
+
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={() => copy("message", shareMessage)} className="flex-1">
+            {copied === "message" ? (
+              <><Check className="h-3.5 w-3.5 mr-1.5" /> Copied</>
+            ) : (
+              <><Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Message</>
+            )}
+          </Button>
+          <Button
+            size="sm"
+            onClick={handleSystemShare}
+            className="flex-1"
+            title={canSystemShare ? "Open native share sheet" : "Browser has no share sheet — falls back to copy"}
+          >
+            <Share2 className="h-3.5 w-3.5 mr-1.5" />
+            {canSystemShare ? "Share…" : "Copy to Share"}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Publish Section — list this agent in the public directory
+// ---------------------------------------------------------------------------
+
+const VISIBILITY_OPTIONS = ["public", "friends_only", "unlisted"] as const;
+const PREDEFINED_CATEGORIES = [
+  "coding", "research", "writing", "data-analysis", "devops", "qa", "design", "general",
+];
+
+function PublishSection({ agent }: { agent: Agent }) {
+  const [existing, setExisting] = useState<DirectoryListing | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [listingName, setListingName] = useState(agent.displayName);
+  const [description, setDescription] = useState(agent.description ?? "");
+  const [visibility, setVisibility] = useState<(typeof VISIBILITY_OPTIONS)[number]>("public");
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const [tags, setTags] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const found = await getListingByAgent(agent.id);
+        if (!cancelled) setExisting(found);
+      } catch (e) {
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Failed to load listing status");
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [agent.id]);
+
+  const toggleCategory = (cat: string) => {
+    setSelectedCategories((prev) =>
+      prev.includes(cat) ? prev.filter((c) => c !== cat) : [...prev, cat]
+    );
+  };
+
+  const handlePublish = async () => {
+    setError(null);
+    const name = listingName.trim();
+    if (!name) { setError("Listing name is required."); return; }
+    setBusy(true);
+    try {
+      const tagsList = tags.split(",").map((t) => t.trim()).filter(Boolean);
+      const listing = await createDirectoryListing({
+        agentId: agent.id,
+        listingName: name,
+        listingDescription: description.trim() || undefined,
+        visibility,
+        categories: selectedCategories.length > 0 ? selectedCategories : undefined,
+        tags: tagsList.length > 0 ? tagsList : undefined,
+      });
+      setExisting(listing);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to publish agent");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleUnpublish = async () => {
+    if (!existing) return;
+    if (!confirm("Remove this agent from the directory?")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteDirectoryListing(existing.id);
+      setExisting(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to remove listing");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" />Loading...
+      </div>
+    );
+  }
+
+  if (existing) {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border bg-card p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Globe2 className="h-4 w-4 text-green-500" />
+            <h3 className="text-sm font-semibold">Listed in Directory</h3>
+          </div>
+          <dl className="space-y-1.5 text-xs">
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Name</dt>
+              <dd className="font-medium truncate">{existing.listingName}</dd>
+            </div>
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Visibility</dt>
+              <dd className="font-medium capitalize">{existing.visibility.replace("_", " ")}</dd>
+            </div>
+            {existing.categories.length > 0 && (
+              <div className="flex justify-between gap-2">
+                <dt className="text-muted-foreground">Categories</dt>
+                <dd className="font-medium text-right">{existing.categories.join(", ")}</dd>
+              </div>
+            )}
+            <div className="flex justify-between gap-2">
+              <dt className="text-muted-foreground">Rating</dt>
+              <dd className="font-medium">
+                {existing.ratingCount > 0
+                  ? `${existing.ratingAvg.toFixed(1)} (${existing.ratingCount})`
+                  : "Unrated"}
+              </dd>
+            </div>
+          </dl>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleUnpublish}
+            disabled={busy}
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive w-full"
+          >
+            {busy ? (
+              <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Removing...</>
+            ) : (
+              "Remove from Directory"
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="flex items-center gap-2 text-xs text-destructive bg-destructive/10 rounded-lg p-3">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0" />{error}
+        </div>
+      )}
+
+      <div className="rounded-lg border bg-card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Globe2 className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Publish to Directory</h3>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Make this agent discoverable to other Agentgram users.
+        </p>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Listing Name *</Label>
+          <Input value={listingName} onChange={(e) => setListingName(e.target.value)} />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Description</Label>
+          <textarea
+            className="flex min-h-[72px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="What does this agent do?"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Visibility</Label>
+          <div className="flex gap-1.5 flex-wrap">
+            {VISIBILITY_OPTIONS.map((v) => (
+              <button
+                key={v}
+                onClick={() => setVisibility(v)}
+                className={cn(
+                  "rounded-full px-3 py-1 text-xs font-medium border capitalize transition-colors",
+                  visibility === v
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {v.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Categories</Label>
+          <div className="flex gap-1.5 flex-wrap">
+            {PREDEFINED_CATEGORIES.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => toggleCategory(cat)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-xs font-medium border transition-colors",
+                  selectedCategories.includes(cat)
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label className="text-xs">Tags (comma-separated)</Label>
+          <Input value={tags} onChange={(e) => setTags(e.target.value)} placeholder="e.g. python, async" />
+        </div>
+
+        <Button onClick={handlePublish} disabled={busy} className="w-full">
+          {busy ? (
+            <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Publishing...</>
+          ) : (
+            <><Globe2 className="mr-1.5 h-3.5 w-3.5" /> Publish</>
+          )}
+        </Button>
       </div>
     </div>
   );

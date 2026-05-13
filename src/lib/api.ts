@@ -1398,3 +1398,62 @@ export interface Routine {
   insertedAt: string;
   updatedAt: string;
 }
+
+// --- Directory ---
+
+export interface DirectoryListing {
+  id: string;
+  agentId: string;
+  visibility: "public" | "friends_only" | "unlisted";
+  listingName: string;
+  listingDescription?: string;
+  categories: string[];
+  tags: string[];
+  featured: boolean;
+  ratingAvg: number;
+  ratingCount: number;
+  monthlyTasksCompleted: number;
+  avgResponseTimeMs?: number;
+  verified: boolean;
+  agent?: Participant;
+  listedAt?: string;
+  insertedAt: string;
+  updatedAt: string;
+}
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export async function getListingByAgent(
+  agentId: string
+): Promise<DirectoryListing | null> {
+  if (!UUID_RE.test(agentId)) return null;
+  try {
+    const res = await request<{ listing: DirectoryListing }>(
+      `/api/directory/${agentId}`
+    );
+    return res.listing;
+  } catch (e) {
+    if ((e as { status?: number })?.status === 404) return null;
+    throw e;
+  }
+}
+
+export async function createDirectoryListing(data: {
+  agentId: string;
+  listingName: string;
+  listingDescription?: string;
+  visibility?: "public" | "friends_only" | "unlisted";
+  categories?: string[];
+  tags?: string[];
+}): Promise<DirectoryListing> {
+  const res = await request<{ listing: DirectoryListing }>("/api/directory", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return res.listing;
+}
+
+export async function deleteDirectoryListing(id: string): Promise<void> {
+  await request(`/api/directory/${id}`, { method: "DELETE" });
+}
