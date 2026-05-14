@@ -8,9 +8,14 @@ import {
   UserMinus,
   ShieldOff,
   X,
-  Info,
   Bot,
-  AtSign,
+  Sparkles,
+  Clock,
+  MapPin,
+  Globe,
+  Users,
+  Ban,
+  CalendarDays,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -22,10 +27,43 @@ import { useAuthStore } from "../stores/authStore";
 import { useChatStore } from "../stores/chatStore";
 import { useFriendStore } from "../stores/friendStore";
 import { useNavStore } from "../stores/navStore";
+import { usePresenceStore } from "../stores/presenceStore";
 
 type Segment = "friends" | "requests" | "sent";
 const SEGMENTS: Segment[] = ["friends", "requests", "sent"];
-type FriendProfileSection = "profile" | "agents" | "connection";
+
+const BANNER_PALETTE: Array<[string, string]> = [
+  ["#FF7E5F", "#FEB47B"],
+  ["#6A11CB", "#2575FC"],
+  ["#1E3C72", "#2A5298"],
+  ["#11998E", "#38EF7D"],
+  ["#FC4A1A", "#F7B733"],
+  ["#FF0099", "#493240"],
+  ["#283C86", "#45A247"],
+  ["#CC2B5E", "#753A88"],
+];
+
+const TAGLINE_MAX = 120;
+
+function hashSeed(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+function bannerFor(person: api.Participant): [string, string] {
+  return BANNER_PALETTE[hashSeed(person.id || person.displayName) % BANNER_PALETTE.length];
+}
+
+function extractTagline(person?: api.Participant): string | null {
+  const meta = person?.metadata as { tagline?: unknown; status?: unknown } | undefined;
+  const raw =
+    (typeof meta?.tagline === "string" && meta.tagline.trim()) ||
+    (typeof meta?.status === "string" && meta.status.trim()) ||
+    "";
+  if (!raw) return null;
+  return raw.length > TAGLINE_MAX ? raw.slice(0, TAGLINE_MAX - 1) + "…" : raw;
+}
 
 function otherParticipant(connection: api.UserConnection, currentUserId?: string) {
   return connection.requesterId === currentUserId ? connection.addressee : connection.requester;
@@ -58,24 +96,23 @@ function makeHandle(person?: api.Participant) {
   return fallback ? `@${fallback}` : "@friend";
 }
 
-function formatDateTime(value?: string) {
-  if (!value) return "—";
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
+function shortMonth(iso?: string) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, { month: "short", year: "numeric" }).format(d);
 }
 
-function metadataString(person: api.Participant | undefined, key: string) {
-  const value = person?.metadata?.[key];
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+function mutualsSummary(preview: api.Participant[], total: number): string {
+  if (total === 0) return "";
+  const names = preview.slice(0, 2).map((m) => m.displayName.split(" ")[0]);
+  const remainder = total - names.length;
+  if (remainder <= 0) {
+    if (names.length === 1) return `Followed by ${names[0]}`;
+    return `Followed by ${names[0]} and ${names[1]}`;
+  }
+  const named = names.length === 1 ? names[0] : `${names[0]}, ${names[1]}`;
+  return `Followed by ${named} and ${remainder} ${remainder === 1 ? "other" : "others"}`;
 }
 
 export function FriendsView() {
@@ -84,6 +121,7 @@ export function FriendsView() {
   const conversations = useChatStore((s) => s.conversations);
   const createConversation = useChatStore((s) => s.createConversation);
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const onlineSet = usePresenceStore((s) => s.online);
 
   const {
     connections,
@@ -205,6 +243,7 @@ export function FriendsView() {
     setError(null);
     try {
       await revokeFriend(connection.id);
+      if (selectedConnectionId === connection.id) setSelectedConnectionId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not update connection");
     } finally {
@@ -218,6 +257,7 @@ export function FriendsView() {
     setError(null);
     try {
       await blockFriend(connection.id);
+      if (selectedConnectionId === connection.id) setSelectedConnectionId(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not block user");
     } finally {
@@ -249,33 +289,41 @@ export function FriendsView() {
 
   return (
     <div className="flex h-full flex-col bg-background">
-      <div className="border-b border-border px-6 py-4">
+      <div className="border-b border-border px-6 pt-5 pb-4">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-lg font-semibold">Friends</h1>
-          <Button variant="outline" size="sm" onClick={() => { fetchConnections(); fetchPendingCount(); }}>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight">Friends</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {friends.length} {friends.length === 1 ? "friend" : "friends"}
+              {pendingCount > 0 ? ` · ${pendingCount} pending` : ""}
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => { fetchConnections(); fetchPendingCount(); }}>
             Refresh
           </Button>
         </div>
-        <div className="relative mt-3 max-w-xl">
-          <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="relative mt-4 max-w-xl">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search people by name or email..."
-            className="pl-9"
+            placeholder="Search people by name or email…"
+            className="pl-9 h-10 rounded-full bg-muted/40 border-transparent focus-visible:bg-background focus-visible:border-border"
           />
         </div>
         {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
       </div>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div className="flex-1 overflow-y-auto">
         {search.trim().length >= 2 && (
-          <section className="mb-6 max-w-3xl">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">People</div>
-            <div className="overflow-hidden rounded-lg border border-border">
+          <section className="mx-auto mt-4 max-w-3xl px-6">
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+              People
+            </div>
+            <div className="overflow-hidden rounded-xl border border-border bg-card">
               {searching ? (
                 <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Searching people...
+                  <Loader2 className="h-4 w-4 animate-spin" /> Searching people…
                 </div>
               ) : people.length === 0 ? (
                 <div className="px-4 py-3 text-sm text-muted-foreground">No people found.</div>
@@ -287,6 +335,7 @@ export function FriendsView() {
                     connections={connections}
                     currentUserId={currentUserId}
                     busy={busyId === person.id || busyId === person.connectionId}
+                    online={onlineSet.has(person.id)}
                     onConnect={() => handleConnect(person)}
                     onOpenRequests={() => setSegment("requests")}
                   />
@@ -296,67 +345,98 @@ export function FriendsView() {
           </section>
         )}
 
-        <div className="mb-4 flex gap-2">
-          {SEGMENTS.map((value) => {
-            const count = value === "requests" ? pendingCount || received.length : value === "friends" ? friends.length : sent.length;
-            return (
-              <button
-                key={value}
-                onClick={() => setSegment(value)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-sm font-medium capitalize transition-colors",
-                  segment === value
-                    ? "border-primary bg-primary/10 text-primary"
-                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                {value}{count > 0 ? ` (${count})` : ""}
-              </button>
-            );
-          })}
-        </div>
+        <div className="mx-auto max-w-3xl px-6 pt-5">
+          <div className="mb-5 flex gap-2">
+            {SEGMENTS.map((value) => {
+              const count =
+                value === "requests"
+                  ? pendingCount || received.length
+                  : value === "friends"
+                    ? friends.length
+                    : sent.length;
+              const active = segment === value;
+              return (
+                <button
+                  key={value}
+                  onClick={() => setSegment(value)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold capitalize transition-colors",
+                    active
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  )}
+                >
+                  {value}
+                  {count > 0 && (
+                    <span
+                      className={cn(
+                        "inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold",
+                        active ? "bg-background/20 text-background" : "bg-muted text-foreground/70"
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-        <section className="max-w-3xl">
-          {loading && connections.length === 0 ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading friends...
-            </div>
-          ) : currentList.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              {segment === "friends" ? "No friends yet. Search above to connect." : segment === "requests" ? "No friend requests." : "No sent requests."}
-            </div>
-          ) : segment === "friends" ? (
-            <div className="divide-y divide-border">
-              {currentList.map((connection) => (
-                <FriendRow
-                  key={connection.id}
-                  connection={connection}
-                  currentUserId={currentUserId}
-                  busy={busyId === connection.id}
-                  onRevoke={() => handleRevoke(connection)}
-                  onMessage={() => handleMessage(connection)}
-                  onOpenProfile={() => setSelectedConnectionId(connection.id)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {currentList.map((connection) => (
-                <ConnectionCard
-                  key={connection.id}
-                  connection={connection}
-                  currentUserId={currentUserId}
-                  segment={segment}
-                  busy={busyId === connection.id}
-                  onAccept={() => handleRespond(connection.id, "accepted")}
-                  onReject={() => handleRespond(connection.id, "rejected")}
-                  onRevoke={() => handleRevoke(connection)}
-                  onBlock={() => handleBlock(connection)}
-                />
-              ))}
-            </div>
-          )}
-        </section>
+          <section>
+            {loading && connections.length === 0 ? (
+              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading friends…
+              </div>
+            ) : currentList.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
+                {segment === "friends"
+                  ? "No friends yet. Search above to connect."
+                  : segment === "requests"
+                    ? "No friend requests."
+                    : "No sent requests."}
+              </div>
+            ) : segment === "friends" ? (
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                {currentList.map((connection, idx) => {
+                  const person = otherParticipant(connection, currentUserId);
+                  return (
+                    <FriendRow
+                      key={connection.id}
+                      connection={connection}
+                      currentUserId={currentUserId}
+                      busy={busyId === connection.id}
+                      online={person?.id ? onlineSet.has(person.id) : false}
+                      divider={idx < currentList.length - 1}
+                      onRevoke={() => handleRevoke(connection)}
+                      onMessage={() => handleMessage(connection)}
+                      onOpenProfile={() => setSelectedConnectionId(connection.id)}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {currentList.map((connection) => (
+                  <ConnectionCard
+                    key={connection.id}
+                    connection={connection}
+                    currentUserId={currentUserId}
+                    segment={segment}
+                    busy={busyId === connection.id}
+                    online={(() => {
+                      const p = otherParticipant(connection, currentUserId);
+                      return p?.id ? onlineSet.has(p.id) : false;
+                    })()}
+                    onAccept={() => handleRespond(connection.id, "accepted")}
+                    onReject={() => handleRespond(connection.id, "rejected")}
+                    onRevoke={() => handleRevoke(connection)}
+                    onBlock={() => handleBlock(connection)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
 
       <FriendProfileDrawer
@@ -367,8 +447,22 @@ export function FriendsView() {
         onClose={() => setSelectedConnectionId(null)}
         onMessage={() => selectedConnection && handleMessage(selectedConnection)}
         onUnfriend={() => selectedConnection && handleRevoke(selectedConnection)}
+        onBlock={() => selectedConnection && handleBlock(selectedConnection)}
       />
     </div>
+  );
+}
+
+function PresenceDot({ online, className }: { online: boolean; className?: string }) {
+  return (
+    <span
+      className={cn(
+        "absolute bottom-0 right-0 block h-3 w-3 rounded-full border-2 border-card",
+        online ? "bg-success" : "bg-muted-foreground/60",
+        className
+      )}
+      aria-label={online ? "Online" : "Offline"}
+    />
   );
 }
 
@@ -377,6 +471,7 @@ function PersonSearchRow({
   connections,
   currentUserId,
   busy,
+  online,
   onConnect,
   onOpenRequests,
 }: {
@@ -384,6 +479,7 @@ function PersonSearchRow({
   connections: api.UserConnection[];
   currentUserId?: string;
   busy: boolean;
+  online: boolean;
   onConnect: () => void;
   onOpenRequests: () => void;
 }) {
@@ -396,12 +492,18 @@ function PersonSearchRow({
 
   return (
     <div className="flex items-center gap-3 border-b border-border px-4 py-3 last:border-b-0">
-      <Avatar className="h-9 w-9">
-        {person.avatarUrl && <AvatarImage src={person.avatarUrl} />}
-        <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
-      </Avatar>
+      <div className="relative">
+        <Avatar className="h-9 w-9">
+          {person.avatarUrl && <AvatarImage src={person.avatarUrl} displaySize={36} />}
+          <AvatarFallback><User className="h-4 w-4" /></AvatarFallback>
+        </Avatar>
+        {online && <PresenceDot online className="h-2.5 w-2.5" />}
+      </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{person.displayName}</div>
+        <div className="truncate text-sm font-semibold">{person.displayName}</div>
+        {person.email || person.maskedEmail ? (
+          <div className="truncate text-xs text-muted-foreground">{person.email ?? person.maskedEmail}</div>
+        ) : null}
       </div>
       {busy ? (
         <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -418,11 +520,12 @@ function PersonSearchRow({
   );
 }
 
-/** X-style friend row with avatar, name/handle, bio, and icon action buttons */
 function FriendRow({
   connection,
   currentUserId,
   busy,
+  online,
+  divider,
   onRevoke,
   onMessage,
   onOpenProfile,
@@ -430,6 +533,8 @@ function FriendRow({
   connection: api.UserConnection;
   currentUserId?: string;
   busy: boolean;
+  online: boolean;
+  divider: boolean;
   onRevoke: () => void;
   onMessage: () => void;
   onOpenProfile: () => void;
@@ -449,17 +554,30 @@ function FriendRow({
           onOpenProfile();
         }
       }}
-      className="flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      className={cn(
+        "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+        divider && "border-b border-border"
+      )}
     >
-      <Avatar className="h-11 w-11 shrink-0">
-        {person?.avatarUrl && <AvatarImage src={person.avatarUrl} />}
-        <AvatarFallback>{initials(person?.displayName)}</AvatarFallback>
-      </Avatar>
+      <div className="relative shrink-0">
+        <Avatar className="h-12 w-12">
+          {person?.avatarUrl && <AvatarImage src={person.avatarUrl} displaySize={48} />}
+          <AvatarFallback className="text-sm font-semibold">{initials(person?.displayName)}</AvatarFallback>
+        </Avatar>
+        {online && <PresenceDot online />}
+      </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-sm font-bold">{person?.displayName ?? "Unknown"}</div>
-            <div className="truncate text-xs text-muted-foreground">{handle}</div>
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-[15px] font-bold">{person?.displayName ?? "Unknown"}</span>
+              {online && (
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-success">
+                  · online
+                </span>
+              )}
+            </div>
+            <div className="truncate text-[13px] text-muted-foreground">{handle}</div>
           </div>
           {busy ? (
             <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
@@ -470,7 +588,7 @@ function FriendRow({
                   e.stopPropagation();
                   onMessage();
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-80"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85"
                 title={`Message ${person?.displayName ?? "friend"}`}
               >
                 <MessageCircle className="h-4 w-4" />
@@ -480,7 +598,7 @@ function FriendRow({
                   e.stopPropagation();
                   onRevoke();
                 }}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card transition-colors hover:bg-muted"
+                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card transition-colors hover:bg-muted hover:border-destructive/40"
                 title={`Unfriend ${person?.displayName ?? "friend"}`}
               >
                 <UserMinus className="h-4 w-4 text-destructive" />
@@ -502,6 +620,7 @@ function FriendProfileDrawer({
   onClose,
   onMessage,
   onUnfriend,
+  onBlock,
 }: {
   open: boolean;
   connection: api.UserConnection | null;
@@ -510,349 +629,355 @@ function FriendProfileDrawer({
   onClose: () => void;
   onMessage: () => void;
   onUnfriend: () => void;
+  onBlock: () => void;
 }) {
-  const [activeSection, setActiveSection] = useState<FriendProfileSection>("profile");
-
-  useEffect(() => {
-    if (open) setActiveSection("profile");
-  }, [open, connection?.id]);
-
   if (!connection) return null;
-
   const person = otherParticipant(connection, currentUserId);
   if (!person) return null;
-
-  const handle = makeHandle(person);
-  const subtitle = person.description || "No bio yet.";
-  const sections: Array<{ value: FriendProfileSection; label: string; icon: typeof User }> = [
-    { value: "profile", label: "Profile", icon: User },
-    { value: "agents", label: "Shared Agents", icon: Bot },
-    { value: "connection", label: "Connection", icon: Info },
-  ];
 
   return (
     <>
       <div
         className={cn(
-          "fixed inset-0 z-40 bg-black/20 transition-opacity duration-200",
+          "fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-200",
           open ? "opacity-100" : "pointer-events-none opacity-0"
         )}
         onClick={onClose}
       />
       <div
         className={cn(
-          "fixed right-0 top-0 z-50 h-full w-[640px] max-w-[85vw] overflow-hidden border-l border-border bg-card shadow-2xl",
-          "transition-transform duration-300 ease-out",
+          "fixed right-0 top-0 z-50 h-full w-[560px] max-w-[92vw] overflow-hidden bg-background shadow-2xl",
+          "border-l border-border transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "translate-x-full"
         )}
       >
-        <div className="flex h-full">
-          <div className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-border bg-muted/30 py-3">
-            <Avatar className="mb-2 h-8 w-8 rounded-lg">
-              {person.avatarUrl && <AvatarImage src={person.avatarUrl} className="rounded-lg" displaySize={32} />}
-              <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-semibold text-primary">
-                {initials(person.displayName)}
-              </AvatarFallback>
-            </Avatar>
-
-            <div className="mb-1 h-px w-6 bg-border" />
-
-            {sections.map((section) => (
-              <button
-                key={section.value}
-                onClick={() => setActiveSection(section.value)}
-                className={cn(
-                  "flex h-8 w-8 items-center justify-center rounded-md transition-colors",
-                  activeSection === section.value
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                )}
-                title={section.label}
-              >
-                <section.icon className="h-4 w-4" />
-              </button>
-            ))}
-
-            <button
-              onClick={onClose}
-              className="mt-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              title="Close"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
-              <Avatar className="h-10 w-10 rounded-lg">
-                {person.avatarUrl && <AvatarImage src={person.avatarUrl} className="rounded-lg" displaySize={40} />}
-                <AvatarFallback className="rounded-lg bg-primary/10 text-sm font-semibold text-primary">
-                  {initials(person.displayName)}
-                </AvatarFallback>
-              </Avatar>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">{person.displayName}</p>
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{handle}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <>
-                    <Button size="sm" onClick={onMessage}>
-                      <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
-                      Message
-                    </Button>
-                    <Button size="sm" variant="outline" className="text-destructive hover:text-destructive" onClick={onUnfriend}>
-                      <UserMinus className="mr-1.5 h-3.5 w-3.5" />
-                      Unfriend
-                    </Button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {activeSection === "profile" && (
-              <FriendProfileSection person={person} handle={handle} subtitle={subtitle} />
-            )}
-
-            {activeSection === "agents" && (
-              <FriendAgentsSection friend={person} />
-            )}
-
-            {activeSection === "connection" && (
-              <FriendConnectionSection connection={connection} person={person} />
-            )}
-          </div>
-        </div>
+        <button
+          onClick={onClose}
+          className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white backdrop-blur-md transition-colors hover:bg-black/60"
+          title="Close"
+        >
+          <X className="h-4 w-4" />
+        </button>
+        <FriendProfileBody
+          connection={connection}
+          person={person}
+          busy={busy}
+          onMessage={onMessage}
+          onUnfriend={onUnfriend}
+          onBlock={onBlock}
+        />
       </div>
     </>
   );
 }
 
-function FriendProfileSection({
+function FriendProfileBody({
+  connection,
   person,
-  handle,
-  subtitle,
+  busy,
+  onMessage,
+  onUnfriend,
+  onBlock,
 }: {
+  connection: api.UserConnection;
   person: api.Participant;
-  handle: string;
-  subtitle: string;
+  busy: boolean;
+  onMessage: () => void;
+  onUnfriend: () => void;
+  onBlock: () => void;
 }) {
-  const location = metadataString(person, "location");
-  const pronouns = metadataString(person, "pronouns");
-
-  return (
-    <div className="flex-1 overflow-y-auto p-5 space-y-6">
-      <ProfileSectionBlock title="Profile">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="flex items-start gap-4">
-            <Avatar className="h-20 w-20 rounded-2xl">
-              {person.avatarUrl && <AvatarImage src={person.avatarUrl} className="rounded-2xl" displaySize={80} />}
-              <AvatarFallback className="rounded-2xl bg-primary/10 text-xl font-semibold text-primary">
-                {initials(person.displayName)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-xl font-semibold">{person.displayName}</h2>
-                <Badge variant={person.online ? "secondary" : "outline"} className={person.online ? "bg-success/10 text-success" : ""}>
-                  {person.online ? "Online" : "Friend"}
-                </Badge>
-              </div>
-              <div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-                <AtSign className="h-3.5 w-3.5" />
-                {handle.replace(/^@/, "")}
-              </div>
-              <p className="mt-3 text-sm leading-relaxed text-foreground/80">{subtitle}</p>
-            </div>
-          </div>
-        </div>
-      </ProfileSectionBlock>
-
-      <ProfileSectionBlock title="Details">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <FriendDetailRow label="Type" value="Human" />
-          <FriendDetailRow label="Handle" value={handle} />
-          <FriendDetailRow label="Timezone" value={person.timezone || "Not shared"} />
-          {pronouns && <FriendDetailRow label="Pronouns" value={pronouns} />}
-          {location && <FriendDetailRow label="Location" value={location} />}
-          <FriendDetailRow label="Participant ID" value={<code className="font-mono text-xs">{person.id}</code>} />
-        </div>
-      </ProfileSectionBlock>
-    </div>
-  );
-}
-
-function FriendAgentsSection({ friend }: { friend: api.Participant }) {
-  const [listings, setListings] = useState<api.DirectoryListing[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [listings, setListings] = useState<api.DirectoryListing[] | null>(null);
+  const [loadingAgents, setLoadingAgents] = useState(true);
+  const [agentsError, setAgentsError] = useState<string | null>(null);
+  const [mutuals, setMutuals] = useState<{ count: number; mutuals: api.Participant[] } | null>(null);
+  const isOnline = usePresenceStore((s) => s.online.has(person.id));
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    api.listFriendAgents(friend.id)
-      .then((response) => {
-        if (!cancelled) setListings(response.listings ?? []);
+    setLoadingAgents(true);
+    setAgentsError(null);
+    api.listFriendAgents(person.id)
+      .then((res) => {
+        if (!cancelled) setListings(res.listings ?? []);
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load shared agents");
+        if (!cancelled) setAgentsError(e instanceof Error ? e.message : "Could not load shared agents");
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setLoadingAgents(false);
       });
+
+    api.getFriendMutuals(person.id)
+      .then((res) => {
+        if (!cancelled) setMutuals({ count: res.count ?? 0, mutuals: res.mutuals ?? [] });
+      })
+      .catch(() => {
+        if (!cancelled) setMutuals(null);
+      });
+
     return () => {
       cancelled = true;
     };
-  }, [friend.id]);
+  }, [person.id]);
+
+  const handle = makeHandle(person);
+  const tagline = extractTagline(person);
+  const palette = bannerFor(person);
+  const accent = palette[0];
+  const agentsCount = listings?.length ?? 0;
+  const joinedShort = shortMonth(person.insertedAt);
+  const firstName = person.displayName.split(" ")[0];
+  const sharingLocation = !!person.location;
 
   return (
-    <div className="flex-1 overflow-y-auto p-5 space-y-4">
-      <ProfileSectionBlock title="Shared Agents">
-        {loading ? (
-          <div className="flex items-center gap-2 rounded-lg border border-border p-4 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Loading shared agents...
+    <div className="h-full overflow-y-auto">
+      <div
+        className="relative h-32"
+        style={{ background: `linear-gradient(135deg, ${palette[0]} 0%, ${palette[1]} 100%)` }}
+      >
+        <div className="absolute -bottom-12 left-6">
+          <div className="rounded-full bg-background p-1 shadow-lg">
+            <Avatar className="h-24 w-24">
+              {person.avatarUrl && (
+                <AvatarImage src={person.avatarUrl} displaySize={96} className="rounded-full" />
+              )}
+              <AvatarFallback className="text-2xl font-semibold">
+                {initials(person.displayName)}
+              </AvatarFallback>
+            </Avatar>
           </div>
-        ) : error ? (
-          <div className="rounded-lg border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
-            {error}
+        </div>
+        {tagline && (
+          <div className="absolute bottom-2 right-3 max-w-[60%]">
+            <div
+              className="flex items-center gap-1.5 rounded-full bg-background/95 px-3 py-1.5 shadow-md backdrop-blur-md"
+              style={{ border: `1px solid ${accent}66` }}
+            >
+              <Sparkles className="h-3 w-3 shrink-0" style={{ color: accent }} />
+              <span className="line-clamp-1 text-[12px] font-semibold italic text-foreground">
+                {tagline}
+              </span>
+            </div>
           </div>
-        ) : listings.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-            {friend.displayName} has not shared any agents with friends yet.
+        )}
+      </div>
+
+      <div className="px-6 pt-14">
+        <div className="flex items-center gap-2">
+          <h2 className="truncate text-2xl font-extrabold tracking-tight">{person.displayName}</h2>
+          {connection.status === "accepted" && (
+            <Badge variant="secondary" className="bg-success/10 text-success">Friend</Badge>
+          )}
+        </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">{handle}</p>
+
+        {person.description && (
+          <p className="mt-3 text-sm leading-relaxed text-foreground/85">{person.description}</p>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+          <span className="flex items-center gap-1.5">
+            <span
+              className={cn(
+                "inline-block h-2 w-2 rounded-full",
+                isOnline ? "bg-success" : "bg-muted-foreground/40"
+              )}
+            />
+            <span className={cn(isOnline && "font-semibold text-success")}>
+              {isOnline ? "Online now" : "Offline"}
+            </span>
+          </span>
+          {person.timezone && (
+            <span className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5" />
+              {person.timezone}
+            </span>
+          )}
+          {sharingLocation && (
+            <span className="flex items-center gap-1.5">
+              <MapPin className="h-3.5 w-3.5" />
+              Sharing location
+            </span>
+          )}
+        </div>
+
+        <div className="mt-5 grid grid-cols-3 divide-x divide-border border-y border-border py-3">
+          <StatCell label="Agents" value={agentsCount} />
+          <StatCell label="Mutuals" value={mutuals?.count ?? "—"} />
+          <StatCell label="Joined" value={joinedShort ?? "—"} />
+        </div>
+
+        {mutuals && mutuals.count > 0 && (
+          <div className="mt-3 flex items-center gap-2">
+            <div className="flex">
+              {mutuals.mutuals.slice(0, 3).map((m, idx) => (
+                <div
+                  key={m.id}
+                  className="rounded-full ring-2 ring-background"
+                  style={{ marginLeft: idx === 0 ? 0 : -10, zIndex: 3 - idx }}
+                >
+                  <Avatar className="h-6 w-6">
+                    {m.avatarUrl && <AvatarImage src={m.avatarUrl} displaySize={24} />}
+                    <AvatarFallback className="text-[9px]">{initials(m.displayName)}</AvatarFallback>
+                  </Avatar>
+                </div>
+              ))}
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {mutualsSummary(mutuals.mutuals, mutuals.count)}
+            </span>
           </div>
-        ) : (
-          <div className="space-y-3">
-            {listings.map((listing) => {
-              const listedAgent = listing.agent;
-              const categories = listing.categories ?? [];
-              const tags = listing.tags ?? [];
-              return (
-                <div key={listing.id} className="rounded-lg border border-border bg-card p-4">
-                  <div className="flex items-start gap-3">
+        )}
+
+        <div className="mt-5 flex gap-2">
+          <Button className="flex-1" onClick={onMessage} disabled={busy}>
+            <MessageCircle className="mr-1.5 h-4 w-4" />
+            Message
+          </Button>
+          <Button
+            variant="outline"
+            onClick={onUnfriend}
+            disabled={busy}
+            className="flex-1 text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <UserMinus className="mr-1.5 h-4 w-4" />
+            {connection.status === "accepted" ? "Unfriend" : "Cancel"}
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={onBlock}
+            disabled={busy}
+            title="Block"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+          >
+            <Ban className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <section className="mt-7">
+          <div className="flex items-end justify-between">
+            <div>
+              <h3 className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+                Available Agents
+              </h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Public agents and ones {firstName} shares with friends.
+              </p>
+            </div>
+            {agentsCount > 0 && (
+              <span className="text-xs font-bold text-muted-foreground">{agentsCount}</span>
+            )}
+          </div>
+
+          <div className="mt-3 space-y-2 pb-6">
+            {loadingAgents ? (
+              <div className="flex items-center gap-2 rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading shared agents…
+              </div>
+            ) : agentsError ? (
+              <div className="rounded-xl border border-destructive/20 bg-destructive/10 p-4 text-sm text-destructive">
+                {agentsError}
+              </div>
+            ) : !listings || listings.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
+                No agents shared yet.
+              </div>
+            ) : (
+              listings.map((listing) => {
+                const friendsOnly = listing.visibility === "friends_only";
+                return (
+                  <div
+                    key={listing.id}
+                    className="flex items-center gap-3 rounded-xl border border-border bg-card p-3 transition-colors hover:bg-muted/40"
+                  >
                     <Avatar className="h-11 w-11 rounded-lg">
-                      {listedAgent?.avatarUrl && (
-                        <AvatarImage src={listedAgent.avatarUrl} className="rounded-lg" displaySize={44} />
+                      {listing.agent?.avatarUrl && (
+                        <AvatarImage src={listing.agent.avatarUrl} className="rounded-lg" displaySize={44} />
                       )}
                       <AvatarFallback className="rounded-lg bg-primary/10 text-primary">
                         <Bot className="h-4 w-4" />
                       </AvatarFallback>
                     </Avatar>
                     <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="truncate text-sm font-semibold">{listing.listingName}</h3>
-                        {listing.verified && <Badge variant="secondary">Verified</Badge>}
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold">{listing.listingName}</span>
+                        <span
+                          className={cn(
+                            "inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                            friendsOnly
+                              ? "bg-primary/10 text-primary"
+                              : "bg-muted text-muted-foreground"
+                          )}
+                        >
+                          {friendsOnly ? <Users className="h-2.5 w-2.5" /> : <Globe className="h-2.5 w-2.5" />}
+                          {friendsOnly ? "Friends" : "Public"}
+                        </span>
+                        {listing.verified && (
+                          <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">Verified</Badge>
+                        )}
                       </div>
-                      {(listing.listingDescription || listedAgent?.description) && (
-                        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
-                          {listing.listingDescription || listedAgent?.description}
+                      {(listing.listingDescription || listing.agent?.description) && (
+                        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                          {listing.listingDescription || listing.agent?.description}
                         </p>
                       )}
-                      {(categories.length > 0 || tags.length > 0) && (
-                        <div className="mt-3 flex flex-wrap gap-1.5">
-                          {[...categories, ...tags].slice(0, 6).map((label) => (
-                            <Badge key={label} variant="outline" className="capitalize">
-                              {label}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <div className="rounded-md bg-muted/50 px-2 py-1.5">
-                      Rating: {listing.ratingCount > 0 ? `${listing.ratingAvg.toFixed(1)} (${listing.ratingCount})` : "Unrated"}
-                    </div>
-                    <div className="rounded-md bg-muted/50 px-2 py-1.5">
-                      Monthly tasks: {listing.monthlyTasksCompleted}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
-        )}
-      </ProfileSectionBlock>
+        </section>
+
+        <section className="border-t border-border pb-8 pt-5">
+          <h3 className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
+            Connection
+          </h3>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <CalendarDays className="h-3.5 w-3.5" />
+            Connected {formatDateTime(connection.connectedAt ?? connection.respondedAt ?? connection.insertedAt)}
+          </div>
+          {connection.message && (
+            <p className="mt-3 rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/80">
+              “{connection.message}”
+            </p>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
 
-function FriendConnectionSection({
-  connection,
-  person,
-}: {
-  connection: api.UserConnection;
-  person: api.Participant;
-}) {
+function StatCell({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex-1 overflow-y-auto p-5 space-y-6">
-      <ProfileSectionBlock title="Connection">
-        <div className="rounded-lg border border-border bg-card p-4">
-          <div className="mb-3 flex items-center gap-2">
-            <Badge variant="secondary" className="bg-success/10 text-success">
-              Accepted
-            </Badge>
-            <span className="text-sm text-muted-foreground">You and {person.displayName} are friends.</span>
-          </div>
-          <FriendDetailRow label="Connected" value={formatDateTime(connection.connectedAt ?? connection.respondedAt)} />
-          <FriendDetailRow label="Requested" value={formatDateTime(connection.requestedAt ?? connection.insertedAt)} />
-          <FriendDetailRow label="Last updated" value={formatDateTime(connection.updatedAt)} />
-          <FriendDetailRow label="Connection ID" value={<code className="font-mono text-xs">{connection.id}</code>} />
-        </div>
-      </ProfileSectionBlock>
-
-      {connection.message && (
-        <ProfileSectionBlock title="Request note">
-          <div className="rounded-lg border border-border bg-card p-4 text-sm text-foreground/80">
-            {connection.message}
-          </div>
-        </ProfileSectionBlock>
-      )}
+    <div className="flex flex-col items-center">
+      <span className="text-base font-bold text-foreground">{value}</span>
+      <span className="mt-0.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </span>
     </div>
   );
 }
 
-function ProfileSectionBlock({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
-      </h3>
-      {children}
-    </section>
-  );
+function formatDateTime(value?: string) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(date);
 }
 
-function FriendDetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-border py-2 last:border-b-0">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      <span className="min-w-0 truncate text-right text-sm">{value}</span>
-    </div>
-  );
-}
-
-/** Card for requests and sent segments */
 function ConnectionCard({
   connection,
   currentUserId,
   segment,
   busy,
+  online,
   onAccept,
   onReject,
   onRevoke,
@@ -862,6 +987,7 @@ function ConnectionCard({
   currentUserId?: string;
   segment: Segment;
   busy: boolean;
+  online: boolean;
   onAccept: () => void;
   onReject: () => void;
   onRevoke: () => void;
@@ -869,17 +995,26 @@ function ConnectionCard({
 }) {
   const person = otherParticipant(connection, currentUserId);
   return (
-    <div className="rounded-lg border border-border bg-card p-4">
+    <div className="rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted/30">
       <div className="flex items-center gap-3">
-        <Avatar className="h-10 w-10">
-          {person?.avatarUrl && <AvatarImage src={person.avatarUrl} />}
-          <AvatarFallback>{initials(person?.displayName)}</AvatarFallback>
-        </Avatar>
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{person?.displayName ?? "Unknown"}</div>
-          {connection.message && <div className="truncate text-xs text-muted-foreground">{connection.message}</div>}
+        <div className="relative shrink-0">
+          <Avatar className="h-11 w-11">
+            {person?.avatarUrl && <AvatarImage src={person.avatarUrl} displaySize={44} />}
+            <AvatarFallback>{initials(person?.displayName)}</AvatarFallback>
+          </Avatar>
+          {online && <PresenceDot online />}
         </div>
-        <Badge variant={connection.status === "accepted" ? "secondary" : "outline"} className="capitalize">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-semibold">{person?.displayName ?? "Unknown"}</div>
+          <div className="truncate text-xs text-muted-foreground">{makeHandle(person)}</div>
+          {connection.message && (
+            <p className="mt-1 line-clamp-2 text-xs text-foreground/80">“{connection.message}”</p>
+          )}
+        </div>
+        <Badge
+          variant={connection.status === "accepted" ? "secondary" : "outline"}
+          className="capitalize"
+        >
           {connection.status}
         </Badge>
       </div>

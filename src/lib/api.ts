@@ -780,6 +780,8 @@ export interface Participant {
   online?: boolean;
   timezone?: string;
   description?: string;
+  location?: unknown;
+  insertedAt?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -1149,6 +1151,12 @@ export async function blockFriend(id: string): Promise<{ connection: UserConnect
 
 export async function listFriendAgents(friendId: string): Promise<{ listings: DirectoryListing[] }> {
   return request(`/api/friends/${friendId}/agents`);
+}
+
+export async function getFriendMutuals(
+  friendId: string
+): Promise<{ count: number; mutuals: Participant[] }> {
+  return request(`/api/friends/${friendId}/mutuals`);
 }
 
 // --- File attachments ---
