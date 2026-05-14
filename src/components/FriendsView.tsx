@@ -288,65 +288,19 @@ export function FriendsView() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <div className="border-b border-border px-6 pt-5 pb-4">
-        <div className="flex items-center justify-between gap-4">
+    <div className="flex h-full flex-1 flex-col overflow-hidden bg-background">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-4 border-b border-border bg-card px-4">
+        <div className="flex items-center gap-3 min-w-0">
           <div>
-            <h1 className="text-xl font-bold tracking-tight">Friends</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {friends.length} {friends.length === 1 ? "friend" : "friends"}
-              {pendingCount > 0 ? ` · ${pendingCount} pending` : ""}
+            <h1 className="text-sm font-semibold leading-tight">Friends</h1>
+            <p className="text-[11px] text-muted-foreground">
+              {friends.length} friend{friends.length === 1 ? "" : "s"}
+              {pendingCount > 0 && (
+                <span className="ml-1.5 text-warning">· {pendingCount} pending</span>
+              )}
             </p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => { fetchConnections(); fetchPendingCount(); }}>
-            Refresh
-          </Button>
-        </div>
-        <div className="relative mt-4 max-w-xl">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search people by name or email…"
-            className="pl-9 h-10 rounded-full bg-muted/40 border-transparent focus-visible:bg-background focus-visible:border-border"
-          />
-        </div>
-        {error && <p className="mt-2 text-sm text-destructive">{error}</p>}
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        {search.trim().length >= 2 && (
-          <section className="mx-auto mt-4 max-w-3xl px-6">
-            <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-              People
-            </div>
-            <div className="overflow-hidden rounded-xl border border-border bg-card">
-              {searching ? (
-                <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" /> Searching people…
-                </div>
-              ) : people.length === 0 ? (
-                <div className="px-4 py-3 text-sm text-muted-foreground">No people found.</div>
-              ) : (
-                people.map((person) => (
-                  <PersonSearchRow
-                    key={person.id}
-                    person={person}
-                    connections={connections}
-                    currentUserId={currentUserId}
-                    busy={busyId === person.id || busyId === person.connectionId}
-                    online={onlineSet.has(person.id)}
-                    onConnect={() => handleConnect(person)}
-                    onOpenRequests={() => setSegment("requests")}
-                  />
-                ))
-              )}
-            </div>
-          </section>
-        )}
-
-        <div className="mx-auto max-w-3xl px-6 pt-5">
-          <div className="mb-5 flex gap-2">
+          <div className="ml-2 flex items-center gap-1">
             {SEGMENTS.map((value) => {
               const count =
                 value === "requests"
@@ -360,7 +314,7 @@ export function FriendsView() {
                   key={value}
                   onClick={() => setSegment(value)}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-semibold capitalize transition-colors",
+                    "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold capitalize transition-colors",
                     active
                       ? "bg-foreground text-background"
                       : "text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -370,8 +324,8 @@ export function FriendsView() {
                   {count > 0 && (
                     <span
                       className={cn(
-                        "inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold",
-                        active ? "bg-background/20 text-background" : "bg-muted text-foreground/70"
+                        "inline-flex h-4 min-w-[16px] items-center justify-center rounded px-1 text-[10px] font-bold",
+                        active ? "bg-background/20" : "bg-muted-foreground/15 text-foreground/70"
                       )}
                     >
                       {count}
@@ -381,62 +335,132 @@ export function FriendsView() {
               );
             })}
           </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search people…"
+              className="h-8 w-[220px] pl-8 text-xs"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { fetchConnections(); fetchPendingCount(); }}
+          >
+            Refresh
+          </Button>
+        </div>
+      </header>
 
-          <section>
-            {loading && connections.length === 0 ? (
-              <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading friends…
+      {error && (
+        <div className="mx-4 mt-3 rounded-md border border-destructive/20 bg-destructive/10 px-4 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      )}
+
+      <div className="flex flex-1 flex-col overflow-hidden">
+        {search.trim().length >= 2 && (
+          <section className="border-b border-border bg-card/30">
+            <div className="border-b border-border px-4 py-1.5 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              People · search
+            </div>
+            {searching ? (
+              <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Searching people…
               </div>
-            ) : currentList.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-border p-10 text-center text-sm text-muted-foreground">
-                {segment === "friends"
-                  ? "No friends yet. Search above to connect."
-                  : segment === "requests"
-                    ? "No friend requests."
-                    : "No sent requests."}
-              </div>
-            ) : segment === "friends" ? (
-              <div className="overflow-hidden rounded-xl border border-border bg-card">
-                {currentList.map((connection, idx) => {
-                  const person = otherParticipant(connection, currentUserId);
-                  return (
-                    <FriendRow
-                      key={connection.id}
-                      connection={connection}
-                      currentUserId={currentUserId}
-                      busy={busyId === connection.id}
-                      online={person?.id ? onlineSet.has(person.id) : false}
-                      divider={idx < currentList.length - 1}
-                      onRevoke={() => handleRevoke(connection)}
-                      onMessage={() => handleMessage(connection)}
-                      onOpenProfile={() => setSelectedConnectionId(connection.id)}
-                    />
-                  );
-                })}
-              </div>
+            ) : people.length === 0 ? (
+              <div className="px-4 py-3 text-sm text-muted-foreground">No people found.</div>
             ) : (
-              <div className="space-y-2">
-                {currentList.map((connection) => (
-                  <ConnectionCard
-                    key={connection.id}
-                    connection={connection}
-                    currentUserId={currentUserId}
-                    segment={segment}
-                    busy={busyId === connection.id}
-                    online={(() => {
-                      const p = otherParticipant(connection, currentUserId);
-                      return p?.id ? onlineSet.has(p.id) : false;
-                    })()}
-                    onAccept={() => handleRespond(connection.id, "accepted")}
-                    onReject={() => handleRespond(connection.id, "rejected")}
-                    onRevoke={() => handleRevoke(connection)}
-                    onBlock={() => handleBlock(connection)}
-                  />
-                ))}
-              </div>
+              people.map((person) => (
+                <PersonSearchRow
+                  key={person.id}
+                  person={person}
+                  connections={connections}
+                  currentUserId={currentUserId}
+                  busy={busyId === person.id || busyId === person.connectionId}
+                  online={onlineSet.has(person.id)}
+                  onConnect={() => handleConnect(person)}
+                  onOpenRequests={() => setSegment("requests")}
+                />
+              ))
             )}
           </section>
-        </div>
+        )}
+
+        {loading && connections.length === 0 ? (
+          <div className="py-20 text-center text-sm text-muted-foreground">
+            Loading friends…
+          </div>
+        ) : currentList.length === 0 ? (
+          <div className="flex flex-1 flex-col items-center justify-center px-8 text-center">
+            <p className="text-sm font-medium text-foreground">
+              {segment === "friends"
+                ? "No friends yet"
+                : segment === "requests"
+                  ? "No friend requests"
+                  : "No sent requests"}
+            </p>
+            <p className="mt-1 max-w-xs text-xs text-muted-foreground">
+              {segment === "friends"
+                ? "Search above to find people and connect."
+                : segment === "requests"
+                  ? "Incoming friend requests will appear here."
+                  : "Requests you've sent will appear here."}
+            </p>
+          </div>
+        ) : segment === "friends" ? (
+          <div className="flex-1 overflow-y-auto">
+            <div className="sticky top-0 z-10 grid grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)_140px_120px_88px] gap-3 border-b border-border bg-card/95 py-2 pl-4 pr-6 text-[10px] font-medium uppercase tracking-wider text-muted-foreground backdrop-blur">
+              <span>Friend</span>
+              <span>About</span>
+              <span>Status</span>
+              <span>Connected</span>
+              <span className="text-right">Actions</span>
+            </div>
+            {currentList.map((connection, idx) => {
+              const person = otherParticipant(connection, currentUserId);
+              return (
+                <FriendRow
+                  key={connection.id}
+                  connection={connection}
+                  currentUserId={currentUserId}
+                  busy={busyId === connection.id}
+                  online={person?.id ? onlineSet.has(person.id) : false}
+                  divider={idx < currentList.length - 1}
+                  onRevoke={() => handleRevoke(connection)}
+                  onMessage={() => handleMessage(connection)}
+                  onOpenProfile={() => setSelectedConnectionId(connection.id)}
+                />
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            <div className="space-y-2">
+              {currentList.map((connection) => (
+                <ConnectionCard
+                  key={connection.id}
+                  connection={connection}
+                  currentUserId={currentUserId}
+                  segment={segment}
+                  busy={busyId === connection.id}
+                  online={(() => {
+                    const p = otherParticipant(connection, currentUserId);
+                    return p?.id ? onlineSet.has(p.id) : false;
+                  })()}
+                  onAccept={() => handleRespond(connection.id, "accepted")}
+                  onReject={() => handleRespond(connection.id, "rejected")}
+                  onRevoke={() => handleRevoke(connection)}
+                  onBlock={() => handleBlock(connection)}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <FriendProfileDrawer
@@ -541,7 +565,11 @@ function FriendRow({
 }) {
   const person = otherParticipant(connection, currentUserId);
   const handle = makeHandle(person);
-  const bio = person?.description || connection.message;
+  const tagline = extractTagline(person);
+  const bio = tagline || person?.description || connection.message;
+  const connectedAt = formatDateTime(
+    connection.connectedAt ?? connection.respondedAt ?? connection.insertedAt
+  );
 
   return (
     <div
@@ -555,58 +583,82 @@ function FriendRow({
         }
       }}
       className={cn(
-        "flex cursor-pointer items-start gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+        "grid cursor-pointer grid-cols-[minmax(0,1.4fr)_minmax(0,2fr)_140px_120px_88px] items-center gap-3 py-2.5 pl-4 pr-6 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
         divider && "border-b border-border"
       )}
     >
-      <div className="relative shrink-0">
-        <Avatar className="h-12 w-12">
-          {person?.avatarUrl && <AvatarImage src={person.avatarUrl} displaySize={48} />}
-          <AvatarFallback className="text-sm font-semibold">{initials(person?.displayName)}</AvatarFallback>
-        </Avatar>
-        {online && <PresenceDot online />}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <span className="truncate text-[15px] font-bold">{person?.displayName ?? "Unknown"}</span>
-              {online && (
-                <span className="text-[10px] font-semibold uppercase tracking-wider text-success">
-                  · online
-                </span>
-              )}
-            </div>
-            <div className="truncate text-[13px] text-muted-foreground">{handle}</div>
-          </div>
-          {busy ? (
-            <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-          ) : (
-            <div className="flex shrink-0 items-center gap-1.5">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMessage();
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85"
-                title={`Message ${person?.displayName ?? "friend"}`}
-              >
-                <MessageCircle className="h-4 w-4" />
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRevoke();
-                }}
-                className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card transition-colors hover:bg-muted hover:border-destructive/40"
-                title={`Unfriend ${person?.displayName ?? "friend"}`}
-              >
-                <UserMinus className="h-4 w-4 text-destructive" />
-              </button>
-            </div>
+      {/* Friend identity */}
+      <div className="flex min-w-0 items-center gap-2.5">
+        <div className="relative shrink-0">
+          <Avatar className="h-9 w-9">
+            {person?.avatarUrl && <AvatarImage src={person.avatarUrl} displaySize={36} />}
+            <AvatarFallback className="text-xs font-semibold">
+              {initials(person?.displayName)}
+            </AvatarFallback>
+          </Avatar>
+          {online && (
+            <span
+              className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-card bg-success"
+              aria-label="Online"
+            />
           )}
         </div>
-        {bio && <p className="mt-1 line-clamp-2 text-sm text-foreground/80">{bio}</p>}
+        <div className="min-w-0 leading-tight">
+          <p className="truncate text-sm font-semibold">{person?.displayName ?? "Unknown"}</p>
+          <p className="truncate text-[11px] text-muted-foreground">{handle}</p>
+        </div>
+      </div>
+
+      {/* About */}
+      <div className="min-w-0">
+        {bio ? (
+          <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">{bio}</p>
+        ) : (
+          <span className="text-xs text-muted-foreground/50">—</span>
+        )}
+      </div>
+
+      {/* Status */}
+      <div className="flex items-center gap-1.5 text-xs">
+        <span
+          className={cn(
+            "h-2 w-2 rounded-full",
+            online ? "bg-success" : "bg-muted-foreground/40"
+          )}
+        />
+        <span className={online ? "font-semibold text-success" : "text-muted-foreground"}>
+          {online ? "Online" : "Offline"}
+        </span>
+        {person?.timezone && (
+          <span className="truncate text-[10px] text-muted-foreground/70">· {person.timezone}</span>
+        )}
+      </div>
+
+      {/* Connected */}
+      <div className="truncate text-xs text-muted-foreground">{connectedAt}</div>
+
+      {/* Actions */}
+      <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+        {busy ? (
+          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+        ) : (
+          <>
+            <button
+              onClick={onMessage}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85"
+              title={`Message ${person?.displayName ?? "friend"}`}
+            >
+              <MessageCircle className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onRevoke}
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-border bg-card transition-colors hover:border-destructive/40 hover:bg-muted"
+              title={`Unfriend ${person?.displayName ?? "friend"}`}
+            >
+              <UserMinus className="h-4 w-4 text-destructive" />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
