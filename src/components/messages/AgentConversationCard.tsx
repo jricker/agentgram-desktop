@@ -18,7 +18,6 @@ import { useNavStore } from "../../stores/navStore";
 import { useStreamingStore } from "../../stores/streamingStore";
 import { GroupAvatar } from "./GroupAvatar";
 
-const MAX_FEED_MESSAGES = 3;
 const EMPTY_MESSAGES: Message[] = [];
 
 function phaseLabel(phase: StreamPhase, detail?: string): string {
@@ -39,8 +38,8 @@ function phaseLabel(phase: StreamPhase, detail?: string): string {
   }
 }
 
-function compact(text: string, max = 140): string {
-  const cleaned = text
+function compact(text: string | undefined, max = 140): string {
+  const cleaned = (text ?? "")
     .replace(/```[\s\S]*?```/g, "[code]")
     .replace(/\s+/g, " ")
     .trim();
@@ -117,12 +116,11 @@ export function AgentConversationCard({
     return agents.length > 0 ? agents : members.filter((m) => m.participantId !== myId);
   }, [conversation.members, myId]);
 
-  const latestMessages = useMemo(
-    () => messages.slice(-MAX_FEED_MESSAGES),
-    [messages]
-  );
-  const fallbackMessage = latestMessages.length === 0 ? conversation.lastMessage : undefined;
-  const feedMessages = fallbackMessage ? [fallbackMessage] : latestMessages;
+  const feedMessage = useMemo(() => {
+    const latest = messages[messages.length - 1];
+    if (latest?.id) return latest;
+    return conversation.lastMessage?.id ? conversation.lastMessage : null;
+  }, [conversation.lastMessage, messages]);
   const isLive = Boolean(stream);
   const memberNames = agentMembers
     .map((m) => m.participant?.displayName)
@@ -136,12 +134,12 @@ export function AgentConversationCard({
   };
 
   return (
-    <div className="flex justify-start px-4 py-1.5">
+    <div className="flex w-full justify-start px-4 py-1.5">
       <button
         type="button"
         onClick={openConversation}
         className={cn(
-          "group w-full max-w-[70%] overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-colors",
+          "group w-full overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-colors",
           isLive
             ? "border-primary/30 ring-1 ring-primary/10 hover:bg-primary/5"
             : "border-border hover:bg-muted/40"
@@ -188,7 +186,7 @@ export function AgentConversationCard({
 
           <div className="mt-3 rounded-lg border border-border bg-background/50">
             {stream && (
-              <div className="flex items-start gap-2 border-b border-border px-3 py-2">
+              <div className="flex items-start gap-2 px-3 py-2">
                 <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
                 <div className="min-w-0 flex-1">
                   <p className="text-[11px] font-semibold text-primary">
@@ -201,27 +199,23 @@ export function AgentConversationCard({
               </div>
             )}
 
-            {feedMessages.length > 0 ? (
-              <div className="divide-y divide-border">
-                {feedMessages.map((msg) => (
-                  <div key={msg.id} className="flex items-start gap-2 px-3 py-2">
-                    <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[11px] font-semibold text-muted-foreground">
-                        {msg.sender?.displayName ?? "Agent"}
-                      </p>
-                      <p className="line-clamp-2 text-xs text-foreground">
-                        {summarizeMessage(msg)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+            {!stream && feedMessage ? (
+              <div className="flex items-start gap-2 px-3 py-2">
+                <MessageSquareText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[11px] font-semibold text-muted-foreground">
+                    {feedMessage.sender?.displayName ?? "Agent"}
+                  </p>
+                  <p className="line-clamp-2 text-xs text-foreground">
+                    {summarizeMessage(feedMessage)}
+                  </p>
+                </div>
               </div>
-            ) : (
+            ) : !stream ? (
               <div className="px-3 py-2 text-xs text-muted-foreground">
                 Waiting for the first agent-to-agent update…
               </div>
-            )}
+            ) : null}
           </div>
 
           <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
