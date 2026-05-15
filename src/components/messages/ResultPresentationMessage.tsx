@@ -2,6 +2,7 @@ import { useState, useCallback } from "react";
 import type { Message } from "../../lib/api";
 import { cn } from "../../lib/utils";
 import { MarkdownContent } from "./MarkdownContent";
+import { ScreenplayBody, isScreenplayTemplate } from "./ScreenplayBody";
 import {
   Star,
   MapPin,
@@ -397,7 +398,17 @@ function isHtml(text: string): boolean {
   return /<[a-z][\s\S]*>/i.test(text);
 }
 
-function RichBody({ content }: { content: string }) {
+function RichBody({
+  content,
+  screenplay,
+}: {
+  content: string;
+  screenplay?: boolean;
+}) {
+  if (screenplay) {
+    return <ScreenplayBody content={content} />;
+  }
+
   if (isHtml(content)) {
     return (
       <div
@@ -414,11 +425,13 @@ function CollapsibleBody({
   label,
   icon: IconComp,
   disableCollapse,
+  screenplay,
 }: {
   content: string;
   label?: string;
   icon?: LucideIcon | null;
   disableCollapse?: boolean;
+  screenplay?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isLong = !disableCollapse && content.length > 200;
@@ -441,7 +454,7 @@ function CollapsibleBody({
           !expanded && isLong && "max-h-[200px] overflow-hidden",
         )}
       >
-        <RichBody content={content} />
+        <RichBody content={content} screenplay={screenplay} />
       </div>
       {isLong && !expanded && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-card to-transparent" />
@@ -474,10 +487,12 @@ function DetailSection({
   schema,
   details,
   disableBodyCollapse,
+  screenplay,
 }: {
   schema: DetailFieldDescriptor[];
   details: Record<string, unknown>;
   disableBodyCollapse?: boolean;
+  screenplay?: boolean;
 }) {
   // Group consecutive chip fields together
   const elements: React.ReactNode[] = [];
@@ -601,6 +616,9 @@ function DetailSection({
       const text = val != null ? String(val) : "";
       if (!text) continue;
       const BodyIcon = resolveIcon(field.icon);
+      const renderAsScreenplay =
+        screenplay &&
+        ["content", "script", "page"].includes(field.key.toLowerCase());
       elements.push(
         <CollapsibleBody
           key={field.key}
@@ -608,6 +626,7 @@ function DetailSection({
           label={field.label}
           icon={BodyIcon}
           disableCollapse={disableBodyCollapse}
+          screenplay={renderAsScreenplay}
         />,
       );
     } else if (field.display === "change") {
@@ -745,6 +764,11 @@ function ResultCard({
   const TypeIcon = resultTypeIcon(item.type ?? resultType);
   const details = (item.details ?? {}) as Record<string, unknown>;
   const schema = item.detail_schema;
+  const isScreenplayCard = isScreenplayTemplate(
+    item.detail_template,
+    item.type,
+    resultType,
+  );
 
   // Magazine-style card: 2+ body sections in a single item (sports brief,
   // daily digest). Disable per-section "Show more" so the whole card is
@@ -811,6 +835,7 @@ function ResultCard({
             schema={schema}
             details={details}
             disableBodyCollapse={isMagazineCard}
+            screenplay={isScreenplayCard}
           />
         )}
 
