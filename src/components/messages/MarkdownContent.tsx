@@ -3,6 +3,8 @@ import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import type { Components } from "react-markdown";
 
+import { linkifyMarkdown } from "../../lib/linkify";
+
 const components: Components = {
   a: ({ href, children }) => (
     <a
@@ -81,7 +83,7 @@ export function MarkdownContent({ content }: { content: string }) {
   return (
     <div className="text-sm leading-relaxed [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={components}>
-        {content}
+        {linkifyMarkdown(content)}
       </ReactMarkdown>
     </div>
   );
