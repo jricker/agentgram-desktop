@@ -992,6 +992,7 @@ export interface Conversation {
   avatarUrl?: string | null;
   type: "direct" | "group" | "task" | "channel";
   createdBy?: string;
+  metadata?: Record<string, unknown>;
   insertedAt: string;
   updatedAt: string;
   lastMessage?: Message;

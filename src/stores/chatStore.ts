@@ -54,6 +54,28 @@ function sortConversations(convos: Conversation[]): Conversation[] {
   });
 }
 
+function isPulseConversation(conv: Conversation): boolean {
+  return Boolean(conv.metadata?.pulse_conversation);
+}
+
+function isAgentScopedConversation(conv: Conversation): boolean {
+  if (conv.type === "task") return false;
+  if (conv.parentConversationId) return true;
+  const members = conv.members ?? [];
+  return (
+    members.length > 0 &&
+    members.every((m) => m.participant?.type === "agent")
+  );
+}
+
+function upsertConversation(list: Conversation[], conv: Conversation): Conversation[] {
+  const existing = list.find((c) => c.id === conv.id);
+  if (!existing) return sortConversations([conv, ...list]);
+  return sortConversations(
+    list.map((c) => (c.id === conv.id ? { ...c, ...conv } : c))
+  );
+}
+
 interface ChatState {
   // Conversations
   conversations: Conversation[];
@@ -197,15 +219,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   addConversation: (conv) => {
-    if (conv.parentConversationId || conv.type === "task") return;
     // Pulse conversations are an internal workspace for the agent's pulse runs;
     // the backend filters them out of /conversations?scope=agents, so suppress
     // the live `new_conversation` add too — otherwise the very first pulse for
     // a new agent would briefly leak its workspace into the agent list.
-    if ((conv as { metadata?: { pulse_conversation?: boolean } }).metadata?.pulse_conversation) return;
+    if (isPulseConversation(conv)) return;
     set((s) => {
-      if (s.conversations.some((c) => c.id === conv.id)) return s;
-      return { conversations: sortConversations([conv, ...s.conversations]) };
+      if (isAgentScopedConversation(conv)) {
+        return {
+          agentConversations: upsertConversation(s.agentConversations, conv),
+        };
+      }
+      if (conv.parentConversationId || conv.type === "task") return s;
+      return { conversations: upsertConversation(s.conversations, conv) };
     });
   },
 

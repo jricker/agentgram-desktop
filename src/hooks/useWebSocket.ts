@@ -91,6 +91,9 @@ export function useWebSocket() {
       }
       console.log("[ws] reconnected → resyncing");
       useChatStore.getState().fetchConversations();
+      if (useChatStore.getState().agentConversationsLoaded) {
+        useChatStore.getState().fetchAgentConversations();
+      }
       useChatStore.getState().fetchUnreadCounts();
       useFriendStore.getState().fetchPendingCount();
       const activeId = useChatStore.getState().activeConversationId;

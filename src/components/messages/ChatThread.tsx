@@ -8,8 +8,10 @@ import { useTaskStore } from "../../stores/taskStore";
 import { MessageBubble } from "./MessageBubble";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { StreamingBubble } from "./StreamingBubble";
+import { AgentConversationCard } from "./AgentConversationCard";
 import { cn, dayKey, formatDayLabel } from "../../lib/utils";
-import type { Message } from "../../lib/api";
+import type { Conversation, Message } from "../../lib/api";
+import { ws } from "../../services/websocket";
 
 const SENDER_RUN_BREAK_MS = 2 * 60 * 1000;
 const SCROLL_BOTTOM_THRESHOLD = 120;
@@ -182,6 +184,52 @@ function consolidate(messages: Message[]): Message[] {
     });
 }
 
+type ThreadItem =
+  | { kind: "message"; id: string; insertedAt: string; message: Message }
+  | {
+      kind: "agent_conversation";
+      id: string;
+      insertedAt: string;
+      conversation: Conversation;
+    };
+
+function buildThreadItems(
+  messages: Message[],
+  agentConversations: Conversation[]
+): ThreadItem[] {
+  return [
+    ...messages.map((message) => ({
+      kind: "message" as const,
+      id: message.id,
+      insertedAt: message.insertedAt,
+      message,
+    })),
+    ...agentConversations.map((conversation) => ({
+      kind: "agent_conversation" as const,
+      id: `agent-conversation:${conversation.id}`,
+      insertedAt: conversation.insertedAt ?? conversation.updatedAt,
+      conversation,
+    })),
+  ].sort((a, b) => {
+    const diff =
+      new Date(a.insertedAt).getTime() - new Date(b.insertedAt).getTime();
+    return diff !== 0 ? diff : a.id.localeCompare(b.id);
+  });
+}
+
+function linkedSourceConversationId(conversation: Conversation): string | undefined {
+  const metadata = conversation.metadata ?? {};
+  return (
+    conversation.parentConversationId ??
+    (typeof metadata.source_conversation_id === "string"
+      ? metadata.source_conversation_id
+      : undefined) ??
+    (typeof metadata.sourceConversationId === "string"
+      ? metadata.sourceConversationId
+      : undefined)
+  );
+}
+
 export function ChatThread({ conversationId }: { conversationId: string }) {
   const messagesRaw = useChatStore((s) => s.messages[conversationId]);
   const rawMessages = messagesRaw ?? EMPTY_MESSAGES;
@@ -253,6 +301,10 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const loading = useChatStore((s) => s.messagesLoading[conversationId] ?? false);
   const hasMore = useChatStore((s) => s.hasMore[conversationId] ?? false);
   const fetchMessages = useChatStore((s) => s.fetchMessages);
+  const fetchAgentConversations = useChatStore((s) => s.fetchAgentConversations);
+  const agentConversationsLoaded = useChatStore((s) => s.agentConversationsLoaded);
+  const agentConversationsLoading = useChatStore((s) => s.agentConversationsLoading);
+  const agentConversations = useChatStore((s) => s.agentConversations);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
   const deleteMessage = useChatStore((s) => s.deleteMessage);
   const firstUnreadId = useChatStore((s) => s.firstUnreadIds[conversationId]);
@@ -262,9 +314,37 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const typingNames = usePresenceStore((s) => s.typingNames);
   const stream = useStreamingStore((s) => s.streams[conversationId]);
 
+  const childAgentConversations = useMemo(
+    () =>
+      agentConversations
+        .filter(
+          (c) =>
+            c.id !== conversationId &&
+            c.type !== "task" &&
+            linkedSourceConversationId(c) === conversationId
+        )
+        .sort(
+          (a, b) =>
+            new Date(a.insertedAt).getTime() -
+            new Date(b.insertedAt).getTime()
+        ),
+    [agentConversations, conversationId]
+  );
+
+  const childAgentConversationIds = useMemo(
+    () => childAgentConversations.map((c) => c.id).join("|"),
+    [childAgentConversations]
+  );
+
+  const threadItems = useMemo(
+    () => buildThreadItems(messages, childAgentConversations),
+    [messages, childAgentConversations]
+  );
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevLengthRef = useRef(0);
   const prevConvIdRef = useRef<string | null>(null);
+  const agentConversationsFetchAttemptedRef = useRef(false);
   const [nearBottom, setNearBottom] = useState(true);
   // Pair with `.scrollbar-autohide` CSS: toggled on during active scroll so
   // the thumb is visible while the user's actually moving content, then
@@ -284,6 +364,43 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
+  // Parent conversations need to know about agent-to-agent sub-conversations
+  // even if the user never opens the Agent-to-Agent tab. Fetch once, then keep
+  // the list live from user-channel `new_conversation` / `conversation_updated`
+  // events.
+  useEffect(() => {
+    if (
+      !agentConversationsLoaded &&
+      !agentConversationsLoading &&
+      !agentConversationsFetchAttemptedRef.current
+    ) {
+      agentConversationsFetchAttemptedRef.current = true;
+      void fetchAgentConversations().catch((e) =>
+        console.warn("[chat] fetchAgentConversations failed", e)
+      );
+    }
+  }, [
+    agentConversationsLoaded,
+    agentConversationsLoading,
+    fetchAgentConversations,
+  ]);
+
+  // Join child agent conversations while the parent thread is open so the
+  // inline card can show real recent messages + streaming state, not only
+  // stale `lastMessage` snapshots. Leaving skips the child that just became
+  // active via click-through to avoid racing `setActiveConversation()`.
+  useEffect(() => {
+    if (!childAgentConversationIds) return;
+    const ids = childAgentConversationIds.split("|").filter(Boolean);
+    ids.forEach((id) => ws.joinConversation(id));
+    return () => {
+      const activeId = useChatStore.getState().activeConversationId;
+      ids.forEach((id) => {
+        if (activeId !== id) ws.leaveConversation(id);
+      });
+    };
+  }, [childAgentConversationIds]);
+
   // Autoscroll — matches web's ChatView behavior:
   //   - Conversation switch: always jump to bottom (instant).
   //   - New message while pinned to bottom: smooth scroll down.
@@ -297,15 +414,15 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     const el = scrollRef.current;
     if (!el) return;
     const convChanged = prevConvIdRef.current !== conversationId;
-    const newMessages = messages.length > prevLengthRef.current;
+    const newMessages = threadItems.length > prevLengthRef.current;
     if (convChanged) {
       el.scrollTop = el.scrollHeight;
     } else if ((newMessages || stream) && nearBottom) {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
-    prevLengthRef.current = messages.length;
+    prevLengthRef.current = threadItems.length;
     prevConvIdRef.current = conversationId;
-  }, [conversationId, messages.length, nearBottom, stream]);
+  }, [conversationId, threadItems.length, nearBottom, stream]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -361,7 +478,7 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
           <div className="flex items-center justify-center py-10">
             <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
           </div>
-        ) : messages.length === 0 && !stream && !typingLabel ? (
+        ) : threadItems.length === 0 && !stream && !typingLabel ? (
           <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
             No messages yet
           </div>
@@ -378,14 +495,27 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
                 )}
               </div>
             )}
-            {messages.map((msg, i) => {
-              const prev = messages[i - 1];
+            {threadItems.map((item, i) => {
+              const prevItem = threadItems[i - 1];
+              const dayChanged =
+                !prevItem ||
+                dayKey(prevItem.insertedAt) !== dayKey(item.insertedAt);
+
+              if (item.kind === "agent_conversation") {
+                return (
+                  <Fragment key={item.id}>
+                    {dayChanged && <DaySeparator iso={item.insertedAt} />}
+                    <AgentConversationCard conversation={item.conversation} />
+                  </Fragment>
+                );
+              }
+
+              const msg = item.message;
+              const prev = prevItem?.kind === "message" ? prevItem.message : undefined;
               const isSameSender = prev?.senderId === msg.senderId;
               const closeInTime = isNear(prev, msg);
               const showAvatar = !isSameSender || !closeInTime;
               const showSenderName = showAvatar;
-              const dayChanged =
-                !prev || dayKey(prev.insertedAt) !== dayKey(msg.insertedAt);
               const showUnreadDivider = firstUnreadId === msg.id;
               return (
                 <Fragment key={msg.id}>
