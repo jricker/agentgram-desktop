@@ -117,7 +117,7 @@ function LeftRail({
   const personalConversations = useChatStore((s) => s.conversations);
   // Only count unread against conversations in the personal "Chats" list —
   // the server's /unread-counts endpoint returns entries for every
-  // conversation the user can see, including agent-to-agent ones, which
+  // conversation the user can see, including hidden agent threads, which
   // would otherwise inflate the badge on the Chat tab.
   const totalUnread = useMemo(() => {
     const personalIds = new Set(personalConversations.map((c) => c.id));

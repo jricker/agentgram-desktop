@@ -20,17 +20,9 @@ import {
 import { GroupAvatar } from "./GroupAvatar";
 import type { Conversation } from "../../lib/api";
 
-export function ConversationList({
-  scope = "personal",
-}: {
-  scope?: "personal" | "agents";
-}) {
-  const personalConvos = useChatStore((s) => s.conversations);
-  const agentConvos = useChatStore((s) => s.agentConversations);
-  const conversations = scope === "agents" ? agentConvos : personalConvos;
-  const personalLoading = useChatStore((s) => s.conversationsLoading);
-  const agentLoading = useChatStore((s) => s.agentConversationsLoading);
-  const loading = scope === "agents" ? agentLoading : personalLoading;
+export function ConversationList() {
+  const conversations = useChatStore((s) => s.conversations);
+  const loading = useChatStore((s) => s.conversationsLoading);
   const activeId = useChatStore((s) => s.activeConversationId);
   const unreadCounts = useChatStore((s) => s.unreadCounts);
   const setActive = useChatStore((s) => s.setActiveConversation);
@@ -56,12 +48,10 @@ export function ConversationList({
       <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
         <MessageSquare className="w-10 h-10 text-muted-foreground/40 mb-3" />
         <p className="text-sm text-muted-foreground">
-          {scope === "agents" ? "No agent conversations" : "No conversations yet"}
+          No conversations yet
         </p>
         <p className="text-xs text-muted-foreground mt-1">
-          {scope === "agents"
-            ? "Agent-to-agent DMs will appear here."
-            : "Click the pencil icon above to start one."}
+          Click the pencil icon above to start one.
         </p>
       </div>
     );
@@ -96,7 +86,7 @@ export function ConversationList({
             key={conv.id}
             conversation={conv}
             isActive={conv.id === activeId}
-            unreadCount={scope === "agents" ? 0 : unreadCounts[conv.id] ?? 0}
+            unreadCount={unreadCounts[conv.id] ?? 0}
             presence={presence}
             hasAgent={hasAgent}
             currentUserId={currentUserId}

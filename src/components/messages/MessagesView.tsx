@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MessageSquare, ChevronRight, SquarePen, Bot, Cloud, RefreshCw } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
-import { useStreamingStore } from "../../stores/streamingStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../../lib/utils";
 import { ConversationList } from "./ConversationList";
@@ -15,9 +14,6 @@ import { ChatHeaderMenu } from "./ChatHeaderMenu";
 import { GroupAvatar } from "./GroupAvatar";
 
 const DETAILS_KEY = "agentchat:showDetails";
-const ACTIVE_TAB_KEY = "agentchat:messagesTab";
-
-type MessagesTab = "chats" | "agents";
 
 function readDetailsPref(): boolean {
   try {
@@ -27,29 +23,15 @@ function readDetailsPref(): boolean {
   }
 }
 
-function readTabPref(): MessagesTab {
-  try {
-    return localStorage.getItem(ACTIVE_TAB_KEY) === "agents" ? "agents" : "chats";
-  } catch {
-    return "chats";
-  }
-}
-
 export function MessagesView() {
   const activeId = useChatStore((s) => s.activeConversationId);
   const fetchConversations = useChatStore((s) => s.fetchConversations);
   const fetchAgentConversations = useChatStore((s) => s.fetchAgentConversations);
   const fetchUnreadCounts = useChatStore((s) => s.fetchUnreadCounts);
-  const agentLoaded = useChatStore((s) => s.agentConversationsLoaded);
-  const unreadCounts = useChatStore((s) => s.unreadCounts);
-  const personalConversations = useChatStore((s) => s.conversations);
-  const agentStreams = useStreamingStore((s) => s.streams);
 
   const [showDetails, setShowDetails] = useState(readDetailsPref);
   const [showNew, setShowNew] = useState(false);
-  const [activeTab, setActiveTab] = useState<MessagesTab>(readTabPref);
   const [refreshing, setRefreshing] = useState(false);
-  const agentFetchOnce = useRef(false);
 
   const handleRefresh = async () => {
     if (refreshing) return;
@@ -74,43 +56,6 @@ export function MessagesView() {
       localStorage.setItem(DETAILS_KEY, showDetails ? "1" : "0");
     } catch {}
   }, [showDetails]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(ACTIVE_TAB_KEY, activeTab);
-    } catch {}
-  }, [activeTab]);
-
-  // Lazy-load agent conversations the first time the agents tab is opened —
-  // matches web + mobile behavior so the initial personal load isn't held up
-  // by the larger scope=agents call.
-  useEffect(() => {
-    if (activeTab === "agents" && !agentFetchOnce.current) {
-      agentFetchOnce.current = true;
-      if (!agentLoaded) fetchAgentConversations();
-    }
-  }, [activeTab, agentLoaded, fetchAgentConversations]);
-
-  // Subtle indicator on the Agent-to-Agent tab when something is happening
-  // there while the user is looking at Chats — any active stream counts.
-  const hasAgentActivity = useMemo(
-    () => Object.keys(agentStreams).length > 0,
-    [agentStreams]
-  );
-
-  // Show a badge on the Chats tab when there are unread personal convs and
-  // we're on a different tab. Filter against the personal list — the
-  // server's unread-counts endpoint returns entries for every conversation
-  // the user can see, including agent-to-agent ones; summing those would
-  // inflate the badge.
-  const totalPersonalUnread = useMemo(() => {
-    const personalIds = new Set(personalConversations.map((c) => c.id));
-    let sum = 0;
-    for (const [id, n] of Object.entries(unreadCounts)) {
-      if (personalIds.has(id)) sum += typeof n === "number" ? n : 0;
-    }
-    return sum;
-  }, [unreadCounts, personalConversations]);
 
   return (
     <div className="flex-1 flex h-full overflow-hidden">
@@ -142,45 +87,23 @@ export function MessagesView() {
             >
               <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
             </button>
-            {activeTab === "chats" && (
-              <button
-                type="button"
-                onClick={() => setShowNew(true)}
-                title="New conversation"
-                aria-label="New conversation"
-                className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                <SquarePen className="h-4 w-4" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowNew(true)}
+              title="New conversation"
+              aria-label="New conversation"
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <SquarePen className="h-4 w-4" />
+            </button>
           </div>
-        </div>
-
-        <div
-          className="flex items-center gap-1 px-3 py-2 border-b border-border"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        >
-          <TabPill
-            label="Chats"
-            icon={MessageSquare}
-            active={activeTab === "chats"}
-            onClick={() => setActiveTab("chats")}
-            badge={totalPersonalUnread > 0 ? totalPersonalUnread : undefined}
-          />
-          <TabPill
-            label="Agent-to-Agent"
-            icon={Bot}
-            active={activeTab === "agents"}
-            onClick={() => setActiveTab("agents")}
-            activity={hasAgentActivity}
-          />
         </div>
 
         <div
           className="flex-1 overflow-y-auto"
           style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
         >
-          <ConversationList scope={activeTab === "agents" ? "agents" : "personal"} />
+          <ConversationList />
         </div>
       </aside>
 
@@ -383,47 +306,6 @@ function DetailsPanelWrapper({
       onClose={onClose}
       onAfterLeave={onClose}
     />
-  );
-}
-
-function TabPill({
-  label,
-  icon: Icon,
-  active,
-  onClick,
-  badge,
-  activity,
-}: {
-  label: string;
-  icon: React.ElementType;
-  active: boolean;
-  onClick: () => void;
-  badge?: number;
-  activity?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex flex-1 items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-xs font-medium transition-colors",
-        active
-          ? "bg-primary/10 text-foreground"
-          : "text-muted-foreground hover:bg-muted hover:text-foreground"
-      )}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      <span>{label}</span>
-      {badge !== undefined && badge > 0 && (
-        <span className="min-w-[16px] h-4 px-1 rounded-full bg-primary text-primary-foreground text-[9px] font-semibold flex items-center justify-center">
-          {badge > 99 ? "99+" : badge}
-        </span>
-      )}
-      {activity && (
-        <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-      )}
-    </button>
   );
 }
 

@@ -37,9 +37,9 @@ export function MessageComposer({ conversationId }: { conversationId: string }) 
   const setDraft = useChatStore((s) => s.setDraft);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const replyingTo = useChatStore((s) => s.replyingTo[conversationId]);
-  // Search both lists — agent-to-agent conversations live in
-  // `agentConversations`, not `conversations`. Without the second branch
-  // the find returns undefined for them and the `?? []` fallback loops.
+  // Search both lists — inline agent threads live in `agentConversations`,
+  // not `conversations`. Without the second branch the find returns
+  // undefined for them and the `?? []` fallback loops.
   const members = useChatStore(
     (s) =>
       (s.conversations.find((c) => c.id === conversationId) ??

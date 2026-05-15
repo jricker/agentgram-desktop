@@ -197,24 +197,73 @@ function buildThreadItems(
   messages: Message[],
   agentConversations: Conversation[]
 ): ThreadItem[] {
-  return [
-    ...messages.map((message) => ({
-      kind: "message" as const,
-      id: message.id,
-      insertedAt: message.insertedAt,
-      message,
-    })),
-    ...agentConversations.map((conversation) => ({
-      kind: "agent_conversation" as const,
-      id: `agent-conversation:${conversation.id}`,
-      insertedAt: conversation.insertedAt ?? conversation.updatedAt,
-      conversation,
-    })),
-  ].sort((a, b) => {
-    const diff =
-      new Date(a.insertedAt).getTime() - new Date(b.insertedAt).getTime();
-    return diff !== 0 ? diff : a.id.localeCompare(b.id);
+  const messageIds = new Set(messages.map((message) => message.id));
+  const conversationsByMessage = new Map<string, Conversation[]>();
+  const unanchoredConversations: Conversation[] = [];
+
+  for (const conversation of agentConversations) {
+    const sourceMessageId = linkedSourceMessageId(conversation);
+    if (sourceMessageId && messageIds.has(sourceMessageId)) {
+      const existing = conversationsByMessage.get(sourceMessageId) ?? [];
+      existing.push(conversation);
+      conversationsByMessage.set(sourceMessageId, existing);
+    } else if (!sourceMessageId) {
+      unanchoredConversations.push(conversation);
+    }
+  }
+
+  const itemForConversation = (conversation: Conversation): ThreadItem => ({
+    kind: "agent_conversation",
+    id: `agent-conversation:${conversation.id}`,
+    insertedAt: conversation.insertedAt ?? conversation.updatedAt,
+    conversation,
   });
+
+  const unanchoredItems = unanchoredConversations
+    .map(itemForConversation)
+    .sort((a, b) => {
+      const diff =
+        new Date(a.insertedAt).getTime() - new Date(b.insertedAt).getTime();
+      return diff !== 0 ? diff : a.id.localeCompare(b.id);
+    });
+
+  const items: ThreadItem[] = [];
+  let unanchoredIndex = 0;
+
+  for (const message of messages) {
+    const messageTime = new Date(message.insertedAt).getTime();
+    while (
+      unanchoredIndex < unanchoredItems.length &&
+      new Date(unanchoredItems[unanchoredIndex]!.insertedAt).getTime() <= messageTime
+    ) {
+      items.push(unanchoredItems[unanchoredIndex]!);
+      unanchoredIndex += 1;
+    }
+
+    const children = conversationsByMessage.get(message.id) ?? [];
+    children.sort(
+      (a, b) =>
+        new Date(a.insertedAt ?? a.updatedAt).getTime() -
+        new Date(b.insertedAt ?? b.updatedAt).getTime()
+    );
+
+    items.push(
+      {
+        kind: "message",
+        id: message.id,
+        insertedAt: message.insertedAt,
+        message,
+      },
+      ...children.map(itemForConversation)
+    );
+  }
+
+  while (unanchoredIndex < unanchoredItems.length) {
+    items.push(unanchoredItems[unanchoredIndex]!);
+    unanchoredIndex += 1;
+  }
+
+  return items;
 }
 
 function linkedSourceConversationId(conversation: Conversation): string | undefined {
@@ -226,6 +275,18 @@ function linkedSourceConversationId(conversation: Conversation): string | undefi
       : undefined) ??
     (typeof metadata.sourceConversationId === "string"
       ? metadata.sourceConversationId
+      : undefined)
+  );
+}
+
+function linkedSourceMessageId(conversation: Conversation): string | undefined {
+  const metadata = conversation.metadata ?? {};
+  return (
+    (typeof metadata.source_message_id === "string"
+      ? metadata.source_message_id
+      : undefined) ??
+    (typeof metadata.sourceMessageId === "string"
+      ? metadata.sourceMessageId
       : undefined)
   );
 }
@@ -302,7 +363,6 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const hasMore = useChatStore((s) => s.hasMore[conversationId] ?? false);
   const fetchMessages = useChatStore((s) => s.fetchMessages);
   const fetchAgentConversations = useChatStore((s) => s.fetchAgentConversations);
-  const agentConversationsLoaded = useChatStore((s) => s.agentConversationsLoaded);
   const agentConversationsLoading = useChatStore((s) => s.agentConversationsLoading);
   const agentConversations = useChatStore((s) => s.agentConversations);
   const setReplyingTo = useChatStore((s) => s.setReplyingTo);
@@ -344,7 +404,7 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevLengthRef = useRef(0);
   const prevConvIdRef = useRef<string | null>(null);
-  const agentConversationsFetchAttemptedRef = useRef(false);
+  const agentConversationsFetchAttemptedRef = useRef<string | null>(null);
   const [nearBottom, setNearBottom] = useState(true);
   // Pair with `.scrollbar-autohide` CSS: toggled on during active scroll so
   // the thumb is visible while the user's actually moving content, then
@@ -364,23 +424,26 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId]);
 
-  // Parent conversations need to know about agent-to-agent sub-conversations
-  // even if the user never opens the Agent-to-Agent tab. Fetch once, then keep
-  // the list live from user-channel `new_conversation` / `conversation_updated`
-  // events.
+  // Parent conversations need the hidden agent-thread list so inline
+  // AgentConversationCard rows can render without a separate sidebar.
   useEffect(() => {
     if (
-      !agentConversationsLoaded &&
+      conversationId &&
       !agentConversationsLoading &&
-      !agentConversationsFetchAttemptedRef.current
+      agentConversationsFetchAttemptedRef.current !== conversationId
     ) {
-      agentConversationsFetchAttemptedRef.current = true;
-      void fetchAgentConversations().catch((e) =>
-        console.warn("[chat] fetchAgentConversations failed", e)
-      );
+      agentConversationsFetchAttemptedRef.current = conversationId;
+      void fetchAgentConversations(conversationId).catch((e) => {
+        console.warn("[chat] fetchAgentConversations failed", e);
+        window.setTimeout(() => {
+          if (agentConversationsFetchAttemptedRef.current === conversationId) {
+            agentConversationsFetchAttemptedRef.current = null;
+          }
+        }, 5000);
+      });
     }
   }, [
-    agentConversationsLoaded,
+    conversationId,
     agentConversationsLoading,
     fetchAgentConversations,
   ]);

@@ -158,7 +158,7 @@ export function AgentConversationCard({
               <div className="flex items-center gap-1.5">
                 <span className="inline-flex items-center gap-1 rounded bg-bubble-agent-accent/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-bubble-agent-accent">
                   <Bot className="h-3 w-3" />
-                  Agent chat
+                  Agent thread
                 </span>
                 {isLive && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary">
@@ -213,14 +213,14 @@ export function AgentConversationCard({
               </div>
             ) : !stream ? (
               <div className="px-3 py-2 text-xs text-muted-foreground">
-                Waiting for the first agent-to-agent update…
+                Waiting for the first thread update…
               </div>
             ) : null}
           </div>
 
           <div className="mt-2 flex items-center justify-between text-[11px] text-muted-foreground">
-            <span>Live feed from the spun-up agent conversation</span>
-            <span className="font-semibold text-primary">Open chat</span>
+            <span>Live feed from the spun-up agent thread</span>
+            <span className="font-semibold text-primary">Open thread</span>
           </div>
         </div>
       </button>

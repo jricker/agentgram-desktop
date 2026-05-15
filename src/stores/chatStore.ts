@@ -80,13 +80,12 @@ interface ChatState {
   // Conversations
   conversations: Conversation[];
   conversationsLoading: boolean;
-  /** Agent-to-agent conversations — fetched with `?scope=agents`, shown in
-   *  the Agent-to-Agent tab. Separate list so unread badges and sort don't
-   *  intermix with personal conversations. */
+  /** Agent threads — fetched with `?scope=agents` and rendered inline inside
+   *  their parent conversations. Kept separate so unread badges and sorting do
+   *  not intermix with personal conversations. */
   agentConversations: Conversation[];
   agentConversationsLoading: boolean;
-  /** True until `fetchAgentConversations` has resolved at least once. Used
-   *  to lazy-load the agent tab the first time the user switches to it. */
+  /** True after `fetchAgentConversations` has resolved at least once. */
   agentConversationsLoaded: boolean;
   /** Newly-created conversation, not yet promoted to the list. It only
    *  enters `conversations` after the first message is sent or an event
@@ -106,7 +105,7 @@ interface ChatState {
 
   // Actions — conversations
   fetchConversations: () => Promise<void>;
-  fetchAgentConversations: () => Promise<void>;
+  fetchAgentConversations: (sourceConversationId?: string) => Promise<void>;
   refreshConversation: (id: string) => Promise<void>;
   addConversation: (conv: Conversation) => void;
   updateConversationFromEvent: (convId: string, lastMessage: Message) => void;
@@ -187,12 +186,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  fetchAgentConversations: async () => {
+  fetchAgentConversations: async (sourceConversationId) => {
     set({ agentConversationsLoading: true });
     try {
-      const convos = await api.listConversations("agents");
+      const convos = await api.listConversations("agents", {
+        sourceConversationId,
+        limit: 200,
+      });
+      const merged = sourceConversationId
+        ? [
+            ...get().agentConversations.filter(
+              (existing) => !convos.some((incoming) => incoming.id === existing.id)
+            ),
+            ...convos,
+          ]
+        : convos;
+
       set({
-        agentConversations: sortConversations(convos),
+        agentConversations: sortConversations(merged),
         agentConversationsLoaded: true,
       });
       seedOnlineFromConversations(convos);
@@ -756,8 +767,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (lastMessage) {
           get().updateConversationFromEvent(convId, lastMessage);
         }
-        // Only bump unread for personal conversations — agent-to-agent
-        // conversations are observational and shouldn't accumulate badges.
+        // Only bump unread for personal conversations — hidden agent threads
+        // are observational and shouldn't accumulate badges.
         const isPersonal = get().conversations.some((c) => c.id === convId);
         if (isPersonal && convId !== get().activeConversationId) {
           get().incrementUnread(convId);

@@ -1002,10 +1002,17 @@ export interface Conversation {
 }
 
 export async function listConversations(
-  scope: "personal" | "agents" = "personal"
+  scope: "personal" | "agents" = "personal",
+  opts: { sourceConversationId?: string; limit?: number } = {}
 ): Promise<Conversation[]> {
+  const params = new URLSearchParams({ scope });
+  if (opts.limit) params.set("limit", String(opts.limit));
+  if (opts.sourceConversationId) {
+    params.set("sourceConversationId", opts.sourceConversationId);
+  }
+
   const data = await request<Conversation[] | { conversations: Conversation[] }>(
-    `/api/conversations?scope=${scope}`
+    `/api/conversations?${params.toString()}`
   );
   return Array.isArray(data) ? data : data.conversations;
 }
