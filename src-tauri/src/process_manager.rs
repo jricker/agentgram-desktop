@@ -313,7 +313,9 @@ pub fn start_agent(
     if let Some(ref dirs) = args.add_dirs {
         let valid: Vec<&String> = dirs.iter().filter(|d| !d.is_empty()).collect();
         if !valid.is_empty() {
-            cmd.env("CLAUDE_CLI_ADD_DIRS", valid.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(","));
+            // Newline separator — survives paths containing `,`, `:`, or `;`.
+            // Parsed by parse_add_dirs_env in desktop/bridge/agentchat/backends/_cli_utils.py.
+            cmd.env("CLAUDE_CLI_ADD_DIRS", valid.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n"));
         }
     }
 
