@@ -65,7 +65,11 @@ export function AgentConversationCard({
   };
 
   return (
-    <div className="flex w-full justify-start px-4 py-1">
+    // Asymmetric vertical breathing room: more on top to separate from the
+    // preceding message bubble, less on the bottom since the next item in
+    // the timeline either anchors to this same message (more thread cards)
+    // or starts a new message with its own spacing.
+    <div className="flex w-full justify-start px-4 pt-3 pb-1">
       <button
         type="button"
         onClick={open}
