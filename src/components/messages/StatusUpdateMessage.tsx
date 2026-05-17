@@ -783,14 +783,14 @@ function ThreadCompletedCard({ payload }: { payload: StatusPayload }) {
     ? "border-border hover:bg-muted/40"
     : "border-success/30 hover:bg-success/5";
 
-  // Match the mobile thread_completed card: a header row (icon + label +
-  // topic) followed by a clamped summary on its own line. Card chrome is
-  // present (rounded border, hover state) so it reads as a status
-  // artifact, not a passing pill — but the box is lighter than the
-  // task_complete_summary card (no shadow, tighter padding, no full-
-  // bleed width).
+  // Match the layout shape of the task lifecycle cards (LifecycleCard /
+  // CompletionCard): `my-2 w-full` outer wrapper, full-content-width
+  // inner card. Earlier this card used `flex justify-start px-4 py-0.5`
+  // + `max-w-2xl sm:w-[82%]`, which left 18% dead space on the right
+  // and the card didn't line up with task cards or the agent-name/model
+  // strip in the conversation area.
   return (
-    <div className="flex w-full justify-start px-4 py-0.5">
+    <div className="my-2 w-full">
       <button
         type="button"
         onClick={() => {
@@ -798,7 +798,7 @@ function ThreadCompletedCard({ payload }: { payload: StatusPayload }) {
         }}
         disabled={!threadId}
         className={cn(
-          "group w-full max-w-2xl rounded-lg border bg-card px-3 py-2 text-left transition-colors sm:w-[82%]",
+          "group w-full rounded-lg border bg-card px-3 py-2 text-left transition-colors",
           borderClass,
           !threadId && "cursor-default"
         )}
