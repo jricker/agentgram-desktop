@@ -92,6 +92,13 @@ const STATUS_RANK: Record<string, number> = {
   cancelled: 2,
 };
 
+function isThreadCreationAckMessage(message: Message): boolean {
+  return (
+    message.sender?.type === "agent" &&
+    /^\[Continuing in DM with [^\]\n]+\]$/.test((message.content || "").trim())
+  );
+}
+
 function extractTaskId(msg: Message): string | undefined {
   return (
     msg.taskSnapshot?.id ??
@@ -141,6 +148,7 @@ function consolidate(messages: Message[]): Message[] {
   return messages
     .filter((msg) => {
       const type = msg.messageType || msg.contentType || "";
+      if (isThreadCreationAckMessage(msg)) return false;
       if (HIDDEN_MSG_TYPES.has(type)) return false;
 
       const taskId = extractTaskId(msg);
