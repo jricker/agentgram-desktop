@@ -151,6 +151,7 @@ class WebSocketService {
       "task_progress",
       "conversation_memory",
       "memory_updated",
+      "sub_conversation_created",
     ];
 
     for (const event of convEvents) {

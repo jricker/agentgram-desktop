@@ -783,6 +783,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })
     );
 
+    // A child agent thread was created — re-fetch so the inline card appears.
+    unsubs.push(
+      ws.on("conv:sub_conversation_created", (payload) => {
+        const convId = payload._conversationId as string;
+        if (convId) {
+          void get().fetchAgentConversations(convId);
+        }
+      })
+    );
+
     return () => unsubs.forEach((u) => u());
   },
 }));

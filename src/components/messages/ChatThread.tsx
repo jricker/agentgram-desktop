@@ -215,7 +215,10 @@ function buildThreadItems(
       const existing = conversationsByMessage.get(sourceMessageId) ?? [];
       existing.push(conversation);
       conversationsByMessage.set(sourceMessageId, existing);
-    } else if (!sourceMessageId) {
+    } else {
+      // No source_message_id, or the anchoring message hasn't been loaded
+      // yet (scrolled off, paginated out). Show as unanchored rather than
+      // silently dropping the card.
       unanchoredConversations.push(conversation);
     }
   }
