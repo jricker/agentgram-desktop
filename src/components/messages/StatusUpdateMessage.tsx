@@ -761,13 +761,13 @@ function ThreadCompletedCard({ payload }: { payload: StatusPayload }) {
   const threadId = typeof payload.thread_id === "string" ? payload.thread_id : undefined;
 
   const labelMap: Record<string, string> = {
-    resolved: "Resolved",
-    agreed: "Resolved",
-    blocked: "Blocked",
-    deferred: "Deferred",
-    abandoned: "Abandoned",
+    resolved: "Thread resolved",
+    agreed: "Thread resolved",
+    blocked: "Thread blocked",
+    deferred: "Thread deferred",
+    abandoned: "Thread abandoned",
   };
-  const label = labelMap[outcome] ?? "Resolved";
+  const label = labelMap[outcome] ?? "Thread resolved";
 
   const isWarning = outcome === "blocked";
   const isAbandoned = outcome === "abandoned";
@@ -783,9 +783,12 @@ function ThreadCompletedCard({ payload }: { payload: StatusPayload }) {
     ? "border-border hover:bg-muted/40"
     : "border-success/30 hover:bg-success/5";
 
-  // Slim one-line pill — a thread resolution is a status signal, not a
-  // deliverable. Topic + truncated summary on a single row, full text
-  // available via the native title tooltip.
+  // Match the mobile thread_completed card: a header row (icon + label +
+  // topic) followed by a clamped summary on its own line. Card chrome is
+  // present (rounded border, hover state) so it reads as a status
+  // artifact, not a passing pill — but the box is lighter than the
+  // task_complete_summary card (no shadow, tighter padding, no full-
+  // bleed width).
   return (
     <div className="flex w-full justify-start px-4 py-0.5">
       <button
@@ -794,22 +797,27 @@ function ThreadCompletedCard({ payload }: { payload: StatusPayload }) {
           if (threadId) setActiveConversation(threadId);
         }}
         disabled={!threadId}
-        title={summary || label}
         className={cn(
-          "group inline-flex max-w-[82%] items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-left text-xs transition-colors",
+          "group w-full max-w-2xl rounded-lg border bg-card px-3 py-2 text-left transition-colors sm:w-[82%]",
           borderClass,
           !threadId && "cursor-default"
         )}
       >
-        <CheckCircle className={cn("h-3.5 w-3.5 shrink-0", accentText)} />
-        <span className={cn("shrink-0 font-semibold", accentText)}>{label}</span>
-        {topic ? (
-          <span className="shrink-0 text-muted-foreground">· {topic}</span>
-        ) : null}
-        {summary ? (
-          <span className="min-w-0 truncate text-muted-foreground">
-            — {summary}
+        <div className="flex items-center gap-1.5">
+          <CheckCircle className={cn("h-3.5 w-3.5 shrink-0", accentText)} />
+          <span className={cn("shrink-0 text-xs font-semibold", accentText)}>
+            {label}
           </span>
+          {topic ? (
+            <span className="min-w-0 truncate text-xs font-medium text-foreground">
+              · {topic}
+            </span>
+          ) : null}
+        </div>
+        {summary ? (
+          <p className="mt-1 text-xs text-muted-foreground line-clamp-3">
+            {summary}
+          </p>
         ) : null}
       </button>
     </div>
