@@ -755,76 +755,63 @@ function LifecycleCard({
  *  or the busy-redirect alert. */
 function ThreadCompletedCard({ payload }: { payload: StatusPayload }) {
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
-  const summary = typeof payload.summary === "string" ? payload.summary : "";
+  const summary = typeof payload.summary === "string" ? payload.summary.trim() : "";
   const topic = typeof payload.topic === "string" ? payload.topic.trim() : "";
   const outcome = typeof payload.outcome === "string" ? payload.outcome : "resolved";
   const threadId = typeof payload.thread_id === "string" ? payload.thread_id : undefined;
 
   const labelMap: Record<string, string> = {
-    resolved: "Thread resolved",
-    agreed: "Thread resolved",
-    blocked: "Thread blocked",
-    deferred: "Thread deferred",
-    abandoned: "Thread abandoned",
+    resolved: "Resolved",
+    agreed: "Resolved",
+    blocked: "Blocked",
+    deferred: "Deferred",
+    abandoned: "Abandoned",
   };
-  const label = labelMap[outcome] ?? "Thread resolved";
+  const label = labelMap[outcome] ?? "Resolved";
 
   const isWarning = outcome === "blocked";
   const isAbandoned = outcome === "abandoned";
 
+  const accentText = isWarning
+    ? "text-warning"
+    : isAbandoned
+    ? "text-muted-foreground"
+    : "text-success";
+  const borderClass = isWarning
+    ? "border-warning/30 hover:bg-warning/5"
+    : isAbandoned
+    ? "border-border hover:bg-muted/40"
+    : "border-success/30 hover:bg-success/5";
+
+  // Slim one-line pill — a thread resolution is a status signal, not a
+  // deliverable. Topic + truncated summary on a single row, full text
+  // available via the native title tooltip.
   return (
     <div className="flex w-full justify-start px-4 py-0.5">
-      <div className="w-full max-w-2xl sm:w-[82%]">
-        <button
-          type="button"
-          onClick={() => {
-            if (threadId) setActiveConversation(threadId);
-          }}
-          disabled={!threadId}
-          className={cn(
-            "group w-full rounded-xl border bg-card p-3 text-left shadow-sm transition-colors",
-            isWarning
-              ? "border-warning/30 hover:bg-warning/5"
-              : isAbandoned
-              ? "border-border hover:bg-muted/40"
-              : "border-success/30 hover:bg-success/5",
-            !threadId && "cursor-default"
-          )}
-        >
-          <div className="flex items-center gap-2">
-            <CheckCircle
-              className={cn(
-                "h-4 w-4 shrink-0",
-                isWarning
-                  ? "text-warning"
-                  : isAbandoned
-                  ? "text-muted-foreground"
-                  : "text-success"
-              )}
-            />
-            <span
-              className={cn(
-                "text-xs font-bold uppercase tracking-wide",
-                isWarning
-                  ? "text-warning"
-                  : isAbandoned
-                  ? "text-muted-foreground"
-                  : "text-success"
-              )}
-            >
-              {label}
-            </span>
-            {topic ? (
-              <span className="truncate text-xs text-muted-foreground">
-                · {topic}
-              </span>
-            ) : null}
-          </div>
-          {summary ? (
-            <p className="mt-1.5 text-sm text-foreground line-clamp-4">{summary}</p>
-          ) : null}
-        </button>
-      </div>
+      <button
+        type="button"
+        onClick={() => {
+          if (threadId) setActiveConversation(threadId);
+        }}
+        disabled={!threadId}
+        title={summary || label}
+        className={cn(
+          "group inline-flex max-w-[82%] items-center gap-1.5 rounded-full border bg-card px-2.5 py-1 text-left text-xs transition-colors",
+          borderClass,
+          !threadId && "cursor-default"
+        )}
+      >
+        <CheckCircle className={cn("h-3.5 w-3.5 shrink-0", accentText)} />
+        <span className={cn("shrink-0 font-semibold", accentText)}>{label}</span>
+        {topic ? (
+          <span className="shrink-0 text-muted-foreground">· {topic}</span>
+        ) : null}
+        {summary ? (
+          <span className="min-w-0 truncate text-muted-foreground">
+            — {summary}
+          </span>
+        ) : null}
+      </button>
     </div>
   );
 }
