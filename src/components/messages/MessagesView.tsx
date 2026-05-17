@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquare, ChevronRight, SquarePen, Bot, Cloud, RefreshCw } from "lucide-react";
+import { MessageSquare, ChevronRight, ChevronLeft, SquarePen, Bot, Cloud, RefreshCw } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../../lib/utils";
+import { isAgentThread } from "../../lib/thread-selectors";
 import { ConversationList } from "./ConversationList";
 import { ChatThread } from "./ChatThread";
 import { MessageComposer } from "./MessageComposer";
@@ -12,6 +13,7 @@ import { ConversationDetailsPanel } from "./ConversationDetailsPanel";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { ChatHeaderMenu } from "./ChatHeaderMenu";
 import { GroupAvatar } from "./GroupAvatar";
+import { ThreadsBar } from "./ThreadsBar";
 
 const DETAILS_KEY = "agentchat:showDetails";
 
@@ -208,12 +210,44 @@ function ActiveConversation({
     return null;
   }, [conversation, online, agentPresence, dmAgentPresence, myId]);
 
+  // When the active conversation is an agent thread, surface a back-to-parent
+  // button so the user can pop out of the thread without scrolling the
+  // sidebar. Mirrors mobile's behavior of always offering a clear exit.
+  const isThread = isAgentThread(conversation);
+  const parentId =
+    conversation?.parentConversationId ??
+    (typeof (conversation?.metadata as Record<string, unknown> | undefined)?.source_conversation_id === "string"
+      ? ((conversation!.metadata as Record<string, unknown>).source_conversation_id as string)
+      : undefined) ??
+    (typeof (conversation?.metadata as Record<string, unknown> | undefined)?.sourceConversationId === "string"
+      ? ((conversation!.metadata as Record<string, unknown>).sourceConversationId as string)
+      : undefined);
+
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+
+  const handleBackToParent = () => {
+    if (parentId) setActiveConversation(parentId);
+  };
+
   return (
     <>
       <header
         className="h-14 shrink-0 px-4 border-b border-border bg-card flex items-center gap-3"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
+        {isThread && parentId ? (
+          <button
+            type="button"
+            onClick={handleBackToParent}
+            title="Back to parent conversation"
+            aria-label="Back to parent conversation"
+            className="shrink-0 -ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        ) : null}
+
         <button
           type="button"
           onClick={onToggleDetails}
@@ -270,7 +304,14 @@ function ActiveConversation({
         )}
       </header>
 
-      <ChatThread conversationId={conversationId} />
+      {/* Relative wrapper lets ThreadsBar float absolutely over the
+          message list without consuming a row. Only renders the bar for
+          parent conversations — threads themselves get the back-to-parent
+          button in the header instead. */}
+      <div className="relative flex flex-1 min-h-0 flex-col">
+        {!isThread ? <ThreadsBar conversationId={conversationId} /> : null}
+        <ChatThread conversationId={conversationId} />
+      </div>
       <MessageComposer conversationId={conversationId} />
     </>
   );

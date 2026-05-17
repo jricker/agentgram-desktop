@@ -1,5 +1,6 @@
 import {
   Bot,
+  CheckCircle2,
   ChevronRight,
   Loader2,
   MessageSquareText,
@@ -12,6 +13,7 @@ import {
   formatConversationTime,
   getConversationTitle,
 } from "../../lib/utils";
+import { isResolvedThread, threadStatus } from "../../lib/thread-selectors";
 import { useAuthStore } from "../../stores/authStore";
 import { useChatStore } from "../../stores/chatStore";
 import { useNavStore } from "../../stores/navStore";
@@ -122,6 +124,8 @@ export function AgentConversationCard({
     return conversation.lastMessage?.id ? conversation.lastMessage : null;
   }, [conversation.lastMessage, messages]);
   const isLive = Boolean(stream);
+  const resolved = isResolvedThread(conversation);
+  const status = threadStatus(conversation);
   const openConversation = () => {
     setActiveConversation(conversation.id);
     setView("chat");
@@ -131,9 +135,24 @@ export function AgentConversationCard({
     <div className="flex w-full justify-start px-4 py-0.5">
       <div className="w-full max-w-2xl sm:w-[82%]">
         <div className="mb-0.5 flex items-center gap-1.5 px-1">
-          <span className="inline-flex items-center gap-1 rounded bg-bubble-agent-accent/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-bubble-agent-accent">
-            <Bot className="h-3 w-3" />
-            Agent thread
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+              resolved
+                ? "bg-muted-foreground/15 text-muted-foreground"
+                : "bg-bubble-agent-accent/10 text-bubble-agent-accent"
+            )}
+          >
+            {resolved ? (
+              <CheckCircle2 className="h-3 w-3" />
+            ) : (
+              <Bot className="h-3 w-3" />
+            )}
+            {resolved
+              ? status === "abandoned"
+                ? "Thread abandoned"
+                : "Thread resolved"
+              : "Agent thread"}
           </span>
           <span
             aria-hidden={!isLive}
@@ -152,7 +171,9 @@ export function AgentConversationCard({
           onClick={openConversation}
           className={cn(
             "group w-full overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-colors",
-            isLive
+            resolved
+              ? "border-border opacity-70 hover:bg-muted/40"
+              : isLive
               ? "border-primary/30 ring-1 ring-primary/10 hover:bg-primary/5"
               : "border-border hover:bg-muted/40"
           )}
