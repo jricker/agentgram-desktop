@@ -6,6 +6,8 @@ import { usePresenceStore } from "../../stores/presenceStore";
 import { useStreamingStore } from "../../stores/streamingStore";
 import { useTaskStore } from "../../stores/taskStore";
 import { MessageBubble } from "./MessageBubble";
+import { isStatusUpdateMessage } from "./StatusUpdateMessage";
+import { isTaskMessage } from "./TaskMessages";
 import { MessageContextMenu } from "./MessageContextMenu";
 import { StreamingBubble } from "./StreamingBubble";
 import { AgentConversationCard } from "./AgentConversationCard";
@@ -589,7 +591,18 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
               const prev = prevItem?.kind === "message" ? prevItem.message : undefined;
               const isSameSender = prev?.senderId === msg.senderId;
               const closeInTime = isNear(prev, msg);
-              const showAvatar = !isSameSender || !closeInTime;
+
+              // Force a new avatar/name header when the bubble shape
+              // changes — going from a card (task/StatusUpdate) to a
+              // text bubble (or vice versa) is visually distinct enough
+              // that grouping them as "the same speaker continuing"
+              // ends up with the avatar floating at the top of the run
+              // far from the bubble it logically belongs to.
+              const prevIsCard = !!prev && (isTaskMessage(prev) || isStatusUpdateMessage(prev));
+              const currentIsCard = isTaskMessage(msg) || isStatusUpdateMessage(msg);
+              const cardShapeChanged = prevIsCard !== currentIsCard;
+
+              const showAvatar = !isSameSender || !closeInTime || cardShapeChanged;
               const showSenderName = showAvatar;
               const showUnreadDivider = firstUnreadId === msg.id;
               return (
