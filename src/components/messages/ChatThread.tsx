@@ -10,6 +10,7 @@ import { MessageContextMenu } from "./MessageContextMenu";
 import { StreamingBubble } from "./StreamingBubble";
 import { AgentConversationCard } from "./AgentConversationCard";
 import { cn, dayKey, formatDayLabel } from "../../lib/utils";
+import { agentConversationSourceId } from "../../lib/thread-selectors";
 import type { Conversation, Message } from "../../lib/api";
 import { ws } from "../../services/websocket";
 
@@ -151,6 +152,14 @@ function consolidate(messages: Message[]): Message[] {
       if (isThreadCreationAckMessage(msg)) return false;
       if (HIDDEN_MSG_TYPES.has(type)) return false;
 
+      // Hide the text relay that accompanies every thread resolution —
+      // the companion `thread_completed` StatusUpdate card already shows
+      // the same summary in a richer form. The text relay still lands
+      // in the DB (memory + text-only clients use it), it just doesn't
+      // render twice in the UI. Mirrors mobile/lib/chat-kit/utils.ts.
+      const meta = (msg.metadata ?? {}) as Record<string, unknown>;
+      if (meta.thread_resolution === true) return false;
+
       const taskId = extractTaskId(msg);
 
       // Strip lifecycle bubbles — they roll into the TaskRequest card.
@@ -277,27 +286,19 @@ function buildThreadItems(
   return items;
 }
 
-function linkedSourceConversationId(conversation: Conversation): string | undefined {
-  const metadata = conversation.metadata ?? {};
-  return (
-    conversation.parentConversationId ??
-    (typeof metadata.source_conversation_id === "string"
-      ? metadata.source_conversation_id
-      : undefined) ??
-    (typeof metadata.sourceConversationId === "string"
-      ? metadata.sourceConversationId
-      : undefined)
-  );
-}
+// `agentConversationSourceId` lives in lib/thread-selectors.ts — the
+// shared helper used by ThreadsBar / ThreadsPanel too. Kept the
+// `linkedSourceMessageId` helper local since it's only used here to
+// anchor child-thread cards under their spawning message.
 
 function linkedSourceMessageId(conversation: Conversation): string | undefined {
-  const metadata = conversation.metadata ?? {};
+  const metadata = (conversation.metadata ?? {}) as Record<string, unknown>;
   return (
     (typeof metadata.source_message_id === "string"
-      ? metadata.source_message_id
+      ? (metadata.source_message_id as string)
       : undefined) ??
     (typeof metadata.sourceMessageId === "string"
-      ? metadata.sourceMessageId
+      ? (metadata.sourceMessageId as string)
       : undefined)
   );
 }
@@ -392,7 +393,7 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
           (c) =>
             c.id !== conversationId &&
             c.type !== "task" &&
-            linkedSourceConversationId(c) === conversationId
+            agentConversationSourceId(c) === conversationId
         )
         .sort(
           (a, b) =>

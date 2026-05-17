@@ -5,7 +5,7 @@ import { useAuthStore } from "../../stores/authStore";
 import { usePresenceStore } from "../../stores/presenceStore";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "../../lib/utils";
-import { isAgentThread } from "../../lib/thread-selectors";
+import { agentConversationSourceId, isAgentThread } from "../../lib/thread-selectors";
 import { ConversationList } from "./ConversationList";
 import { ChatThread } from "./ChatThread";
 import { MessageComposer } from "./MessageComposer";
@@ -214,14 +214,7 @@ function ActiveConversation({
   // button so the user can pop out of the thread without scrolling the
   // sidebar. Mirrors mobile's behavior of always offering a clear exit.
   const isThread = isAgentThread(conversation);
-  const parentId =
-    conversation?.parentConversationId ??
-    (typeof (conversation?.metadata as Record<string, unknown> | undefined)?.source_conversation_id === "string"
-      ? ((conversation!.metadata as Record<string, unknown>).source_conversation_id as string)
-      : undefined) ??
-    (typeof (conversation?.metadata as Record<string, unknown> | undefined)?.sourceConversationId === "string"
-      ? ((conversation!.metadata as Record<string, unknown>).sourceConversationId as string)
-      : undefined);
+  const parentId = conversation ? agentConversationSourceId(conversation) : undefined;
 
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
 

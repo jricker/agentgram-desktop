@@ -202,9 +202,31 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ]
         : convos;
 
+      // Zero unread for any thread we now see as resolved/abandoned —
+      // the thread_completed StatusUpdate + relay land in the parent,
+      // not the thread, so a stale badge on the resolved row is just
+      // visual noise. Mirrors mobile chatStore.
+      const existingUnread = get().unreadCounts;
+      let clearedUnread: Record<string, number> | null = null;
+      for (const conv of merged) {
+        const meta = (conv.metadata ?? {}) as Record<string, unknown>;
+        const status =
+          (meta.thread_status as string | undefined) ??
+          (meta.threadStatus as string | undefined);
+        if (
+          (status === "resolved" || status === "abandoned") &&
+          existingUnread[conv.id] &&
+          existingUnread[conv.id]! > 0
+        ) {
+          if (!clearedUnread) clearedUnread = { ...existingUnread };
+          delete clearedUnread[conv.id];
+        }
+      }
+
       set({
         agentConversations: sortConversations(merged),
         agentConversationsLoaded: true,
+        ...(clearedUnread ? { unreadCounts: clearedUnread } : {}),
       });
       seedOnlineFromConversations(convos);
     } finally {

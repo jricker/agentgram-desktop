@@ -71,6 +71,14 @@ interface StatusPayload {
     replacement_display_name?: string;
     missing_tools: string[];
   }>;
+  /** Present on `thread_completed` payloads — the side conversation that
+   *  was just resolved (or auto-abandoned). Distinct from task lifecycle
+   *  cards; carries thread_id + topic + goal + outcome instead of task_id. */
+  thread_id?: string;
+  topic?: string;
+  goal?: string;
+  outcome?: string;
+  resolved_at?: string;
 }
 
 const LIFECYCLE_TYPES = new Set<string>([
@@ -745,6 +753,82 @@ function LifecycleCard({
  *  human as a read-only observer on join — without this affordance the
  *  work conv is only discoverable via the SubConversationList accordion
  *  or the busy-redirect alert. */
+function ThreadCompletedCard({ payload }: { payload: StatusPayload }) {
+  const setActiveConversation = useChatStore((s) => s.setActiveConversation);
+  const summary = typeof payload.summary === "string" ? payload.summary : "";
+  const topic = typeof payload.topic === "string" ? payload.topic.trim() : "";
+  const outcome = typeof payload.outcome === "string" ? payload.outcome : "resolved";
+  const threadId = typeof payload.thread_id === "string" ? payload.thread_id : undefined;
+
+  const labelMap: Record<string, string> = {
+    resolved: "Thread resolved",
+    agreed: "Thread resolved",
+    blocked: "Thread blocked",
+    deferred: "Thread deferred",
+    abandoned: "Thread abandoned",
+  };
+  const label = labelMap[outcome] ?? "Thread resolved";
+
+  const isWarning = outcome === "blocked";
+  const isAbandoned = outcome === "abandoned";
+
+  return (
+    <div className="flex w-full justify-start px-4 py-0.5">
+      <div className="w-full max-w-2xl sm:w-[82%]">
+        <button
+          type="button"
+          onClick={() => {
+            if (threadId) setActiveConversation(threadId);
+          }}
+          disabled={!threadId}
+          className={cn(
+            "group w-full rounded-xl border bg-card p-3 text-left shadow-sm transition-colors",
+            isWarning
+              ? "border-warning/30 hover:bg-warning/5"
+              : isAbandoned
+              ? "border-border hover:bg-muted/40"
+              : "border-success/30 hover:bg-success/5",
+            !threadId && "cursor-default"
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <CheckCircle
+              className={cn(
+                "h-4 w-4 shrink-0",
+                isWarning
+                  ? "text-warning"
+                  : isAbandoned
+                  ? "text-muted-foreground"
+                  : "text-success"
+              )}
+            />
+            <span
+              className={cn(
+                "text-xs font-bold uppercase tracking-wide",
+                isWarning
+                  ? "text-warning"
+                  : isAbandoned
+                  ? "text-muted-foreground"
+                  : "text-success"
+              )}
+            >
+              {label}
+            </span>
+            {topic ? (
+              <span className="truncate text-xs text-muted-foreground">
+                · {topic}
+              </span>
+            ) : null}
+          </div>
+          {summary ? (
+            <p className="mt-1.5 text-sm text-foreground line-clamp-4">{summary}</p>
+          ) : null}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function WorkRoomLink({ workConversationId }: { workConversationId: string }) {
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const setView = useNavStore((s) => s.setView);
@@ -787,6 +871,14 @@ export function StatusUpdateMessage({ message }: { message: Message }) {
   if (liveMeta?.error) enriched.error = liveMeta.error;
   if (liveMeta?.agentName) enriched.agent_name = liveMeta.agentName;
   if (liveMeta?.agentAvatarUrl) enriched.agent_avatar_url = liveMeta.agentAvatarUrl;
+
+  // thread_completed: a side agent thread was resolved (or auto-abandoned
+  // by the idle sweeper). Distinct from task lifecycle cards — carries
+  // thread_id + topic + goal + outcome rather than task_id. Rendered up
+  // front so it doesn't fall through the task-specific pipeline below.
+  if (payload.type === "thread_completed") {
+    return <ThreadCompletedCard payload={payload} />;
+  }
 
   // task_request_failed: backend rejected the agent's create_task call.
   // No task_id exists — render a slim destructive banner so the user
