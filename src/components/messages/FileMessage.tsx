@@ -94,37 +94,41 @@ export function FileMessage({ message }: { message: Message }) {
             {filename}
           </div>
         )}
-        {file.caption && <p className="text-xs">{file.caption}</p>}
+        {file.caption && <p className="text-sm">{file.caption}</p>}
       </div>
     );
   }
 
   return (
-    <a
-      href={url ?? "#"}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="flex items-center gap-3 rounded-lg border border-border p-2.5 transition-colors hover:bg-muted/50"
-      onClick={(e) => {
-        if (!url) e.preventDefault();
-      }}
-    >
-      <FileIcon className="h-8 w-8 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{filename}</p>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {size ? <span>{formatFileSize(size)}</span> : null}
-          {file.caption && <span>{file.caption}</span>}
+    <div className="space-y-1.5">
+      <a
+        href={url ?? "#"}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-3 rounded-lg border border-border p-2.5 transition-colors hover:bg-muted/50"
+        onClick={(e) => {
+          if (!url) e.preventDefault();
+        }}
+      >
+        <FileIcon className="h-8 w-8 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{filename}</p>
+          {size && (
+            <div className="text-xs opacity-75">
+              {formatFileSize(size)}
+            </div>
+          )}
         </div>
-      </div>
-      {loading ? (
-        <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-      ) : url ? (
-        <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
-      ) : (
-        <Download className="h-4 w-4 shrink-0 text-muted-foreground" />
-      )}
-    </a>
+        {loading ? (
+          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+        ) : url ? (
+          <ExternalLink className="h-4 w-4 shrink-0" />
+        ) : (
+          <Download className="h-4 w-4 shrink-0" />
+        )}
+      </a>
+      {file.caption && <p className="text-sm">{file.caption}</p>}
+    </div>
   );
 }
 
