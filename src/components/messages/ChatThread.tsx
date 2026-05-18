@@ -154,14 +154,6 @@ function consolidate(messages: Message[]): Message[] {
       if (isThreadCreationAckMessage(msg)) return false;
       if (HIDDEN_MSG_TYPES.has(type)) return false;
 
-      // Hide the text relay that accompanies every thread resolution —
-      // the companion `thread_completed` StatusUpdate card already shows
-      // the same summary in a richer form. The text relay still lands
-      // in the DB (memory + text-only clients use it), it just doesn't
-      // render twice in the UI. Mirrors mobile/lib/chat-kit/utils.ts.
-      const meta = (msg.metadata ?? {}) as Record<string, unknown>;
-      if (meta.thread_resolution === true) return false;
-
       const taskId = extractTaskId(msg);
 
       // Strip lifecycle bubbles — they roll into the TaskRequest card.

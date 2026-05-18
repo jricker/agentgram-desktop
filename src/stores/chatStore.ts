@@ -203,9 +203,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         : convos;
 
       // Zero unread for any thread we now see as resolved/abandoned —
-      // the thread_completed StatusUpdate + relay land in the parent,
-      // not the thread, so a stale badge on the resolved row is just
-      // visual noise. Mirrors mobile chatStore.
+      // the thread_completed StatusUpdate lands in the parent, not the
+      // thread, so a stale badge on the resolved row is just visual
+      // noise. Mirrors mobile chatStore.
       const existingUnread = get().unreadCounts;
       let clearedUnread: Record<string, number> | null = null;
       for (const conv of merged) {
