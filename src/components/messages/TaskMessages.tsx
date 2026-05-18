@@ -364,7 +364,7 @@ function TaskCompleteCard({
     p.duration_seconds != null;
 
   return (
-    <div className="rounded-lg border border-success/20 overflow-hidden">
+    <div className="w-full rounded-lg border border-success/20 overflow-hidden">
       <button
         type="button"
         className={cn(
@@ -458,7 +458,7 @@ function TaskFailCard({
   const hasDetails = Boolean(partial) || p.duration_seconds != null || Boolean(p.error?.code);
 
   return (
-    <div className="rounded-lg border border-destructive/20 overflow-hidden">
+    <div className="w-full rounded-lg border border-destructive/20 overflow-hidden">
       <button
         type="button"
         className={cn(

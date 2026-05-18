@@ -118,7 +118,7 @@ export function MessageBubble({
             ) : null}
           </div>
         )}
-        <div className={cn("min-w-0 max-w-[70%]", isOwn ? "items-end" : "items-start")}>
+        <div className={cn("min-w-0 w-[35%]", isOwn ? "items-end" : "items-start")}>
           {!isOwn && showSenderName && (
             <div className="mb-0.5 px-1">
               <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
