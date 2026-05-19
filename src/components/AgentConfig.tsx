@@ -84,6 +84,7 @@ import {
   Camera,
   Check,
   FolderOpen,
+  ShieldOff,
   Zap,
   Inbox,
   ListTodo,
@@ -790,11 +791,14 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
             {/* Behavior */}
             <Section title="Behavior">
               <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
                     <Label className="text-sm">Skip permissions</Label>
                     <p className="text-xs text-muted-foreground">
-                      Claude Code &amp; OpenAI Codex
+                      Claude Code &amp; OpenAI Codex. Combine with{" "}
+                      <em>Allow computer use</em> only when you fully trust
+                      the agent — together they give it unprompted access
+                      to your files and your desktop.
                     </p>
                   </div>
                   <Switch
@@ -814,16 +818,26 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                       Lets this agent take screenshots, click, type, and scroll
                       on your Mac (Claude Code backend, macOS only). Requires
                       Screen Recording &amp; Accessibility permissions for the
-                      app launching the bridge. Touch{" "}
+                      app launching the bridge. Setting follows the agent
+                      across desktops. Touch{" "}
                       <code>~/.agentgram/computer_use.paused</code> to stop
                       anytime.
                     </p>
                   </div>
                   <Switch
-                    checked={config.computerUseEnabled}
-                    onCheckedChange={(v) =>
-                      updateConfig(agent.id, { computerUseEnabled: v })
+                    checked={
+                      (agent.metadata as Record<string, unknown> | undefined)
+                        ?.computer_use_enabled === true
                     }
+                    onCheckedChange={async (v) => {
+                      await updateAgent(agent.id, {
+                        metadata: {
+                          ...(agent.metadata || {}),
+                          computer_use_enabled: v,
+                        },
+                      });
+                      await fetchAgents();
+                    }}
                   />
                 </div>
 
@@ -963,6 +977,75 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
               )}
             </Section>
 
+
+            {/* Computer-Use Allowed Apps (visible only when computer use is on) */}
+            {config.backend === "claude_cli" &&
+              (agent.metadata as Record<string, unknown> | undefined)
+                ?.computer_use_enabled === true && (
+                <Section title="Computer-use allowed apps">
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Optional. When empty, the agent can interact with any app
+                    except the hardcoded deny list (1Password, Keychain, etc).
+                    When non-empty, the agent is restricted to these apps —
+                    anything else is refused. Match is case-insensitive
+                    substring against the focused application name.
+                  </p>
+                  <div className="space-y-1.5">
+                    {(((agent.metadata as Record<string, unknown> | undefined)
+                      ?.computer_use_allowed_apps as string[] | undefined) || []).map(
+                      (app, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <ShieldOff className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+                          <span className="text-xs font-mono truncate flex-1">{app}</span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 flex-shrink-0 text-muted-foreground hover:text-destructive/90"
+                            onClick={async () => {
+                              const current = (((agent.metadata as Record<string, unknown> | undefined)
+                                ?.computer_use_allowed_apps as string[] | undefined) || []);
+                              const updated = current.filter((_, j) => j !== i);
+                              await updateAgent(agent.id, {
+                                metadata: {
+                                  ...(agent.metadata || {}),
+                                  computer_use_allowed_apps: updated,
+                                },
+                              });
+                              await fetchAgents();
+                            }}
+                          >
+                            <X className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ),
+                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={async () => {
+                        const name = window.prompt(
+                          "App name to allow (e.g. 'Safari', 'Calculator'). " +
+                          "Match is case-insensitive substring.",
+                        );
+                        if (!name?.trim()) return;
+                        const current = (((agent.metadata as Record<string, unknown> | undefined)
+                          ?.computer_use_allowed_apps as string[] | undefined) || []);
+                        await updateAgent(agent.id, {
+                          metadata: {
+                            ...(agent.metadata || {}),
+                            computer_use_allowed_apps: [...current, name.trim()],
+                          },
+                        });
+                        await fetchAgents();
+                      }}
+                    >
+                      <ShieldOff className="w-3.5 h-3.5 mr-1.5" />
+                      Add allowed app
+                    </Button>
+                  </div>
+                </Section>
+              )}
 
             {/* Working Directories (Claude CLI only) */}
             {config.backend === "claude_cli" && (

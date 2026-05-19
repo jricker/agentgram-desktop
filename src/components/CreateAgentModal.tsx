@@ -147,6 +147,7 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   const [executionMode, setExecutionMode] = useState("tool_use");
   const [effort, setEffort] = useState<string | null>(null);
   const [skipPermissions, setSkipPermissions] = useState(false);
+  const [computerUseEnabled, setComputerUseEnabled] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   // Three-way: "__default__" = use provider default (no llmApiKeyId on
@@ -376,6 +377,7 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
         ...(executionMode ? { executionMode } : {}),
         ...(effort ? { effort } : {}),
         ...(skipPermissions ? { dangerouslySkipPermissions: true } : {}),
+        ...(computerUseEnabled ? { computerUseEnabled: true } : {}),
         ...(llmApiKeyIdPin ? { llmApiKeyId: llmApiKeyIdPin } : {}),
       });
       if (newId) await selectAgent(newId);
@@ -401,6 +403,7 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
     executionMode,
     effort,
     skipPermissions,
+    computerUseEnabled,
     apiKey,
     keySelection,
     hasDefaultKey,
@@ -975,6 +978,33 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                       </div>
                     </label>
                   )}
+
+                  {/* Computer use is a claude_cli-only capability today.
+                      Hosted (Anthropic API), OpenAI, and Codex backends
+                      don't run through our local MCP server. */}
+                  {backend === "claude_cli" && (
+                    <label className="flex items-start gap-2.5 cursor-pointer group">
+                      <input
+                        type="checkbox"
+                        checked={computerUseEnabled}
+                        onChange={(e) => setComputerUseEnabled(e.target.checked)}
+                        className="mt-0.5 rounded border-border"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 text-sm font-medium text-foreground group-hover:text-accent-hover transition-colors">
+                          <ShieldOff className="w-3.5 h-3.5" />
+                          Allow computer use
+                        </div>
+                        <p className="text-xs text-text-muted mt-0.5">
+                          Screenshot / click / type / scroll on your Mac.
+                          Requires Screen Recording &amp; Accessibility perms.
+                          Touch <code>~/.agentgram/computer_use.paused</code> to
+                          stop anytime. You can change this later in the
+                          agent's Behavior settings.
+                        </p>
+                      </div>
+                    </label>
+                  )}
                 </div>
               )}
 
@@ -1064,6 +1094,9 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                     />
                     {skipPermissions && (
                       <ReviewRow label="Safety" value="Skip permission prompts" />
+                    )}
+                    {computerUseEnabled && (
+                      <ReviewRow label="Computer use" value="Allowed" />
                     )}
                   </div>
                 </div>

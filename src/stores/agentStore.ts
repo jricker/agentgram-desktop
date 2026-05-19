@@ -15,12 +15,6 @@ interface AgentConfig {
   executionMode: string;
   effort: string | null;
   dangerouslySkipPermissions: boolean;
-  /** Allow this agent to use the local computer (screenshot, click, type,
-   *  scroll) via the local computer-use MCP server. Off by default; user
-   *  must explicitly enable per agent. Requires macOS Screen Recording
-   *  and Accessibility permissions on the host. Only meaningful for the
-   *  `claude_cli` backend today. */
-  computerUseEnabled: boolean;
   autoRestart: boolean;
   autoStart: boolean;
   /** Directories for CLI tools access — also enables CLI tools (Bash, Read, etc.) */
@@ -204,6 +198,7 @@ interface AgentState {
     executionMode?: string;
     effort?: string;
     dangerouslySkipPermissions?: boolean;
+    computerUseEnabled?: boolean;
     /** Pin the agent to a specific saved LLM key. Omit to resolve to the
      *  user's default for the provider at runtime. */
     llmApiKeyId?: string | null;
@@ -229,7 +224,6 @@ const DEFAULT_CONFIG: AgentConfig = {
   executionMode: "tool_use",
   effort: null,
   dangerouslySkipPermissions: false,
-  computerUseEnabled: false,
   autoRestart: true,
   autoStart: false,
   addDirs: [],
@@ -612,7 +606,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           historyLimit: managed.config.historyLimit,
           executionMode: managed.config.executionMode,
           dangerouslySkipPermissions: managed.config.dangerouslySkipPermissions,
-          computerUseEnabled: managed.config.computerUseEnabled,
+          // Computer use is the source of truth in agent.metadata so the
+          // setting follows the user across desktops (per-device toggle
+          // was a v1 shortcut). Read it here and forward to Tauri so the
+          // bridge spawn gets AGENTGRAM_COMPUTER_USE=local when on.
+          computerUseEnabled:
+            (managed.agent.metadata as Record<string, unknown> | undefined)
+              ?.computer_use_enabled === true,
+          computerUseAllowedApps:
+            (((managed.agent.metadata as Record<string, unknown> | undefined)
+              ?.computer_use_allowed_apps as string[] | undefined) || []),
           effort: managed.config.effort || undefined,
           addDirs: managed.config.addDirs.length > 0 ? managed.config.addDirs : undefined,
         },
@@ -694,10 +697,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       executionMode: selectedMode,
       effort: selectedEffort,
       dangerouslySkipPermissions: skipPerms,
+      computerUseEnabled: cuEnabled,
       llmApiKeyId: selectedKeyId,
       ...apiData
     } = data;
-    const result = await api.createAgent(apiData);
+    // Computer-use opt-in goes onto the agent's metadata so it follows
+    // the user across desktops. The Tauri start path reads it back from
+    // the same place when spawning the bridge.
+    const result = await api.createAgent({
+      ...apiData,
+      ...(cuEnabled ? { metadata: { computer_use_enabled: true } } : {}),
+    });
     const config = {
       ...DEFAULT_CONFIG,
       ...(selectedBackend ? { backend: selectedBackend } : {}),

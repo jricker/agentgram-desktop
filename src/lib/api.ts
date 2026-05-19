@@ -110,6 +110,7 @@ export async function createAgent(data: {
   requiresLocation?: boolean;
   soulMd?: string;
   modelConfig?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }): Promise<{ agent: Agent; apiKey: string }> {
   // Backend returns flat: { id, displayName, ..., apiKey }
   const resp = await request<Agent & { apiKey: string }>("/api/agents", {

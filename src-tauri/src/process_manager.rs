@@ -47,6 +47,11 @@ pub struct StartAgentArgs {
     /// the desktop's computer_use_mcp_server.py with the agent's stdio MCP
     /// servers. Off by default; user toggles in AgentConfig → Behavior.
     pub computer_use_enabled: Option<bool>,
+    /// Optional allow-list of app names the computer-use server is allowed
+    /// to interact with. Empty/None = allow any (except the hardcoded deny
+    /// list). When non-empty, the MCP server refuses every action whose
+    /// focused app doesn't substring-match an entry.
+    pub computer_use_allowed_apps: Option<Vec<String>>,
     pub effort: Option<String>,
     pub api_url: Option<String>,
     pub add_dirs: Option<Vec<String>>,
@@ -317,6 +322,18 @@ pub fn start_agent(
         // time. Setting `local` makes _build_mcp_config add the
         // computer_use stdio MCP server to Claude CLI's --mcp-config.
         cmd.env("AGENTGRAM_COMPUTER_USE", "local");
+        if let Some(ref apps) = args.computer_use_allowed_apps {
+            let cleaned: Vec<&String> = apps.iter().filter(|s| !s.trim().is_empty()).collect();
+            if !cleaned.is_empty() {
+                // Newline separator — same pattern as CLAUDE_CLI_ADD_DIRS,
+                // survives app names with commas/colons. Parsed by the MCP
+                // server on startup.
+                cmd.env(
+                    "AGENTGRAM_COMPUTER_USE_ALLOWED_APPS",
+                    cleaned.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n"),
+                );
+            }
+        }
     }
     if let Some(ref effort) = args.effort {
         cmd.args(["--effort", effort]);
