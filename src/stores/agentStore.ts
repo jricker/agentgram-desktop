@@ -198,7 +198,11 @@ interface AgentState {
     executionMode?: string;
     effort?: string;
     dangerouslySkipPermissions?: boolean;
-    computerUseEnabled?: boolean;
+    /** Initial agent.metadata to set on creation. The backend stores it
+     *  shallowly and other code reads from there (e.g. AgentConfig's
+     *  computer-use toggle), so passing it here at create time avoids a
+     *  follow-up PATCH. Use snake_case keys to match the backend. */
+    metadata?: Record<string, unknown>;
     /** Pin the agent to a specific saved LLM key. Omit to resolve to the
      *  user's default for the provider at runtime. */
     llmApiKeyId?: string | null;
@@ -229,11 +233,20 @@ const DEFAULT_CONFIG: AgentConfig = {
   addDirs: [],
 };
 
+// Keys that may exist in older localStorage blobs but are no longer part
+// of AgentConfig. Filtered out at load time so they stop being persisted
+// by the next saveLocalConfig. Add to this list when a field is removed.
+const ORPHAN_LOCAL_CONFIG_KEYS = ["computerUseEnabled"] as const;
+
 function loadLocalConfig(agentId: string): Partial<AgentConfig> {
   const raw = localStorage.getItem(`agent:config:${agentId}`);
   if (raw) {
     try {
-      return JSON.parse(raw);
+      const parsed = JSON.parse(raw) as Record<string, unknown>;
+      for (const k of ORPHAN_LOCAL_CONFIG_KEYS) {
+        delete parsed[k];
+      }
+      return parsed as Partial<AgentConfig>;
     } catch {
       return {};
     }
@@ -610,12 +623,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           // setting follows the user across desktops (per-device toggle
           // was a v1 shortcut). Read it here and forward to Tauri so the
           // bridge spawn gets AGENTGRAM_COMPUTER_USE=local when on.
-          computerUseEnabled:
-            (managed.agent.metadata as Record<string, unknown> | undefined)
-              ?.computer_use_enabled === true,
+          // `Agent.metadata` is already typed `Record<string, unknown>`
+          // in api.ts, so no cast is needed at the read sites.
+          computerUseEnabled: managed.agent.metadata?.computer_use_enabled === true,
           computerUseAllowedApps:
-            (((managed.agent.metadata as Record<string, unknown> | undefined)
-              ?.computer_use_allowed_apps as string[] | undefined) || []),
+            (managed.agent.metadata?.computer_use_allowed_apps as string[] | undefined) || [],
           effort: managed.config.effort || undefined,
           addDirs: managed.config.addDirs.length > 0 ? managed.config.addDirs : undefined,
         },
@@ -697,17 +709,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       executionMode: selectedMode,
       effort: selectedEffort,
       dangerouslySkipPermissions: skipPerms,
-      computerUseEnabled: cuEnabled,
       llmApiKeyId: selectedKeyId,
       ...apiData
     } = data;
-    // Computer-use opt-in goes onto the agent's metadata so it follows
-    // the user across desktops. The Tauri start path reads it back from
-    // the same place when spawning the bridge.
-    const result = await api.createAgent({
-      ...apiData,
-      ...(cuEnabled ? { metadata: { computer_use_enabled: true } } : {}),
-    });
+    // `metadata` (if present in apiData) flows straight through to the
+    // API. Cross-device fields (computer_use_enabled etc.) live there;
+    // the modal composes the right snake_case keys directly.
+    const result = await api.createAgent(apiData);
     const config = {
       ...DEFAULT_CONFIG,
       ...(selectedBackend ? { backend: selectedBackend } : {}),

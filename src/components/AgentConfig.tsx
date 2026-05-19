@@ -821,21 +821,26 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                       app launching the bridge. Setting follows the agent
                       across desktops. Touch{" "}
                       <code>~/.agentgram/computer_use.paused</code> to stop
-                      anytime.
+                      anytime. If the agent is currently running, restart it
+                      after changing this for the new policy to take effect.
                     </p>
                   </div>
                   <Switch
-                    checked={
-                      (agent.metadata as Record<string, unknown> | undefined)
-                        ?.computer_use_enabled === true
-                    }
+                    checked={agent.metadata?.computer_use_enabled === true}
                     onCheckedChange={async (v) => {
-                      await updateAgent(agent.id, {
-                        metadata: {
-                          ...(agent.metadata || {}),
-                          computer_use_enabled: v,
-                        },
-                      });
+                      // Backend `Agentchat.Accounts.merge_metadata_patch`
+                      // shallow-merges this patch with the existing
+                      // metadata, so we send ONLY the keys we're changing.
+                      // Spreading `agent.metadata` here would clobber any
+                      // concurrent writes from another tab.
+                      // When turning OFF, also clear the allow-list so the
+                      // UI doesn't quietly retain a stale policy that
+                      // re-applies when the toggle is flipped back on.
+                      const patch: Record<string, unknown> = {
+                        computer_use_enabled: v,
+                      };
+                      if (!v) patch.computer_use_allowed_apps = [];
+                      await updateAgent(agent.id, { metadata: patch });
                       await fetchAgents();
                     }}
                   />
@@ -980,19 +985,18 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
 
             {/* Computer-Use Allowed Apps (visible only when computer use is on) */}
             {config.backend === "claude_cli" &&
-              (agent.metadata as Record<string, unknown> | undefined)
-                ?.computer_use_enabled === true && (
+              agent.metadata?.computer_use_enabled === true && (
                 <Section title="Computer-use allowed apps">
                   <p className="text-xs text-muted-foreground mb-2">
                     Optional. When empty, the agent can interact with any app
                     except the hardcoded deny list (1Password, Keychain, etc).
                     When non-empty, the agent is restricted to these apps —
                     anything else is refused. Match is case-insensitive
-                    substring against the focused application name.
+                    substring against the focused application name. Restart
+                    the agent after editing for changes to take effect.
                   </p>
                   <div className="space-y-1.5">
-                    {(((agent.metadata as Record<string, unknown> | undefined)
-                      ?.computer_use_allowed_apps as string[] | undefined) || []).map(
+                    {((agent.metadata?.computer_use_allowed_apps as string[] | undefined) || []).map(
                       (app, i) => (
                         <div key={i} className="flex items-center gap-2">
                           <ShieldOff className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
@@ -1002,14 +1006,12 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                             size="icon"
                             className="h-6 w-6 flex-shrink-0 text-muted-foreground hover:text-destructive/90"
                             onClick={async () => {
-                              const current = (((agent.metadata as Record<string, unknown> | undefined)
-                                ?.computer_use_allowed_apps as string[] | undefined) || []);
+                              const current = (agent.metadata?.computer_use_allowed_apps as string[] | undefined) || [];
                               const updated = current.filter((_, j) => j !== i);
+                              // Backend merges shallow — send only the key
+                              // we're changing.
                               await updateAgent(agent.id, {
-                                metadata: {
-                                  ...(agent.metadata || {}),
-                                  computer_use_allowed_apps: updated,
-                                },
+                                metadata: { computer_use_allowed_apps: updated },
                               });
                               await fetchAgents();
                             }}
@@ -1029,13 +1031,9 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                           "Match is case-insensitive substring.",
                         );
                         if (!name?.trim()) return;
-                        const current = (((agent.metadata as Record<string, unknown> | undefined)
-                          ?.computer_use_allowed_apps as string[] | undefined) || []);
+                        const current = (agent.metadata?.computer_use_allowed_apps as string[] | undefined) || [];
                         await updateAgent(agent.id, {
-                          metadata: {
-                            ...(agent.metadata || {}),
-                            computer_use_allowed_apps: [...current, name.trim()],
-                          },
+                          metadata: { computer_use_allowed_apps: [...current, name.trim()] },
                         });
                         await fetchAgents();
                       }}

@@ -377,7 +377,12 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
         ...(executionMode ? { executionMode } : {}),
         ...(effort ? { effort } : {}),
         ...(skipPermissions ? { dangerouslySkipPermissions: true } : {}),
-        ...(computerUseEnabled ? { computerUseEnabled: true } : {}),
+        // computer-use lives in agent.metadata (snake_case, backend-merged)
+        // so it follows the agent across desktops. Allow-list is left
+        // empty at create time — user can fill it in AgentConfig after.
+        ...(computerUseEnabled
+          ? { metadata: { computer_use_enabled: true } }
+          : {}),
         ...(llmApiKeyIdPin ? { llmApiKeyId: llmApiKeyIdPin } : {}),
       });
       if (newId) await selectAgent(newId);
@@ -1096,7 +1101,11 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
                       <ReviewRow label="Safety" value="Skip permission prompts" />
                     )}
                     {computerUseEnabled && (
-                      <ReviewRow label="Computer use" value="Allowed" />
+                      <ReviewRow
+                        data-testid="review-computer-use"
+                        label="Computer use"
+                        value="Allowed (configure allowed-app list after creation)"
+                      />
                     )}
                   </div>
                 </div>
@@ -1153,9 +1162,17 @@ export function CreateAgentModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function ReviewRow({ label, value }: { label: string; value: string }) {
+function ReviewRow({
+  label,
+  value,
+  "data-testid": testId,
+}: {
+  label: string;
+  value: string;
+  "data-testid"?: string;
+}) {
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between" data-testid={testId}>
       <span className="text-text-muted">{label}</span>
       <span className="font-medium truncate ml-3">{value}</span>
     </div>
