@@ -1206,6 +1206,39 @@ export async function getFileDownloadUrl(
   return request(`/api/files/${attachmentId}/download-url`);
 }
 
+export interface ConversationFile {
+  id: string;
+  messageId: string;
+  conversationId: string;
+  uploadedBy: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+  extractionStatus: string;
+  insertedAt: string;
+  uploader: {
+    id: string;
+    displayName: string;
+    type: string;
+    avatarUrl: string | null;
+  } | null;
+}
+
+export async function listConversationFiles(
+  conversationId: string,
+  opts: { limit?: number; before?: string } = {}
+): Promise<ConversationFile[]> {
+  const query: string[] = [];
+  if (typeof opts.limit === "number") query.push(`limit=${opts.limit}`);
+  if (opts.before) query.push(`before=${encodeURIComponent(opts.before)}`);
+  const qs = query.length > 0 ? `?${query.join("&")}` : "";
+
+  const { files } = await request<{ files: ConversationFile[] }>(
+    `/api/conversations/${conversationId}/files${qs}`
+  );
+  return files;
+}
+
 export type DisplayType = "row" | "chip" | "highlight" | "body" | "change" | "sparkline";
 export type HighlightColor = "success" | "warning" | "destructive" | "primary";
 export type ResultType =

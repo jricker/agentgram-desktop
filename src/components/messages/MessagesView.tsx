@@ -14,6 +14,7 @@ import { NewConversationDialog } from "./NewConversationDialog";
 import { ChatHeaderMenu } from "./ChatHeaderMenu";
 import { GroupAvatar } from "./GroupAvatar";
 import { ThreadsBar } from "./ThreadsBar";
+import { FilesBar } from "./FilesBar";
 
 const DETAILS_KEY = "agentchat:showDetails";
 
@@ -303,6 +304,7 @@ function ActiveConversation({
           button in the header instead. */}
       <div className="relative flex flex-1 min-h-0 flex-col">
         {!isThread ? <ThreadsBar conversationId={conversationId} /> : null}
+        <FilesBar conversationId={conversationId} />
         <ChatThread conversationId={conversationId} />
       </div>
       <MessageComposer conversationId={conversationId} />
