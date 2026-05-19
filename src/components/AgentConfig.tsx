@@ -807,6 +807,26 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                   />
                 </div>
 
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1">
+                    <Label className="text-sm">Allow computer use</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Lets this agent take screenshots, click, type, and scroll
+                      on your Mac (Claude Code backend, macOS only). Requires
+                      Screen Recording &amp; Accessibility permissions for the
+                      app launching the bridge. Touch{" "}
+                      <code>~/.agentgram/computer_use.paused</code> to stop
+                      anytime.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={config.computerUseEnabled}
+                    onCheckedChange={(v) =>
+                      updateConfig(agent.id, { computerUseEnabled: v })
+                    }
+                  />
+                </div>
+
                 <div className="flex items-center justify-between">
                   <Label className="text-sm">Auto-restart on crash or stall</Label>
                   <Switch

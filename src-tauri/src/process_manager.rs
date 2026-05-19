@@ -42,6 +42,11 @@ pub struct StartAgentArgs {
     pub history_limit: Option<u32>,
     pub execution_mode: Option<String>,
     pub dangerously_skip_permissions: Option<bool>,
+    /// Per-agent opt-in for the local computer-use MCP server. When true,
+    /// the bridge gets `AGENTGRAM_COMPUTER_USE=local` and Claude CLI spawns
+    /// the desktop's computer_use_mcp_server.py with the agent's stdio MCP
+    /// servers. Off by default; user toggles in AgentConfig → Behavior.
+    pub computer_use_enabled: Option<bool>,
     pub effort: Option<String>,
     pub api_url: Option<String>,
     pub add_dirs: Option<Vec<String>>,
@@ -306,6 +311,12 @@ pub fn start_agent(
     }
     if args.dangerously_skip_permissions.unwrap_or(false) {
         cmd.arg("--dangerously-skip-permissions");
+    }
+    if args.computer_use_enabled.unwrap_or(false) {
+        // The bridge's claude_cli backend reads this env var at construction
+        // time. Setting `local` makes _build_mcp_config add the
+        // computer_use stdio MCP server to Claude CLI's --mcp-config.
+        cmd.env("AGENTGRAM_COMPUTER_USE", "local");
     }
     if let Some(ref effort) = args.effort {
         cmd.args(["--effort", effort]);

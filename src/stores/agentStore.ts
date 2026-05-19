@@ -15,6 +15,12 @@ interface AgentConfig {
   executionMode: string;
   effort: string | null;
   dangerouslySkipPermissions: boolean;
+  /** Allow this agent to use the local computer (screenshot, click, type,
+   *  scroll) via the local computer-use MCP server. Off by default; user
+   *  must explicitly enable per agent. Requires macOS Screen Recording
+   *  and Accessibility permissions on the host. Only meaningful for the
+   *  `claude_cli` backend today. */
+  computerUseEnabled: boolean;
   autoRestart: boolean;
   autoStart: boolean;
   /** Directories for CLI tools access — also enables CLI tools (Bash, Read, etc.) */
@@ -223,6 +229,7 @@ const DEFAULT_CONFIG: AgentConfig = {
   executionMode: "tool_use",
   effort: null,
   dangerouslySkipPermissions: false,
+  computerUseEnabled: false,
   autoRestart: true,
   autoStart: false,
   addDirs: [],
@@ -605,6 +612,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           historyLimit: managed.config.historyLimit,
           executionMode: managed.config.executionMode,
           dangerouslySkipPermissions: managed.config.dangerouslySkipPermissions,
+          computerUseEnabled: managed.config.computerUseEnabled,
           effort: managed.config.effort || undefined,
           addDirs: managed.config.addDirs.length > 0 ? managed.config.addDirs : undefined,
         },
