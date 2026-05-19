@@ -110,7 +110,14 @@ import { AgentRoutines } from "./AgentRoutines";
 import { AvatarCropDialog } from "./AvatarCropDialog";
 
 export function AgentConfig({ managed }: { managed: ManagedAgent }) {
-  const { updateConfig, regenerateKey, selectAgent, fetchAgents } = useAgentStore();
+  const {
+    updateConfig,
+    regenerateKey,
+    selectAgent,
+    fetchAgents,
+    refreshComputerUseDepsStatus,
+    installComputerUseDeps,
+  } = useAgentStore();
   const [showApiKey, setShowApiKey] = useState(false);
   const [showLlmKey, setShowLlmKey] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -824,6 +831,9 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                       anytime. If the agent is currently running, restart it
                       after changing this for the new policy to take effect.
                     </p>
+                    {agent.metadata?.computer_use_enabled === true && (
+                      <ComputerUseDepsRow />
+                    )}
                   </div>
                   <Switch
                     checked={agent.metadata?.computer_use_enabled === true}
@@ -842,6 +852,17 @@ export function AgentConfig({ managed }: { managed: ManagedAgent }) {
                       if (!v) patch.computer_use_allowed_apps = [];
                       await updateAgent(agent.id, { metadata: patch });
                       await fetchAgents();
+                      // When turning ON, recheck deps so the inline status
+                      // row reflects reality, and offer the install if
+                      // they're missing. Background install — never blocks
+                      // the toggle.
+                      if (v) {
+                        await refreshComputerUseDepsStatus();
+                        const s = useAgentStore.getState().computerUseDeps;
+                        if (s.state === "not_installed") {
+                          void installComputerUseDeps();
+                        }
+                      }
                     }}
                   />
                 </div>
@@ -2902,6 +2923,90 @@ function HostedRunControls({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Inline status row for the optional pyobjc + Pillow safety deps that
+ * back computer-use's real perm probe, native Quartz drivers, and
+ * terminal-window redaction. Rendered under "Allow computer use" when
+ * that toggle is on. Reads from agentStore's `computerUseDeps`; the
+ * store handles the Tauri commands + polling.
+ */
+function ComputerUseDepsRow() {
+  const status = useAgentStore((s) => s.computerUseDeps);
+  const refresh = useAgentStore((s) => s.refreshComputerUseDepsStatus);
+  const install = useAgentStore((s) => s.installComputerUseDeps);
+
+  // Check once when this row mounts so the user sees real state on
+  // first opening AgentConfig. Cheap (~50ms invoke).
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  if (status.state === "installed") {
+    return (
+      <p className="text-xs text-green-600 dark:text-green-500 mt-2 flex items-center gap-1">
+        <Check className="w-3 h-3" />
+        Safety features installed (real perm probe, native Quartz drivers,
+        terminal redaction).
+      </p>
+    );
+  }
+
+  if (status.state === "installing") {
+    const lastLine = status.logTail?.[status.logTail.length - 1];
+    return (
+      <p className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        Installing safety features (1–3 min, runs in background)…
+        {lastLine && (
+          <span className="ml-1 truncate font-mono opacity-70">{lastLine}</span>
+        )}
+      </p>
+    );
+  }
+
+  if (status.state === "failed") {
+    return (
+      <div className="text-xs mt-2 space-y-1">
+        <p className="text-destructive flex items-center gap-1">
+          <AlertTriangle className="w-3 h-3" />
+          Safety feature install failed.
+        </p>
+        {status.error && (
+          <p className="text-muted-foreground font-mono break-all">{status.error}</p>
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-6 text-xs"
+          onClick={() => void install()}
+        >
+          Retry install
+        </Button>
+      </div>
+    );
+  }
+
+  // "not_installed" or "unknown"
+  return (
+    <div className="text-xs mt-2 space-y-1">
+      <p className="text-muted-foreground">
+        Optional safety features not installed — currently using fallbacks
+        (8KB perm-probe heuristic, cliclick for scroll/right-click, screenshot
+        refusal when terminal is visible). Installing adds the real Screen
+        Recording perm check, native Quartz drivers, and terminal redaction.
+      </p>
+      <Button
+        variant="outline"
+        size="sm"
+        className="h-6 text-xs"
+        onClick={() => void install()}
+      >
+        Install safety features
+      </Button>
     </div>
   );
 }

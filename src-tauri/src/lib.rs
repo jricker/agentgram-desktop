@@ -19,6 +19,9 @@ pub fn run() {
             process_manager::get_agent_status,
             process_manager::get_all_statuses,
             process_manager::get_agent_logs,
+            process_manager::check_computer_use_deps,
+            process_manager::install_computer_use_deps,
+            process_manager::get_computer_use_deps_status,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {

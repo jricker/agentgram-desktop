@@ -168,6 +168,17 @@ export interface ManagedAgent {
   consecutiveBadPolls: number;
 }
 
+/** Status of the optional pyobjc/Pillow deps for computer-use safety
+ *  features. Lives at the store root (not per-agent) because it's a
+ *  machine-wide install. Mirrored from the Rust side; the install runs
+ *  in a background thread and the frontend polls via
+ *  `refreshComputerUseDepsStatus()`. */
+export interface ComputerUseDepsStatus {
+  state: "unknown" | "not_installed" | "installing" | "installed" | "failed";
+  error?: string;
+  logTail?: string[];
+}
+
 interface AgentState {
   agents: Record<string, ManagedAgent>;
   /** Per-agent activity parsed from bridge logs, keyed by agentId. */
@@ -175,8 +186,16 @@ interface AgentState {
   selectedAgentId: string | null;
   loading: boolean;
   error: string | null;
+  /** Machine-wide install status of pyobjc + Pillow. */
+  computerUseDeps: ComputerUseDepsStatus;
 
   fetchAgents: () => Promise<void>;
+  /** Ask Rust to recheck whether pyobjc + Pillow are importable in the
+   *  bridge venv, then refresh local state. Cheap (~50ms). */
+  refreshComputerUseDepsStatus: () => Promise<void>;
+  /** Kick off a background `pip install` of pyobjc + Pillow in the
+   *  bridge venv. Returns immediately; the UI polls until done. */
+  installComputerUseDeps: () => Promise<void>;
   fetchHealth: () => Promise<void>;
   /** Poll bridge logs for every running agent and update `activities`. */
   fetchActivities: () => Promise<void>;
@@ -281,6 +300,52 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   selectedAgentId: null,
   loading: false,
   error: null,
+  computerUseDeps: { state: "unknown" },
+
+  refreshComputerUseDepsStatus: async () => {
+    try {
+      // `check_computer_use_deps` updates the Rust-side cache too, so
+      // calling it first means a subsequent `get_*` reflects the recheck.
+      await invoke<boolean>("check_computer_use_deps");
+      const status = await invoke<ComputerUseDepsStatus>(
+        "get_computer_use_deps_status",
+      );
+      set({ computerUseDeps: status });
+    } catch (e) {
+      // Tauri not available in dev/browser? Leave state as-is.
+      console.warn("refreshComputerUseDepsStatus failed", e);
+    }
+  },
+
+  installComputerUseDeps: async () => {
+    try {
+      await invoke<void>("install_computer_use_deps");
+      // Optimistically mark as installing; the poll loop below will pick
+      // up the real state when the background pip finishes.
+      set({ computerUseDeps: { state: "installing" } });
+      // Poll every 1.5s until terminal state (installed/failed). 15 min
+      // cap so a hung pip can't poll forever.
+      const start = Date.now();
+      const tick = async () => {
+        if (Date.now() - start > 15 * 60 * 1000) return;
+        try {
+          const s = await invoke<ComputerUseDepsStatus>(
+            "get_computer_use_deps_status",
+          );
+          set({ computerUseDeps: s });
+          if (s.state === "installing") {
+            setTimeout(tick, 1500);
+          }
+        } catch (e) {
+          console.warn("deps status poll failed", e);
+        }
+      };
+      setTimeout(tick, 1500);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      set({ computerUseDeps: { state: "failed", error: msg } });
+    }
+  },
 
   fetchAgents: async () => {
     set({ loading: true, error: null });

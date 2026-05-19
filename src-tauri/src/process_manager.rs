@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
 use tauri::State;
 
@@ -640,6 +640,200 @@ fn needs_dep_install(req_file: &std::path::Path, marker: &std::path::Path) -> bo
         },
         _ => true,
     }
+}
+
+// --- Optional computer-use dependencies (pyobjc + Pillow) ---
+//
+// These deps live in a separate requirements-computer-use.txt rather
+// than the main requirements.txt to keep them OFF the agent-start hot
+// path — installing pyobjc+Pillow synchronously was producing a multi-
+// minute "spinning wheel" on agent launch (~50-80MB of wheels with
+// occasional Pillow source builds).
+//
+// The frontend kicks off `install_computer_use_deps` in the background
+// when the user enables computer-use; the MCP server soft-imports and
+// degrades cleanly while the install runs.
+
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DepsStatus {
+    /// "unknown" | "installed" | "installing" | "failed"
+    pub state: String,
+    /// Populated when state == "failed". Short message.
+    pub error: Option<String>,
+    /// Up to ~20 tail lines from pip's stderr — handy for in-UI surfacing
+    /// when the install hits a snag (e.g. Pillow source-build failure).
+    pub log_tail: Vec<String>,
+}
+
+fn deps_status() -> &'static Mutex<DepsStatus> {
+    static S: OnceLock<Mutex<DepsStatus>> = OnceLock::new();
+    S.get_or_init(|| {
+        Mutex::new(DepsStatus {
+            state: "unknown".to_string(),
+            ..Default::default()
+        })
+    })
+}
+
+fn bridge_venv_python(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let bridge_path = find_bridge_script(app)?;
+    let bridge_dir = std::path::Path::new(&bridge_path)
+        .parent()
+        .ok_or_else(|| "Cannot determine bridge directory".to_string())?
+        .to_path_buf();
+    let python = if cfg!(target_os = "windows") {
+        bridge_dir.join("venv").join("Scripts").join("python.exe")
+    } else {
+        bridge_dir.join("venv").join("bin").join("python3")
+    };
+    Ok(python)
+}
+
+fn bridge_dir_for(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    let bridge_path = find_bridge_script(app)?;
+    Ok(std::path::Path::new(&bridge_path)
+        .parent()
+        .ok_or_else(|| "Cannot determine bridge directory".to_string())?
+        .to_path_buf())
+}
+
+#[tauri::command]
+pub fn check_computer_use_deps(app: tauri::AppHandle) -> bool {
+    // Quick import check — runs in-process so it must stay cheap.
+    let python = match bridge_venv_python(&app) {
+        Ok(p) if p.exists() => p,
+        _ => return false,
+    };
+    let ok = Command::new(&python)
+        .args(["-c", "import Quartz; import PIL"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if let Ok(mut s) = deps_status().lock() {
+        if ok && s.state != "installing" {
+            s.state = "installed".to_string();
+            s.error = None;
+        } else if !ok && s.state == "unknown" {
+            // Don't clobber an in-progress install or a known-failed state.
+            // "unknown" → "not_installed" so the UI can offer the install
+            // button instead of showing an indefinite spinner.
+            s.state = "not_installed".to_string();
+        }
+    }
+    ok
+}
+
+#[tauri::command]
+pub fn get_computer_use_deps_status() -> DepsStatus {
+    deps_status()
+        .lock()
+        .map(|s| s.clone())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub fn install_computer_use_deps(app: tauri::AppHandle) -> Result<(), String> {
+    // Refuse to start a second install if one is already running.
+    {
+        let mut s = deps_status()
+            .lock()
+            .map_err(|e| format!("deps_status lock poisoned: {}", e))?;
+        if s.state == "installing" {
+            return Err("Install already in progress".to_string());
+        }
+        s.state = "installing".to_string();
+        s.error = None;
+        s.log_tail.clear();
+    }
+
+    let python = bridge_venv_python(&app)?;
+    if !python.exists() {
+        let mut s = deps_status().lock().unwrap();
+        s.state = "failed".to_string();
+        s.error = Some(format!(
+            "venv python missing at {}; start an agent once first so Tauri creates the venv",
+            python.display()
+        ));
+        return Err(s.error.clone().unwrap_or_default());
+    }
+
+    let req_file = bridge_dir_for(&app)?.join("requirements-computer-use.txt");
+    if !req_file.exists() {
+        let mut s = deps_status().lock().unwrap();
+        s.state = "failed".to_string();
+        s.error = Some(format!(
+            "requirements-computer-use.txt not found at {}",
+            req_file.display()
+        ));
+        return Err(s.error.clone().unwrap_or_default());
+    }
+
+    // Run pip in a background thread so the Tauri command thread (and the
+    // UI behind it) doesn't block. Status updates land in `deps_status`
+    // and the frontend polls via get_computer_use_deps_status.
+    std::thread::spawn(move || {
+        eprintln!(
+            "[ProcessManager] installing computer-use deps via pip from {}",
+            req_file.display()
+        );
+        let result = Command::new(&python)
+            .args([
+                "-m",
+                "pip",
+                "install",
+                "-r",
+                &req_file.to_string_lossy(),
+            ])
+            .output();
+        let mut s = match deps_status().lock() {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("[ProcessManager] deps_status lock poisoned: {}", e);
+                return;
+            }
+        };
+        match result {
+            Ok(out) if out.status.success() => {
+                s.state = "installed".to_string();
+                s.error = None;
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                s.log_tail = stderr
+                    .lines()
+                    .rev()
+                    .take(20)
+                    .map(|l| l.to_string())
+                    .collect();
+                s.log_tail.reverse();
+                eprintln!("[ProcessManager] computer-use deps installed");
+            }
+            Ok(out) => {
+                s.state = "failed".to_string();
+                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                let preview: String = stderr.lines().rev().next().unwrap_or("").to_string();
+                s.error = Some(format!("pip exit {}: {}", out.status, preview));
+                s.log_tail = stderr
+                    .lines()
+                    .rev()
+                    .take(20)
+                    .map(|l| l.to_string())
+                    .collect();
+                s.log_tail.reverse();
+                eprintln!(
+                    "[ProcessManager] computer-use deps install FAILED ({}): {}",
+                    out.status,
+                    s.error.clone().unwrap_or_default()
+                );
+            }
+            Err(e) => {
+                s.state = "failed".to_string();
+                s.error = Some(format!("could not spawn pip: {}", e));
+                eprintln!("[ProcessManager] could not spawn pip: {}", e);
+            }
+        }
+    });
+
+    Ok(())
 }
 
 fn find_bridge_script(app: &tauri::AppHandle) -> Result<String, String> {

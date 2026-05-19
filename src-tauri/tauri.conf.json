@@ -39,6 +39,7 @@
       "../bridge/computer_use_mcp_server.py",
       "../bridge/google_places.py",
       "../bridge/requirements.txt",
+      "../bridge/requirements-computer-use.txt",
       "../bridge/agentchat/*.py",
       "../bridge/agentchat/backends/*.py",
       "../bridge/agentchat/tools/*.py"
