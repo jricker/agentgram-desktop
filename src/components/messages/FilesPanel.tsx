@@ -74,9 +74,18 @@ export function FilesPanel({ files, open, onClose, onRefresh }: Props) {
     setOpening(file.id);
     try {
       const { url } = await getFileDownloadUrl(file.id);
-      // Open in the system default handler. In Tauri this opens a new
-      // OS-level window/handler; in pure web it'd open a tab.
-      window.open(url, "_blank", "noopener,noreferrer");
+      // Programmatic anchor click instead of window.open — Tauri's
+      // webview doesn't reliably forward window.open to the OS
+      // browser, and browsers sometimes treat it as a popup. A
+      // synthesized <a target="_blank"> mirrors what FileMessage
+      // already does for inline downloads and opens consistently.
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch {
       // Surfacing a toast here would require pulling in the toast
       // system; the chip silently no-ops on auth/network errors and
