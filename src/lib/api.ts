@@ -541,6 +541,35 @@ export async function getProviderStatus(provider: string): Promise<{
   return request(`/api/integrations/${provider}/status`);
 }
 
+// --- Payments: Stripe Link "wallet for agents" (OAuth device flow) ---
+
+export async function paymentConnectStart(): Promise<{
+  userCode: string;
+  verificationUri: string;
+  verificationUriComplete: string;
+  expiresIn: number;
+  interval: number;
+}> {
+  return request("/api/payments/connect/start", { method: "POST" });
+}
+
+export async function paymentConnectPoll(): Promise<{ status: string }> {
+  return request("/api/payments/connect/poll", { method: "POST" });
+}
+
+export async function paymentWalletStatus(): Promise<{
+  connected: boolean;
+  status: string | null;
+  hasPaymentMethod: boolean;
+  connectedAt: string | null;
+}> {
+  return request("/api/payments/status");
+}
+
+export async function paymentDisconnect(): Promise<void> {
+  await request("/api/payments/disconnect", { method: "POST" });
+}
+
 // Resolves the raw token for a provider via the backend. Walks the
 // ownership chain server-side, so an agent's auth resolves its owner's
 // key. Used as a fallback when the local LLM Keys store doesn't have

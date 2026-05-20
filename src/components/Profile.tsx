@@ -4,6 +4,7 @@ import { useThemeStore, type ThemePreference } from "../stores/themeStore";
 import { isDesignSystemDebugOn, setDesignSystemDebug } from "../lib/designSystemDebug";
 import * as api from "../lib/api";
 import { cn } from "../lib/utils";
+import { PaymentWalletCard } from "./PaymentWalletCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -681,6 +682,9 @@ export function Profile({ onClose }: { onClose: () => void }) {
                   })}
                 </div>
               )}
+              <div className="mt-2">
+                <PaymentWalletCard />
+              </div>
             </section>
 
             <Separator />
