@@ -13,6 +13,10 @@ import {
   StatusUpdateMessage,
 } from "./StatusUpdateMessage";
 import { ResultPresentationMessage } from "./ResultPresentationMessage";
+import {
+  isCompactionSummaryMessage,
+  CompactionSummaryMessage,
+} from "./CompactionSummaryMessage";
 import type { Message } from "../../lib/api";
 
 function isResultPresentationMessage(message: Message): boolean {
@@ -86,6 +90,16 @@ export function MessageBubble({
       (m) => m.id === message.parentMessageId
     );
   });
+
+  // Compaction summaries render full-width (no avatar, no bubble) — they're a
+  // conversation-level event, not a message attributed to a participant.
+  if (isCompactionSummaryMessage(message)) {
+    return (
+      <div className="px-4">
+        <CompactionSummaryMessage message={message} />
+      </div>
+    );
+  }
 
   // Card messages (tasks + status lifecycle updates) reuse the same
   // avatar + sender header scaffold as regular bubbles but drop the
