@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowDown, Loader2 } from "lucide-react";
 import { useChatStore } from "../../stores/chatStore";
 import { useAuthStore } from "../../stores/authStore";
@@ -410,6 +410,8 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevLengthRef = useRef(0);
   const prevConvIdRef = useRef<string | null>(null);
+  const nearBottomRef = useRef(true);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const agentConversationsFetchAttemptedRef = useRef<string | null>(null);
   const [nearBottom, setNearBottom] = useState(true);
   // Pair with `.scrollbar-autohide` CSS: toggled on during active scroll so
@@ -486,12 +488,40 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
     const newMessages = threadItems.length > prevLengthRef.current;
     if (convChanged) {
       el.scrollTop = el.scrollHeight;
+      // Opening a conversation lands the user at the bottom — reset the
+      // pin flag so the height-settle observer keeps it there.
+      setNearBottom(true);
     } else if ((newMessages || stream) && nearBottom) {
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     }
     prevLengthRef.current = threadItems.length;
     prevConvIdRef.current = conversationId;
   }, [conversationId, threadItems.length, nearBottom, stream]);
+
+  // Mirror `nearBottom` into a ref so the height-settle observer reads the
+  // current value without being re-created on every scroll.
+  useEffect(() => {
+    nearBottomRef.current = nearBottom;
+  }, [nearBottom]);
+
+  // Keep the view pinned to the bottom while the message list's height
+  // settles. Image attachments fetch their download URL async and render
+  // with no reserved height, so a long thread keeps growing for a beat
+  // after the one-shot scroll fires — stranding the latest message below
+  // the fold. This callback ref wires a ResizeObserver to the message
+  // container that re-snaps to the bottom on every height change, but
+  // only while the user is still pinned there (nearBottomRef).
+  const contentRef = useCallback((node: HTMLDivElement | null) => {
+    resizeObserverRef.current?.disconnect();
+    resizeObserverRef.current = null;
+    if (!node) return;
+    const observer = new ResizeObserver(() => {
+      const el = scrollRef.current;
+      if (el && nearBottomRef.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(node);
+    resizeObserverRef.current = observer;
+  }, []);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
@@ -552,7 +582,7 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
             No messages yet
           </div>
         ) : (
-          <>
+          <div ref={contentRef}>
             {hasMore && (
               <div className="flex justify-center py-2">
                 {loading ? (
@@ -611,7 +641,7 @@ export function ChatThread({ conversationId }: { conversationId: string }) {
               );
             })}
             {stream && <StreamingBubble stream={stream} />}
-          </>
+          </div>
         )}
       </div>
 
