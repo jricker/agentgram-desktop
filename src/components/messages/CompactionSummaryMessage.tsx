@@ -18,7 +18,9 @@ export function isCompactionSummaryMessage(message: Message): boolean {
 // are filtered out of the list, so this summary is the canonical record of
 // what they contained. Full-width, expandable.
 export function CompactionSummaryMessage({ message }: { message: Message }) {
-  const [expanded, setExpanded] = useState(true);
+  // Collapsed by default — it's archived history; the header stays visible
+  // and the user expands the narrative on demand.
+  const [expanded, setExpanded] = useState(false);
   const data = (message.contentStructured?.data ?? {}) as CompactionPayload;
   const count = data.messages_compacted ?? 0;
   const narrative = data.narrative ?? "";
